@@ -1,0 +1,1007 @@
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { 
+  ArrowRight, 
+  ArrowLeft,
+  Plus,
+  Save,
+  Eye,
+  Send,
+  Trash2,
+  Copy,
+  Move,
+  Settings,
+  Type,
+  CheckSquare,
+  BarChart3,
+  Star,
+  FileText,
+  Image,
+  Video,
+  Upload,
+  GripVertical,
+  ChevronDown,
+  ChevronUp,
+  AlertCircle,
+  CheckCircle,
+  Clock,
+  Zap,
+  Lock,
+  Shield
+} from 'lucide-react';
+import ConditionalLogic from './ConditionalLogic';
+import SurveyResponse from './SurveyResponse';
+import { ensureFixedQuestionsInSurvey, isFixedQuestion } from '../../utils/fixedQuestions';
+
+const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) => {
+  
+  // Utility function to generate unique IDs
+  const generateUniqueId = (prefix = '') => {
+    const baseId = Date.now();
+    const randomSuffix = Math.floor(Math.random() * 10000);
+    return prefix ? `${prefix}_${baseId}_${randomSuffix}` : `${baseId}_${randomSuffix}`;
+  };
+  
+  const [sections, setSections] = useState(() => {
+    if (initialData && initialData.length > 0) {
+      return ensureFixedQuestionsInSurvey(initialData);
+    } else {
+      return ensureFixedQuestionsInSurvey([
+        {
+          id: 1,
+          title: 'Respondent Information',
+          questions: []
+        }
+      ]);
+    }
+  });
+  
+  const [currentSection, setCurrentSection] = useState(0);
+  const [currentQuestion, setCurrentQuestion] = useState(0);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [showQuestionTypes, setShowQuestionTypes] = useState(false);
+  const [draggedItem, setDraggedItem] = useState(null);
+  const [showConditionalLogic, setShowConditionalLogic] = useState(false);
+  const [previewResponses, setPreviewResponses] = useState({});
+  const [showDeleteSectionModal, setShowDeleteSectionModal] = useState(false);
+  const [sectionToDelete, setSectionToDelete] = useState(null);
+  const hasInitialized = useRef(false);
+
+  // Update sections when initialData changes (for edit mode)
+  useEffect(() => {
+    if (initialData && Array.isArray(initialData) && initialData.length > 0 && !hasInitialized.current) {
+      hasInitialized.current = true;
+      
+      // Ensure fixed questions are included
+      const sectionsWithFixedQuestions = ensureFixedQuestionsInSurvey(initialData);
+      
+      // Ensure all questions have proper order numbers
+      let globalOrder = 0;
+      const updatedSections = sectionsWithFixedQuestions.map((section, sectionIndex) => ({
+        ...section,
+        questions: section.questions.map((question, questionIndex) => {
+          const updatedQuestion = {
+            ...question,
+            order: question.order !== undefined ? question.order : globalOrder
+          };
+          globalOrder++;
+          return updatedQuestion;
+        })
+      }));
+      
+      setSections(updatedSections);
+      // Only call onUpdate if the sections actually changed
+      if (JSON.stringify(updatedSections) !== JSON.stringify(initialData)) {
+        onUpdate(updatedSections);
+      }
+    }
+  }, [initialData?.length]); // Remove onUpdate from dependencies to prevent infinite loop
+
+  // Note: Parent updates are handled through user actions only
+
+  const questionTypes = [
+    {
+      id: 'multiple_choice',
+      name: 'Multiple Choice',
+      icon: CheckSquare,
+      description: 'Single or multiple selection from options',
+      color: 'blue'
+    },
+    {
+      id: 'text',
+      name: 'Text Input',
+      icon: Type,
+      description: 'Open-ended text response',
+      color: 'green'
+    },
+    {
+      id: 'rating',
+      name: 'Rating Scale',
+      icon: Star,
+      description: 'Rate on a scale (1-5, 1-10, etc.)',
+      color: 'yellow'
+    },
+    {
+      id: 'yes_no',
+      name: 'Yes/No',
+      icon: CheckCircle,
+      description: 'Simple binary choice',
+      color: 'purple'
+    },
+    {
+      id: 'dropdown',
+      name: 'Dropdown',
+      icon: ChevronDown,
+      description: 'Select from dropdown list',
+      color: 'indigo'
+    },
+    {
+      id: 'file_upload',
+      name: 'File Upload',
+      icon: Upload,
+      description: 'Upload documents or images',
+      color: 'orange'
+    },
+    {
+      id: 'date',
+      name: 'Date/Time',
+      icon: Clock,
+      description: 'Date or time selection',
+      color: 'teal'
+    }
+  ];
+  // Re-add Matrix type (UI-only). Note: Backend may not support persisting it.
+  questionTypes.push({
+    id: 'matrix',
+    name: 'Matrix',
+    icon: BarChart3,
+    description: 'Grid of questions with same options',
+    color: 'pink'
+  });
+
+  const addNewSection = () => {
+    const newSection = {
+      id: generateUniqueId('section'),
+      title: `Section ${sections.length + 1}`,
+      questions: []
+    };
+    const updatedSections = [...sections, newSection];
+    setSections(updatedSections);
+    setCurrentSection(updatedSections.length - 1);
+    onUpdate(updatedSections);
+  };
+
+  const deleteSection = (sectionIndex) => {
+    // Prevent deletion of the first section (contains protected questions)
+    if (sectionIndex === 0) {
+      return; // Do nothing - first section is protected
+    }
+    
+    const section = sections[sectionIndex];
+    
+    // Check if section has questions
+    if (section.questions && section.questions.length > 0) {
+      setSectionToDelete({ index: sectionIndex, section });
+      setShowDeleteSectionModal(true);
+      return;
+    }
+    
+    // If no questions, delete directly
+    confirmDeleteSection(sectionIndex);
+  };
+
+  const confirmDeleteSection = (sectionIndex) => {
+    const updatedSections = sections.filter((_, index) => index !== sectionIndex);
+    setSections(updatedSections);
+    
+    // Adjust current section if needed
+    if (currentSection >= updatedSections.length) {
+      setCurrentSection(Math.max(0, updatedSections.length - 1));
+    }
+    
+    setShowDeleteSectionModal(false);
+    setSectionToDelete(null);
+    onUpdate(updatedSections);
+  };
+
+  const addNewQuestion = (type) => {
+    // Calculate global order for the new question
+    let globalOrder = 0;
+    sections.forEach((section, sectionIndex) => {
+      section.questions.forEach((question, questionIndex) => {
+        globalOrder++;
+      });
+    });
+
+    // Generate unique ID for the new question
+    const questionId = generateUniqueId('question');
+
+    const newQuestion = {
+      id: questionId,
+      type: type,
+      text: 'New Question',
+      description: '',
+      required: true,
+      order: globalOrder, // Add order number
+      options: type === 'multiple_choice' || type === 'dropdown' ? [
+        { id: `${questionId}_opt_1`, text: 'Option 1', value: 'option1' },
+        { id: `${questionId}_opt_2`, text: 'Option 2', value: 'option2' }
+      ] : [],
+      settings: {
+        allowMultiple: type === 'multiple_choice',
+        allowOther: false,
+        required: true
+      }
+    };
+
+    const updatedSections = [...sections];
+    updatedSections[currentSection].questions.push(newQuestion);
+    setSections(updatedSections);
+    setCurrentQuestion(updatedSections[currentSection].questions.length - 1);
+    setShowQuestionTypes(false);
+    onUpdate(updatedSections);
+  };
+
+  const updateQuestion = useCallback((sectionIndex, questionIndex, updates) => {
+    setSections(prevSections => {
+      const updatedSections = [...prevSections];
+      // Deep clone to ensure proper state updates
+      updatedSections[sectionIndex] = {
+        ...updatedSections[sectionIndex],
+        questions: [...updatedSections[sectionIndex].questions]
+      };
+      updatedSections[sectionIndex].questions[questionIndex] = {
+        ...updatedSections[sectionIndex].questions[questionIndex],
+        ...updates
+      };
+      
+      // Update parent component for conditional logic changes
+      if (updates.conditions !== undefined) {
+        setTimeout(() => {
+          onUpdate(updatedSections);
+        }, 0);
+      }
+      
+      return updatedSections;
+    });
+  }, [onUpdate]);
+
+  // Note: Parent updates are handled directly in input change handlers
+
+  const deleteQuestion = (sectionIndex, questionIndex) => {
+    const updatedSections = [...sections];
+    
+    // Safety check to ensure the question exists
+    if (!updatedSections[sectionIndex] || !updatedSections[sectionIndex].questions[questionIndex]) {
+      console.warn('Question not found for deletion');
+      return;
+    }
+
+    const question = updatedSections[sectionIndex].questions[questionIndex];
+    
+    // Prevent deletion of fixed questions
+    if (question.isFixed || isFixedQuestion(question.id)) {
+      console.warn('Cannot delete fixed questions');
+      return;
+    }
+    
+    updatedSections[sectionIndex].questions.splice(questionIndex, 1);
+    setSections(updatedSections);
+    
+    if (currentQuestion >= updatedSections[currentSection].questions.length) {
+      setCurrentQuestion(Math.max(0, updatedSections[currentSection].questions.length - 1));
+    }
+    onUpdate(updatedSections);
+  };
+
+  const duplicateQuestion = (sectionIndex, questionIndex) => {
+    const question = sections[sectionIndex]?.questions[questionIndex];
+    
+    // Safety check to ensure the question exists
+    if (!question) {
+      console.warn('Question not found for duplication');
+      return;
+    }
+
+    // Prevent duplication of fixed questions
+    if (question.isFixed || isFixedQuestion(question.id)) {
+      console.warn('Cannot duplicate fixed questions');
+      return;
+    }
+    
+    // Generate unique ID for duplicated question
+    const duplicatedId = generateUniqueId('question');
+    
+    const duplicatedQuestion = {
+      ...question,
+      id: duplicatedId,
+      text: `${question.text} (Copy)`,
+      // Generate new IDs for options if they exist
+      options: question.options ? question.options.map((option, index) => ({
+        ...option,
+        id: generateUniqueId(`opt_${duplicatedId}`)
+      })) : []
+    };
+    
+    const updatedSections = [...sections];
+    updatedSections[sectionIndex].questions.splice(questionIndex + 1, 0, duplicatedQuestion);
+    setSections(updatedSections);
+    onUpdate(updatedSections);
+  };
+
+  const moveQuestion = (fromSection, fromIndex, toSection, toIndex) => {
+    const updatedSections = [...sections];
+    const question = updatedSections[fromSection].questions[fromIndex];
+    
+    updatedSections[fromSection].questions.splice(fromIndex, 1);
+    updatedSections[toSection].questions.splice(toIndex, 0, question);
+    
+    // Update order numbers for all questions
+    let globalOrder = 0;
+    updatedSections.forEach((section, sectionIndex) => {
+      section.questions.forEach((q, questionIndex) => {
+        q.order = globalOrder;
+        globalOrder++;
+      });
+    });
+    
+    setSections(updatedSections);
+    onUpdate(updatedSections);
+  };
+
+  const getQuestionIcon = (type) => {
+    if (!type) return Type;
+    const questionType = questionTypes.find(qt => qt.id === type);
+    return questionType ? questionType.icon : Type;
+  };
+
+  const getQuestionColor = (type) => {
+    if (!type) return 'gray';
+    const questionType = questionTypes.find(qt => qt.id === type);
+    return questionType ? questionType.color : 'gray';
+  };
+
+  // Get all questions for conditional logic
+  const getAllQuestions = useCallback(() => {
+    const allQuestions = [];
+    
+    sections.forEach((section, sectionIndex) => {
+      section.questions.forEach((question, questionIndex) => {
+        allQuestions.push({
+          ...question,
+          sectionId: section.id,
+          sectionTitle: section.title,
+          sectionIndex: sectionIndex,
+          questionIndex: questionIndex,
+          order: question.order || 0, // Use saved order or default to 0
+          displayNumber: `${sectionIndex + 1}.${questionIndex + 1}`
+        });
+      });
+    });
+    
+    // Sort by order to ensure proper sequence
+    allQuestions.sort((a, b) => a.order - b.order);
+    
+    return allQuestions;
+  }, [sections]);
+
+  const renderQuestionPreview = (question) => {
+    switch (question.type) {
+      case 'multiple_choice':
+        return (
+          <div className="space-y-3">
+            <h3 className="text-lg font-medium text-gray-900">{question.text}</h3>
+            {question.description && (
+              <p className="text-gray-600">{question.description}</p>
+            )}
+            <div className="space-y-2">
+              {question.options.map((option, index) => (
+                <label key={index} className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+                  <input
+                    type={question.settings?.allowMultiple ? 'checkbox' : 'radio'}
+                    name={`question-${question.id}`}
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <span className="text-gray-700">{option.text || option}</span>
+                </label>
+              ))}
+            </div>
+            {question.required && (
+              <p className="text-sm text-red-600">* Required</p>
+            )}
+          </div>
+        );
+
+      case 'text':
+        return (
+          <div className="space-y-3">
+            <h3 className="text-lg font-medium text-gray-900">{question.text}</h3>
+            {question.description && (
+              <p className="text-gray-600">{question.description}</p>
+            )}
+            <textarea
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="Your answer here..."
+            />
+            {question.required && (
+              <p className="text-sm text-red-600">* Required</p>
+            )}
+          </div>
+        );
+
+      case 'rating':
+        return (
+          <div className="space-y-3">
+            <h3 className="text-lg font-medium text-gray-900">{question.text}</h3>
+            {question.description && (
+              <p className="text-gray-600">{question.description}</p>
+            )}
+            <div className="flex space-x-2">
+              {[1, 2, 3, 4, 5].map((rating) => (
+                <button
+                  key={rating}
+                  className="w-10 h-10 border border-gray-300 rounded-lg hover:bg-gray-50 focus:ring-2 focus:ring-blue-500"
+                >
+                  {rating}
+                </button>
+              ))}
+            </div>
+            {question.required && (
+              <p className="text-sm text-red-600">* Required</p>
+            )}
+          </div>
+        );
+
+      case 'yes_no':
+        return (
+          <div className="space-y-3">
+            <h3 className="text-lg font-medium text-gray-900">{question.text}</h3>
+            {question.description && (
+              <p className="text-gray-600">{question.description}</p>
+            )}
+            <div className="flex space-x-4">
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name={`question-${question.id}`}
+                  className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                />
+                <span className="text-gray-700">Yes</span>
+              </label>
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name={`question-${question.id}`}
+                  className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                />
+                <span className="text-gray-700">No</span>
+              </label>
+            </div>
+            {question.required && (
+              <p className="text-sm text-red-600">* Required</p>
+            )}
+          </div>
+        );
+
+      default:
+        return (
+          <div className="space-y-3">
+            <h3 className="text-lg font-medium text-gray-900">{question.text}</h3>
+            {question.description && (
+              <p className="text-gray-600">{question.description}</p>
+            )}
+            <div className="p-4 border-2 border-dashed border-gray-300 rounded-lg text-center text-gray-500">
+              {question.type} question preview
+            </div>
+          </div>
+        );
+    }
+  };
+
+  const handleSave = () => {
+    onUpdate(sections);
+  };
+
+  // Remove automatic updates to prevent infinite loops
+  // Updates will be handled manually in specific functions
+
+  return (
+    <div className="p-8">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h2 className="text-3xl font-bold text-gray-900 mb-2">Survey Builder</h2>
+            <p className="text-lg text-gray-600">Create your survey questions with our intuitive builder</p>
+          </div>
+          
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={() => setIsPreviewMode(!isPreviewMode)}
+              className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                isPreviewMode 
+                  ? 'bg-blue-600 text-white' 
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              <Eye className="w-4 h-4" />
+              <span>{isPreviewMode ? 'Edit Mode' : 'Preview'}</span>
+            </button>
+            
+            <button
+              onClick={handleSave}
+              className="flex items-center space-x-2 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            >
+              <Save className="w-4 h-4" />
+              <span>Save Survey</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Sidebar - Sections and Questions */}
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200 sticky top-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Survey Structure</h3>
+              
+              <div className="space-y-4">
+                {sections.map((section, sectionIndex) => (
+                  <div 
+                    key={section.id} 
+                    onClick={() => setCurrentSection(sectionIndex)}
+                    className={`border rounded-lg p-3 cursor-pointer transition-colors ${
+                      currentSection === sectionIndex
+                        ? 'border-blue-300 bg-blue-50'
+                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-medium text-gray-900">
+                        <span className="text-sm text-gray-500 mr-2">Section {sectionIndex + 1}:</span>
+                        {section.title}
+                        {sectionIndex === 0 && (
+                          <span className="ml-2 text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full">
+                            <Lock className="w-3 h-3 inline mr-1" />
+                            Protected
+                          </span>
+                        )}
+                      </h4>
+                      {sections.length > 1 && sectionIndex !== 0 && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation(); // Prevent section selection when clicking delete
+                            deleteSection(sectionIndex);
+                          }}
+                          className="text-red-600 hover:text-red-700 text-sm focus:outline-none"
+                          title="Delete section"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                      {sectionIndex === 0 && (
+                        <div className="flex items-center text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                          <Shield className="w-3 h-3 mr-1" />
+                          Protected
+                        </div>
+                      )}
+                    </div>
+                    
+                    {sectionIndex === 0 && (
+                      <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-md">
+                        <p className="text-xs text-blue-700">
+                          <Shield className="w-3 h-3 inline mr-1" />
+                          This section contains required respondent information and cannot be deleted.
+                        </p>
+                      </div>
+                    )}
+                    
+                    <div className="space-y-2">
+                      {section.questions.filter(question => question && question.id).map((question, questionIndex) => (
+                        <div
+                          key={question.id}
+                          onClick={(e) => {
+                            e.stopPropagation(); // Prevent section selection when clicking question
+                            setCurrentSection(sectionIndex);
+                            setCurrentQuestion(questionIndex);
+                          }}
+                          className={`flex items-center space-x-2 p-2 rounded cursor-pointer transition-colors ${
+                            currentSection === sectionIndex && currentQuestion === questionIndex
+                              ? 'bg-blue-50 text-blue-700'
+                              : 'hover:bg-gray-50'
+                          }`}
+                        >
+                          <span className="text-xs font-medium text-gray-500 w-6 flex-shrink-0">
+                            {sectionIndex + 1}.{questionIndex + 1}
+                          </span>
+                          {question.type && React.createElement(getQuestionIcon(question.type), {
+                            className: `w-4 h-4 text-${getQuestionColor(question.type)}-600`
+                          })}
+                          <span className="text-sm truncate flex-1">{question.text || question.title}</span>
+                          {question.conditions && question.conditions.length > 0 && (
+                            <Zap className="w-3 h-3 text-yellow-600" title="Conditional question" />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation(); // Prevent section selection when clicking add question
+                        setCurrentSection(sectionIndex);
+                        setShowQuestionTypes(true);
+                      }}
+                      className="w-full mt-2 flex items-center justify-center space-x-2 py-2 text-sm text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Add Question</span>
+                    </button>
+                  </div>
+                ))}
+                
+                <button
+                  onClick={addNewSection}
+                  className="w-full flex items-center justify-center space-x-2 py-3 text-sm text-gray-600 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 hover:text-gray-700 transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add Section</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Main Content Area */}
+          <div className="lg:col-span-3">
+            {isPreviewMode ? (
+              /* Preview Mode with Conditional Logic */
+              <div className="bg-white rounded-xl p-8 shadow-sm border border-gray-200">
+                <div className="max-w-2xl mx-auto">
+                  <h2 className="text-2xl font-bold text-gray-900 mb-8 text-center">
+                    {surveyData?.specifications?.surveyName || 'Survey Preview'}
+                  </h2>
+                  
+                  <SurveyResponse
+                    survey={{ sections }}
+                    onResponseChange={setPreviewResponses}
+                    initialResponses={previewResponses}
+                  />
+                  
+                  <div className="text-center mt-8">
+                    <button className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                      Submit Survey
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* Edit Mode */
+              <div className="space-y-6">
+                {sections.length > 0 && sections[currentSection] && (
+                  <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+                    {/* Section Header */}
+                    <div className="mb-6">
+                      <input
+                        type="text"
+                        value={sections[currentSection].title}
+                        onChange={(e) => {
+                          const updatedSections = [...sections];
+                          updatedSections[currentSection].title = e.target.value;
+                          setSections(updatedSections);
+                          onUpdate(updatedSections);
+                        }}
+                        className="text-xl font-semibold text-gray-900 bg-transparent border-none outline-none w-full"
+                      />
+                    </div>
+
+                    {/* Questions */}
+                    <div className="space-y-6">
+                      {sections[currentSection].questions.filter(question => question && question.id).map((question, questionIndex) => {
+                        const isFixed = question.isFixed || isFixedQuestion(question.id);
+                        return (
+                        <div key={question.id} className={`border rounded-lg p-6 ${isFixed ? 'border-blue-200 bg-blue-50/30' : 'border-gray-200'}`}>
+                          <div className="flex items-start justify-between mb-4">
+                            <div className="flex items-center space-x-3">
+                            <span className={`text-sm font-bold px-2 py-1 rounded ${isFixed ? 'text-blue-700 bg-blue-200' : 'text-blue-600 bg-blue-100'}`}>
+                              Q{currentSection + 1}.{questionIndex + 1}
+                            </span>
+                              {question.type && React.createElement(getQuestionIcon(question.type), {
+                                className: `w-5 h-5 text-${getQuestionColor(question.type)}-600`
+                              })}
+                              <span className="text-sm font-medium text-gray-600 capitalize">
+                                {question.type ? question.type.replace('_', ' ') : 'Unknown'}
+                              </span>
+                              {isFixed && (
+                                <div className="flex items-center space-x-1">
+                                  <Lock className="w-3 h-3 text-blue-600" />
+                                  <span className="text-xs text-blue-600 font-medium">Required</span>
+                                </div>
+                              )}
+                            {question.conditions && question.conditions.length > 0 && (
+                              <div className="flex items-center space-x-1">
+                                <Zap className="w-3 h-3 text-yellow-600" />
+                                <span className="text-xs text-yellow-600">Conditional</span>
+                              </div>
+                            )}
+                            </div>
+                            
+                            <div className="flex items-center space-x-2">
+                              {!isFixed && (
+                                <>
+                                  <button
+                                    onClick={() => duplicateQuestion(currentSection, questionIndex)}
+                                    className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
+                                  >
+                                    <Copy className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => deleteQuestion(currentSection, questionIndex)}
+                                    className="p-2 text-gray-400 hover:text-red-600 transition-colors"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </>
+                              )}
+                              {isFixed && (
+                                <div className="flex items-center space-x-1 px-2 py-1 bg-blue-100 rounded-md">
+                                  <Shield className="w-4 h-4 text-blue-600" />
+                                  <span className="text-xs text-blue-600 font-medium">Protected</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="space-y-4">
+                            <div>
+                              <input
+                                type="text"
+                                value={question.text}
+                                onChange={(e) => {
+                                  if (!isFixed) {
+                                    updateQuestion(currentSection, questionIndex, { text: e.target.value });
+                                    // Update parent component
+                                    setTimeout(() => {
+                                      onUpdate(sections);
+                                    }, 0);
+                                  }
+                                }}
+                                className={`w-full text-lg font-medium bg-transparent border-none outline-none ${isFixed ? 'text-gray-700 cursor-not-allowed' : 'text-gray-900'}`}
+                                placeholder="Question text"
+                                disabled={isFixed}
+                              />
+                            </div>
+
+                            <div>
+                              <textarea
+                                value={question.description}
+                                onChange={(e) => {
+                                  if (!isFixed) {
+                                    updateQuestion(currentSection, questionIndex, { description: e.target.value });
+                                    // Update parent component
+                                    setTimeout(() => {
+                                      onUpdate(sections);
+                                    }, 0);
+                                  }
+                                }}
+                                className={`w-full bg-transparent border-none outline-none resize-none ${isFixed ? 'text-gray-600 cursor-not-allowed' : 'text-gray-600'}`}
+                                placeholder="Question description (optional)"
+                                rows={2}
+                                disabled={isFixed}
+                              />
+                            </div>
+
+                            {/* Question-specific options */}
+                            {(question.type === 'multiple_choice' || question.type === 'dropdown') && (
+                              <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-700">Options</label>
+                                {question.options.map((option, optionIndex) => {
+                                  // Ensure option has a unique ID
+                                  const optionId = option.id || generateUniqueId(`opt_${question.id}`);
+                                  return (
+                                    <div key={optionId} className="flex items-center space-x-2">
+                                      <input
+                                        type="text"
+                                        value={option.text || ''}
+                                        onChange={(e) => {
+                                          if (!isFixed) {
+                                            const updatedOptions = [...question.options];
+                                            updatedOptions[optionIndex] = {
+                                              id: optionId,
+                                              text: e.target.value,
+                                              value: e.target.value.toLowerCase().replace(/\s+/g, '_')
+                                            };
+                                            updateQuestion(currentSection, questionIndex, { options: updatedOptions });
+                                            // Update parent component
+                                            setTimeout(() => {
+                                              onUpdate(sections);
+                                            }, 0);
+                                          }
+                                        }}
+                                        className={`flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${isFixed ? 'border-gray-200 bg-gray-50 text-gray-600 cursor-not-allowed' : 'border-gray-300'}`}
+                                        placeholder={`Option ${optionIndex + 1}`}
+                                        disabled={isFixed}
+                                      />
+                                      {!isFixed && (
+                                        <button
+                                          onClick={() => {
+                                            const updatedOptions = question.options.filter((_, i) => i !== optionIndex);
+                                            updateQuestion(currentSection, questionIndex, { options: updatedOptions });
+                                          }}
+                                          className="p-2 text-red-600 hover:text-red-700 transition-colors"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                                {!isFixed && (
+                                  <button
+                                    onClick={() => {
+                                      const newOption = {
+                                        id: generateUniqueId(`opt_${question.id}`),
+                                        text: `Option ${question.options.length + 1}`,
+                                        value: `option${question.options.length + 1}`
+                                      };
+                                      const updatedOptions = [...question.options, newOption];
+                                      updateQuestion(currentSection, questionIndex, { options: updatedOptions });
+                                    }}
+                                    className="flex items-center space-x-2 text-sm text-blue-600 hover:text-blue-700"
+                                  >
+                                    <Plus className="w-4 h-4" />
+                                    <span>Add Option</span>
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Question Settings */}
+                            <div className="flex items-center space-x-4 pt-4 border-t border-gray-200">
+                              <label className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  checked={question.required}
+                                  onChange={(e) => !isFixed && updateQuestion(currentSection, questionIndex, { required: e.target.checked })}
+                                  className={`w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 ${isFixed ? 'cursor-not-allowed opacity-50' : ''}`}
+                                  disabled={isFixed}
+                                />
+                                <span className={`text-sm ${isFixed ? 'text-gray-500' : 'text-gray-700'}`}>Required</span>
+                              </label>
+                              
+                              {question.type === 'multiple_choice' && (
+                                <label className="flex items-center space-x-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={question.settings?.allowMultiple || false}
+                                    onChange={(e) => !isFixed && updateQuestion(currentSection, questionIndex, {
+                                      settings: { ...question.settings, allowMultiple: e.target.checked }
+                                    })}
+                                    className={`w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 ${isFixed ? 'cursor-not-allowed opacity-50' : ''}`}
+                                    disabled={isFixed}
+                                  />
+                                  <span className={`text-sm ${isFixed ? 'text-gray-500' : 'text-gray-700'}`}>Allow multiple selections</span>
+                                </label>
+                              )}
+                            </div>
+
+                            {/* Conditional Logic - Disabled for fixed questions */}
+                            {!isFixed && !question.isFixed && (
+                              <div className="mt-6">
+                                <ConditionalLogic
+                                  question={question}
+                                  allQuestions={getAllQuestions()}
+                                  onUpdate={updateQuestion}
+                                  sectionIndex={currentSection}
+                                  questionIndex={questionIndex}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Add Question Button */}
+                    <div className="mt-6">
+                      <button
+                        onClick={() => setShowQuestionTypes(true)}
+                        className="w-full flex items-center justify-center space-x-2 py-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 hover:text-gray-700 transition-colors"
+                      >
+                        <Plus className="w-5 h-5" />
+                        <span>Add Question</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Question Type Modal */}
+        {showQuestionTypes && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl p-6 max-w-4xl w-full max-h-[80vh] overflow-y-auto">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-semibold text-gray-900">Choose Question Type</h3>
+                <button
+                  onClick={() => setShowQuestionTypes(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {questionTypes.map((type) => {
+                  const Icon = type.icon;
+                  return (
+                    <button
+                      key={type.id}
+                      onClick={() => addNewQuestion(type.id)}
+                      className="p-4 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors text-left"
+                    >
+                      <div className="flex items-center space-x-3 mb-2">
+                        <Icon className={`w-5 h-5 text-${type.color}-600`} />
+                        <span className="font-medium text-gray-900">{type.name}</span>
+                      </div>
+                      <p className="text-sm text-gray-600">{type.description}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+
+        {/* Delete Section Confirmation Modal */}
+        {showDeleteSectionModal && sectionToDelete && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                  <AlertCircle className="w-5 h-5 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Delete Section</h3>
+                  <p className="text-sm text-gray-600">This action cannot be undone</p>
+                </div>
+              </div>
+              
+              <div className="mb-6">
+                <p className="text-gray-700 mb-2">
+                  Are you sure you want to delete <strong>"{sectionToDelete.section.title}"</strong>?
+                </p>
+                <p className="text-sm text-gray-600">
+                  This section contains <strong>{sectionToDelete.section.questions.length} question{sectionToDelete.section.questions.length !== 1 ? 's' : ''}</strong> that will also be deleted.
+                </p>
+              </div>
+              
+              <div className="flex items-center justify-end space-x-3">
+                <button
+                  onClick={() => {
+                    setShowDeleteSectionModal(false);
+                    setSectionToDelete(null);
+                  }}
+                  className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => confirmDeleteSection(sectionToDelete.index)}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  Delete Section
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default SurveyQuestionBuilder;

@@ -1,0 +1,1176 @@
+import React, { useState, useEffect } from 'react';
+import { useToast } from '../../contexts/ToastContext';
+import { 
+  Search,
+  Filter,
+  Eye,
+  Play,
+  Pause,
+  Volume2,
+  Calendar,
+  Clock,
+  User,
+  Users,
+  CheckCircle,
+  AlertCircle,
+  X,
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  Headphones,
+  Download,
+  RefreshCw,
+  BarChart3,
+  Target,
+  Award,
+  Zap,
+  TrendingUp,
+  MapPin
+} from 'lucide-react';
+import { surveyResponseAPI } from '../../services/api';
+
+const MyInterviews = () => {
+  const [interviews, setInterviews] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterGender, setFilterGender] = useState('');
+  const [ageRange, setAgeRange] = useState({ min: '', max: '' });
+  const [sortBy, setSortBy] = useState('endTime');
+  const [sortOrder, setSortOrder] = useState('desc');
+  const [selectedInterview, setSelectedInterview] = useState(null);
+  const [showResponseDetails, setShowResponseDetails] = useState(false);
+  const [audioPlaying, setAudioPlaying] = useState(null);
+  const [audioElement, setAudioElement] = useState(null);
+  const { showSuccess, showError } = useToast();
+
+  // Fetch interviews for the logged-in interviewer
+  useEffect(() => {
+    fetchMyInterviews();
+  }, [searchTerm, filterStatus, filterGender, ageRange, sortBy, sortOrder]);
+
+  const fetchMyInterviews = async () => {
+    try {
+      setLoading(true);
+      const response = await surveyResponseAPI.getMyInterviews({
+        search: searchTerm,
+        status: filterStatus,
+        gender: filterGender,
+        ageMin: ageRange.min,
+        ageMax: ageRange.max,
+        sortBy,
+        sortOrder
+      });
+      
+      if (response.success) {
+        setInterviews(response.data.interviews);
+      } else {
+        showError('Failed to fetch your interviews');
+      }
+    } catch (error) {
+      console.error('Error fetching interviews:', error);
+      showError('Failed to fetch your interviews');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'Pending_Approval':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'Approved':
+        return 'bg-green-100 text-green-800';
+      case 'Rejected':
+        return 'bg-red-100 text-red-800';
+      case 'completed':
+        return 'bg-blue-100 text-blue-800';
+      case 'abandoned':
+        return 'bg-gray-100 text-gray-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case 'Pending_Approval':
+        return <Clock className="w-4 h-4" />;
+      case 'Approved':
+        return <CheckCircle className="w-4 h-4" />;
+      case 'Rejected':
+        return <AlertCircle className="w-4 h-4" />;
+      case 'completed':
+        return <CheckCircle className="w-4 h-4" />;
+      case 'abandoned':
+        return <X className="w-4 h-4" />;
+      default:
+        return <Clock className="w-4 h-4" />;
+    }
+  };
+
+  const formatDuration = (seconds) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m ${secs}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${secs}s`;
+    } else {
+      return `${secs}s`;
+    }
+  };
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-IN', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const handleViewResponse = (interview) => {
+    setSelectedInterview(interview);
+    setShowResponseDetails(true);
+  };
+
+  const handlePlayAudio = async (audioUrl, interviewId) => {
+    if (audioPlaying === interviewId) {
+      // Pause current audio
+      if (audioElement) {
+        audioElement.pause();
+        setAudioPlaying(null);
+        setAudioElement(null);
+      }
+    } else {
+      // Stop any currently playing audio
+      if (audioElement) {
+        audioElement.pause();
+      }
+      
+      try {
+        // Create full URL for audio file
+        const fullAudioUrl = audioUrl.startsWith('http') 
+          ? audioUrl 
+          : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}${audioUrl}`;
+        
+        // First check if the file exists
+        try {
+          const response = await fetch(fullAudioUrl, { method: 'HEAD' });
+          if (!response.ok) {
+            if (response.status === 404) {
+              showError('Audio file not found. The file may have been deleted or moved.');
+              setAudioPlaying(null);
+              setAudioElement(null);
+              return;
+            } else {
+              showError(`Failed to access audio file. Server returned ${response.status}.`);
+              setAudioPlaying(null);
+              setAudioElement(null);
+              return;
+            }
+          }
+        } catch (fetchError) {
+          console.error('Error checking audio file:', fetchError);
+          showError('Failed to access audio file. Please check your connection.');
+          setAudioPlaying(null);
+          setAudioElement(null);
+          return;
+        }
+        
+        // Always use video element for WebM files (which are actually video/webm)
+        const mediaElement = document.createElement('video');
+        mediaElement.style.display = 'none'; // Hide the video element
+        
+        // Add event listeners
+        mediaElement.addEventListener('ended', () => {
+          setAudioPlaying(null);
+          setAudioElement(null);
+        });
+        
+        mediaElement.addEventListener('error', (e) => {
+          console.error('Media playback error:', e);
+          // Check if it's a 404 error (file not found)
+          if (e.target.error && e.target.error.code === 4) {
+            showError('Audio file not found. The file may have been deleted or moved.');
+          } else {
+            showError('Failed to play audio. The file may be corrupted or in an unsupported format.');
+          }
+          setAudioPlaying(null);
+          setAudioElement(null);
+        });
+        
+        // Set source and play
+        mediaElement.src = fullAudioUrl;
+        await mediaElement.load();
+        await mediaElement.play();
+        setAudioPlaying(interviewId);
+        setAudioElement(mediaElement);
+      } catch (error) {
+        console.error('Error playing audio:', error);
+        showError('Failed to play audio. Please check if the file exists and is accessible.');
+        setAudioPlaying(null);
+        setAudioElement(null);
+      }
+    }
+  };
+
+  const getRespondentInfo = (responses) => {
+    // Extract respondent information from responses
+    const nameResponse = responses.find(r => 
+      r.questionText.toLowerCase().includes('name') || 
+      r.questionText.toLowerCase().includes('respondent')
+    );
+    const genderResponse = responses.find(r => 
+      r.questionText.toLowerCase().includes('gender') || 
+      r.questionText.toLowerCase().includes('sex')
+    );
+    const ageResponse = responses.find(r => 
+      r.questionText.toLowerCase().includes('age') || 
+      r.questionText.toLowerCase().includes('year')
+    );
+
+    return {
+      name: nameResponse?.response || 'Not Available',
+      gender: genderResponse?.response || 'Not Available',
+      age: ageResponse?.response || 'Not Available'
+    };
+  };
+
+  // Helper function to parse age from response
+  const parseAge = (ageResponse) => {
+    if (!ageResponse || ageResponse === 'Not Available') return null;
+    
+    // Try to extract number from the response
+    const ageMatch = ageResponse.toString().match(/\d+/);
+    return ageMatch ? parseInt(ageMatch[0]) : null;
+  };
+
+  // Helper function to check if age is in range
+  const isAgeInRange = (age, minAge, maxAge) => {
+    if (!age) return false;
+    if (minAge && age < parseInt(minAge)) return false;
+    if (maxAge && age > parseInt(maxAge)) return false;
+    return true;
+  };
+
+  // Helper function to clear all filters
+  const clearAllFilters = () => {
+    setSearchTerm('');
+    setFilterStatus('');
+    setFilterGender('');
+    setAgeRange({ min: '', max: '' });
+  };
+
+  // Helper function to get active filter count
+  const getActiveFilterCount = () => {
+    let count = 0;
+    if (searchTerm) count++;
+    if (filterStatus) count++;
+    if (filterGender) count++;
+    if (ageRange.min || ageRange.max) count++;
+    return count;
+  };
+
+  // Helper function to get operator description for conditional logic
+  const getOperatorDescription = (operator) => {
+    switch (operator) {
+      case 'equals': return 'is exactly';
+      case 'not_equals': return 'is not';
+      case 'contains': return 'contains';
+      case 'not_contains': return 'does not contain';
+      case 'greater_than': return 'is greater than';
+      case 'less_than': return 'is less than';
+      case 'is_empty': return 'is empty';
+      case 'is_not_empty': return 'is not empty';
+      case 'is_selected': return 'is selected';
+      case 'is_not_selected': return 'is not selected';
+      default: return operator;
+    }
+  };
+
+  // Helper function to find question by ID in survey data
+  const findQuestionById = (questionId, survey) => {
+    if (survey?.sections) {
+      for (const section of survey.sections) {
+        if (section.questions) {
+          for (const question of section.questions) {
+            if (question.id === questionId) {
+              return question;
+            }
+          }
+        }
+      }
+    }
+    return null;
+  };
+
+  // Helper function to find question by text in survey data
+  const findQuestionByText = (questionText, survey) => {
+    if (survey?.sections) {
+      for (const section of survey.sections) {
+        if (section.questions) {
+          for (const question of section.questions) {
+            if (question.text === questionText) {
+              return question;
+            }
+          }
+        }
+      }
+    }
+    return null;
+  };
+
+  // Helper function to evaluate if a condition is met
+  const evaluateCondition = (condition, responses) => {
+    if (!condition.questionId || !condition.operator || condition.value === undefined || condition.value === '__NOVALUE__') {
+      return false;
+    }
+
+    // Find the response for the target question
+    const targetResponse = responses.find(response => {
+      // Try to match by question ID first, then by question text
+      return response.questionId === condition.questionId || 
+             response.questionText === condition.questionText;
+    });
+
+    if (!targetResponse || !targetResponse.response) {
+      return false;
+    }
+
+    const responseValue = targetResponse.response;
+    const conditionValue = condition.value;
+
+    switch (condition.operator) {
+      case 'equals':
+        return responseValue === conditionValue;
+      case 'not_equals':
+        return responseValue !== conditionValue;
+      case 'contains':
+        return responseValue.toString().toLowerCase().includes(conditionValue.toString().toLowerCase());
+      case 'not_contains':
+        return !responseValue.toString().toLowerCase().includes(conditionValue.toString().toLowerCase());
+      case 'greater_than':
+        return parseFloat(responseValue) > parseFloat(conditionValue);
+      case 'less_than':
+        return parseFloat(responseValue) < parseFloat(conditionValue);
+      case 'is_empty':
+        return !responseValue || responseValue.toString().trim() === '';
+      case 'is_not_empty':
+        return responseValue && responseValue.toString().trim() !== '';
+      case 'is_selected':
+        return responseValue === conditionValue;
+      case 'is_not_selected':
+        return responseValue !== conditionValue;
+      default:
+        return false;
+    }
+  };
+
+  // Helper function to check if all conditions are met
+  const areConditionsMet = (conditions, responses) => {
+    if (!conditions || conditions.length === 0) return true;
+    
+    return conditions.every(condition => evaluateCondition(condition, responses));
+  };
+
+  // Helper function to calculate effective questions (only questions that were actually shown)
+  const calculateEffectiveQuestions = (responses, survey) => {
+    return responses?.filter(r => {
+      // If not skipped, it was shown and answered
+      if (!r.isSkipped) return true;
+      
+      // If skipped, check if it was due to unmet conditions
+      const surveyQuestion = findQuestionByText(r.questionText, survey);
+      const hasConditions = surveyQuestion?.conditions && surveyQuestion.conditions.length > 0;
+      
+      if (hasConditions) {
+        // Check if conditions were met
+        const conditionsMet = areConditionsMet(surveyQuestion.conditions, responses);
+        
+        // If conditions were not met, this question was never shown
+        if (!conditionsMet) {
+          return false;
+        }
+      }
+      
+      // If no conditions or conditions were met, user saw it and chose to skip
+      return true;
+    }).length || 0;
+  };
+
+  // Helper function to format conditional logic
+  const formatConditionalLogic = (conditions, survey) => {
+    if (!conditions || conditions.length === 0) return null;
+    
+    const formattedConditions = conditions
+      .filter(condition => condition.questionId && condition.operator && condition.value !== undefined && condition.value !== '__NOVALUE__')
+      .map((condition, index) => {
+        const targetQuestion = findQuestionById(condition.questionId, survey);
+        const targetQuestionText = targetQuestion ? targetQuestion.text : `Question ${condition.questionId}`;
+        const operator = getOperatorDescription(condition.operator);
+        const value = condition.value;
+        
+        return `${targetQuestionText} ${operator} "${value}"`;
+      });
+
+    if (formattedConditions.length === 0) return null;
+    
+    return formattedConditions.join(' AND ');
+  };
+
+  const filteredInterviews = interviews.filter(interview => {
+    const respondentInfo = getRespondentInfo(interview.responses);
+    
+    // Search filter - now includes respondent name
+    const matchesSearch = !searchTerm || 
+      interview.survey?.surveyName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      interview.responseId?.toString().includes(searchTerm) ||
+      interview.sessionId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      respondentInfo.name.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    // Status filter
+    const matchesStatus = !filterStatus || interview.status === filterStatus;
+    
+    // Gender filter
+    const matchesGender = !filterGender || 
+      respondentInfo.gender.toLowerCase() === filterGender.toLowerCase();
+    
+    // Age range filter
+    const respondentAge = parseAge(respondentInfo.age);
+    const matchesAgeRange = !ageRange.min && !ageRange.max || 
+      isAgeInRange(respondentAge, ageRange.min, ageRange.max);
+    
+    return matchesSearch && matchesStatus && matchesGender && matchesAgeRange;
+  });
+
+  const sortedInterviews = [...filteredInterviews].sort((a, b) => {
+    let aValue, bValue;
+    
+    switch (sortBy) {
+      case 'endTime':
+        aValue = new Date(a.endTime);
+        bValue = new Date(b.endTime);
+        break;
+      case 'totalTimeSpent':
+        aValue = a.totalTimeSpent;
+        bValue = b.totalTimeSpent;
+        break;
+      case 'answeredQuestions':
+        aValue = a.answeredQuestions;
+        bValue = b.answeredQuestions;
+        break;
+      case 'completionPercentage':
+        aValue = a.completionPercentage;
+        bValue = b.completionPercentage;
+        break;
+      default:
+        aValue = new Date(a.endTime);
+        bValue = new Date(b.endTime);
+    }
+    
+    if (sortOrder === 'asc') {
+      return aValue > bValue ? 1 : -1;
+    } else {
+      return aValue < bValue ? 1 : -1;
+    }
+  });
+
+  return (
+    <>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">My Interviews</h1>
+          <p className="text-gray-600">View and manage all your completed interviews</p>
+        </div>
+        <button
+          onClick={fetchMyInterviews}
+          disabled={loading}
+          className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+        >
+          <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+          <div className="flex items-center">
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <FileText className="w-6 h-6 text-blue-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600">Total Interviews</p>
+              <p className="text-2xl font-bold text-gray-900">{interviews.length}</p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+          <div className="flex items-center">
+            <div className="p-2 bg-green-100 rounded-lg">
+              <CheckCircle className="w-6 h-6 text-green-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600">Approved</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {interviews.filter(i => i.status === 'Approved').length}
+              </p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+          <div className="flex items-center">
+            <div className="p-2 bg-yellow-100 rounded-lg">
+              <Clock className="w-6 h-6 text-yellow-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600">Pending</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {interviews.filter(i => i.status === 'Pending_Approval').length}
+              </p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+          <div className="flex items-center">
+            <div className="p-2 bg-purple-100 rounded-lg">
+              <Headphones className="w-6 h-6 text-purple-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600">With Audio</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {interviews.filter(i => i.audioRecording?.hasAudio).length}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Advanced Filters */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+        <div className="flex flex-col lg:flex-row gap-6">
+          {/* Search Section */}
+          <div className="flex-1">
+            <div className="flex flex-col">
+              <label className="text-xs font-medium text-gray-600 mb-1 invisible">Search</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <input
+                  type="text"
+                  placeholder="Search by survey title, respondent name, response ID, or session ID..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                />
+              </div>
+            </div>
+          </div>
+          
+          {/* Filter Controls */}
+          <div className="flex flex-col sm:flex-row gap-4">
+            {/* Status Filter */}
+            <div className="flex flex-col">
+              <label className="text-xs font-medium text-gray-600 mb-1">Status</label>
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              >
+                <option value="">All Status</option>
+                <option value="Pending_Approval">Pending Approval</option>
+                <option value="Approved">Approved</option>
+                <option value="Rejected">Rejected</option>
+                <option value="completed">Completed</option>
+                <option value="abandoned">Abandoned</option>
+              </select>
+            </div>
+
+            {/* Gender Filter */}
+            <div className="flex flex-col">
+              <label className="text-xs font-medium text-gray-600 mb-1">Gender</label>
+              <select
+                value={filterGender}
+                onChange={(e) => setFilterGender(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              >
+                <option value="">All Genders</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            {/* Age Range Filter */}
+            <div className="flex flex-col">
+              <label className="text-xs font-medium text-gray-600 mb-1">Age Range</label>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  placeholder="Min"
+                  value={ageRange.min}
+                  onChange={(e) => setAgeRange(prev => ({ ...prev, min: e.target.value }))}
+                  className="w-16 px-2 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  min="0"
+                  max="120"
+                />
+                <span className="flex items-center text-gray-500 text-sm">-</span>
+                <input
+                  type="number"
+                  placeholder="Max"
+                  value={ageRange.max}
+                  onChange={(e) => setAgeRange(prev => ({ ...prev, max: e.target.value }))}
+                  className="w-16 px-2 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  min="0"
+                  max="120"
+                />
+              </div>
+            </div>
+
+            {/* Sort Options */}
+            <div className="flex flex-col">
+              <label className="text-xs font-medium text-gray-600 mb-1">Sort By</label>
+              <select
+                value={`${sortBy}-${sortOrder}`}
+                onChange={(e) => {
+                  const [field, order] = e.target.value.split('-');
+                  setSortBy(field);
+                  setSortOrder(order);
+                }}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              >
+                <option value="endTime-desc">Latest First</option>
+                <option value="endTime-asc">Oldest First</option>
+                <option value="totalTimeSpent-desc">Longest Duration</option>
+                <option value="totalTimeSpent-asc">Shortest Duration</option>
+                <option value="answeredQuestions-desc">Most Questions</option>
+                <option value="answeredQuestions-asc">Least Questions</option>
+                <option value="completionPercentage-desc">Highest Completion</option>
+                <option value="completionPercentage-asc">Lowest Completion</option>
+              </select>
+            </div>
+
+            {/* Clear Filters Button */}
+            {getActiveFilterCount() > 0 && (
+              <div className="flex flex-col">
+                <label className="text-xs font-medium text-gray-600 mb-1">&nbsp;</label>
+                <button
+                  onClick={clearAllFilters}
+                  className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                >
+                  Clear All
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Active Filters Display */}
+        {getActiveFilterCount() > 0 && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-gray-600">Active filters:</span>
+              {searchTerm && (
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                  Search: "{searchTerm}"
+                  <button
+                    onClick={() => setSearchTerm('')}
+                    className="ml-1 text-blue-600 hover:text-blue-800"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+              {filterStatus && (
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                  Status: {filterStatus}
+                  <button
+                    onClick={() => setFilterStatus('')}
+                    className="ml-1 text-green-600 hover:text-green-800"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+              {filterGender && (
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                  Gender: {filterGender}
+                  <button
+                    onClick={() => setFilterGender('')}
+                    className="ml-1 text-purple-600 hover:text-purple-800"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+              {(ageRange.min || ageRange.max) && (
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                  Age: {ageRange.min || '0'} - {ageRange.max || '∞'}
+                  <button
+                    onClick={() => setAgeRange({ min: '', max: '' })}
+                    className="ml-1 text-orange-600 hover:text-orange-800"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Interviews Table */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <RefreshCw className="w-8 h-8 text-gray-400 animate-spin" />
+            <span className="ml-2 text-gray-600">Loading interviews...</span>
+          </div>
+        ) : sortedInterviews.length === 0 ? (
+          <div className="text-center py-12">
+            <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No interviews found</h3>
+            <p className="text-gray-600">
+              {searchTerm || filterStatus 
+                ? 'Try adjusting your search or filter criteria.' 
+                : 'You haven\'t completed any interviews yet.'}
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{width: '240px'}}>
+                    Interview Details
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Respondent Info
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Progress
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Duration
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Audio
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {sortedInterviews.map((interview) => {
+                  const respondentInfo = getRespondentInfo(interview.responses);
+                  return (
+                    <tr key={interview._id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4" style={{width: '240px'}}>
+                        <div className="max-w-none">
+                          <div 
+                            className="text-sm font-medium text-gray-900 cursor-help"
+                            style={{width: '200px', wordWrap: 'break-word'}}
+                            title={interview.survey?.surveyName || 'Unknown Survey'}
+                          >
+                            {interview.survey?.surveyName 
+                              ? (interview.survey.surveyName.length > 60 
+                                  ? `${interview.survey.surveyName.substring(0, 60)}...` 
+                                  : interview.survey.surveyName)
+                              : 'Unknown Survey'
+                            }
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            ID: {interview.responseId}
+                          </div>
+                          <div className="text-xs text-gray-400">
+                            {formatDate(interview.endTime)}
+                          </div>
+                        </div>
+                      </td>
+                      
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">
+                          <div className="flex items-center mb-1">
+                            <User className="w-4 h-4 mr-1 text-gray-400" />
+                            {respondentInfo.name}
+                          </div>
+                          <div className="flex items-center mb-1">
+                            <Users className="w-4 h-4 mr-1 text-gray-400" />
+                            {respondentInfo.gender}
+                          </div>
+                          <div className="flex items-center">
+                            <Calendar className="w-4 h-4 mr-1 text-gray-400" />
+                            {respondentInfo.age}
+                          </div>
+                          {interview.location && (
+                            <div className="flex items-center mt-1">
+                              <MapPin className="w-4 h-4 mr-1 text-green-400" />
+                              <span className="text-green-600 font-medium text-xs">
+                                {interview.location.city}, {interview.location.state}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">
+                          <div className="flex items-center mb-1">
+                            <Target className="w-4 h-4 mr-1 text-gray-400" />
+                            {interview.answeredQuestions || 0} / {interview.totalQuestions || 0}
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div 
+                              className="bg-blue-600 h-2 rounded-full" 
+                              style={{ width: `${interview.completionPercentage || 0}%` }}
+                            ></div>
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            {interview.completionPercentage || 0}% complete
+                          </div>
+                        </div>
+                      </td>
+                      
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center text-sm text-gray-900">
+                          <Clock className="w-4 h-4 mr-1 text-gray-400" />
+                          {formatDuration(interview.totalTimeSpent || 0)}
+                        </div>
+                      </td>
+                      
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(interview.status)}`}>
+                          {getStatusIcon(interview.status)}
+                          <span className="ml-1">{interview.status}</span>
+                        </span>
+                      </td>
+                      
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {interview.audioRecording?.hasAudio ? (
+                          <button
+                            onClick={() => handlePlayAudio(interview.audioRecording.audioUrl, interview._id)}
+                            className="inline-flex items-center px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                          >
+                            {audioPlaying === interview._id ? (
+                              <Pause className="w-4 h-4 mr-1" />
+                            ) : (
+                              <Play className="w-4 h-4 mr-1" />
+                            )}
+                            {audioPlaying === interview._id ? 'Pause' : 'Play'}
+                          </button>
+                        ) : (
+                          <span className="text-sm text-gray-400">No Audio</span>
+                        )}
+                      </td>
+                      
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <button
+                          onClick={() => handleViewResponse(interview)}
+                          className="inline-flex items-center px-3 py-1 border border-transparent rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        >
+                          <Eye className="w-4 h-4 mr-1" />
+                          View Details
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+    </div>
+
+    {/* Response Details Modal */}
+    {showResponseDetails && selectedInterview && (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-xl shadow-lg w-full max-w-7xl h-[90vh] flex flex-col">
+          {/* Modal Header */}
+          <div className="flex justify-between items-center p-6 border-b border-gray-200 flex-shrink-0">
+            <div className="flex-1 min-w-0 pr-4">
+              <h3 className="text-lg font-medium text-gray-900">
+                Interview Response Details
+              </h3>
+              <div className="text-sm text-gray-600 space-y-1">
+                <p>Response ID: {selectedInterview.responseId}</p>
+                <p className="break-words max-w-4xl">
+                  Survey: {selectedInterview.survey?.surveyName || 'Unknown Survey'}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowResponseDetails(false)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+
+          {/* Modal Content */}
+          <div className="flex-1 overflow-y-auto p-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Interview Info */}
+            <div className="lg:col-span-2">
+              <div className="bg-gray-50 p-4 rounded-lg flex-shrink-0">
+                <h4 className="font-medium text-gray-900 mb-3">Interview Information</h4>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-600">Duration:</span>
+                    <span className="ml-2 font-medium">{formatDuration(selectedInterview.totalTimeSpent)}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Completion:</span>
+                    <span className="ml-2 font-medium">
+                      {(() => {
+                        const effectiveTotal = calculateEffectiveQuestions(selectedInterview.responses, selectedInterview.survey);
+                        return effectiveTotal > 0 ? Math.round((selectedInterview.answeredQuestions / effectiveTotal) * 100) : 0;
+                      })()}%
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Questions:</span>
+                    <span className="ml-2 font-medium">{selectedInterview.answeredQuestions}/{calculateEffectiveQuestions(selectedInterview.responses, selectedInterview.survey)}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Status:</span>
+                    <span className={`ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(selectedInterview.status)}`}>
+                      {selectedInterview.status}
+                    </span>
+                  </div>
+                  {selectedInterview.location && (
+                    <>
+                      <div>
+                        <span className="text-gray-600">Location:</span>
+                        <span className="ml-2 font-medium">
+                          {selectedInterview.location.city}, {selectedInterview.location.state}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Coordinates:</span>
+                        <span className="ml-2 font-medium text-xs">
+                          {selectedInterview.location.latitude.toFixed(6)}, {selectedInterview.location.longitude.toFixed(6)}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Location Information */}
+              {selectedInterview.location && (
+                <div className="mt-6">
+                  <h4 className="font-medium text-gray-900 mb-3">Interview Location</h4>
+                  <div className="bg-white border border-gray-200 rounded-lg p-4">
+                    <div className="mb-3">
+                      <p className="text-sm text-gray-600 mb-1">
+                        <strong>Address:</strong> {selectedInterview.location.address}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        <strong>Accuracy:</strong> ±{Math.round(selectedInterview.location.accuracy)} meters
+                      </p>
+                    </div>
+                    <div className="w-full h-64 bg-gray-100 rounded-lg overflow-hidden">
+                      <iframe
+                        src={`https://www.openstreetmap.org/export/embed.html?bbox=${selectedInterview.location.longitude-0.01},${selectedInterview.location.latitude-0.01},${selectedInterview.location.longitude+0.01},${selectedInterview.location.latitude+0.01}&layer=mapnik&marker=${selectedInterview.location.latitude},${selectedInterview.location.longitude}`}
+                        width="100%"
+                        height="100%"
+                        style={{ border: 0 }}
+                        title="Interview Location"
+                      />
+                    </div>
+                    <div className="mt-2 text-center">
+                      <a
+                        href={`https://www.openstreetmap.org/?mlat=${selectedInterview.location.latitude}&mlon=${selectedInterview.location.longitude}&zoom=15`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 text-sm underline"
+                      >
+                        View on OpenStreetMap
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Responses */}
+              <div className="mt-6">
+                <h4 className="font-medium text-gray-900 mb-3">Question Responses</h4>
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                  {selectedInterview.responses?.map((response, index) => {
+                    // Find the corresponding question in the survey to get conditional logic
+                    const surveyQuestion = findQuestionByText(response.questionText, selectedInterview.survey);
+                    const hasConditions = surveyQuestion?.conditions && surveyQuestion.conditions.length > 0;
+                    const conditionsMet = hasConditions ? areConditionsMet(surveyQuestion.conditions, selectedInterview.responses) : true;
+                    
+                    return (
+                      <div key={index} className="border border-gray-200 rounded-lg p-4">
+                        <div className="flex items-start justify-between mb-2">
+                          <h5 className="font-medium text-gray-900 text-sm">
+                            Q{index + 1}: {response.questionText}
+                          </h5>
+                          <div className="flex items-center space-x-2">
+                            {hasConditions && conditionsMet && (
+                              <div className="flex items-center space-x-1 px-2 py-1 bg-green-100 text-green-800 rounded-md">
+                                <Zap className="w-3 h-3" />
+                                <span className="text-xs font-medium">Condition Met</span>
+                              </div>
+                            )}
+                            {hasConditions && !conditionsMet && (
+                              <div className="flex items-center space-x-1 px-2 py-1 bg-red-100 text-red-800 rounded-md">
+                                <Zap className="w-3 h-3" />
+                                <span className="text-xs font-medium">Condition Not Met</span>
+                              </div>
+                            )}
+                            {response.isSkipped && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                Skipped
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {response.questionDescription && (
+                          <p className="text-xs text-gray-600 mb-2">{response.questionDescription}</p>
+                        )}
+                        
+                        {/* Conditional Logic Display */}
+                        {hasConditions && (
+                          <div className={`mb-3 p-3 border rounded-lg ${
+                            conditionsMet 
+                              ? 'bg-green-50 border-green-200' 
+                              : 'bg-red-50 border-red-200'
+                          }`}>
+                            <div className="flex items-center space-x-2 mb-2">
+                              <Zap className={`w-4 h-4 ${conditionsMet ? 'text-green-600' : 'text-red-600'}`} />
+                              <span className={`text-sm font-medium ${conditionsMet ? 'text-green-800' : 'text-red-800'}`}>
+                                Conditional Logic:
+                              </span>
+                            </div>
+                            <p className={`text-sm leading-relaxed ${conditionsMet ? 'text-green-700' : 'text-red-700'}`}>
+                              {conditionsMet 
+                                ? `This question appeared because: ${formatConditionalLogic(surveyQuestion.conditions, selectedInterview.survey)}`
+                                : `This question was skipped because: ${formatConditionalLogic(surveyQuestion.conditions, selectedInterview.survey)} (condition not met)`
+                              }
+                            </p>
+                          </div>
+                        )}
+                        
+                        <div className="bg-gray-50 p-3 rounded-md">
+                          <p className="text-sm text-gray-800">
+                            <strong>Answer:</strong> {JSON.stringify(response.response)}
+                          </p>
+                        </div>
+                        {response.responseTime > 0 && (
+                          <p className="text-xs text-gray-500 mt-2">
+                            Response time: {response.responseTime}s
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Audio Player */}
+            <div className="space-y-6">
+              {selectedInterview.audioRecording?.hasAudio ? (
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-gray-900 mb-3 flex items-center">
+                    <Headphones className="w-5 h-5 mr-2" />
+                    Audio Recording
+                  </h4>
+                  <div className="space-y-3">
+                    <div className="text-sm text-gray-600">
+                      <div>Duration: {formatDuration(selectedInterview.audioRecording.recordingDuration)}</div>
+                      <div>Format: {selectedInterview.audioRecording.format?.toUpperCase()}</div>
+                      <div>Size: {(selectedInterview.audioRecording.fileSize / 1024).toFixed(1)} KB</div>
+                      <div>File: {selectedInterview.audioRecording.audioUrl.split('/').pop()}</div>
+                    </div>
+                    <button
+                      onClick={() => handlePlayAudio(selectedInterview.audioRecording.audioUrl, selectedInterview._id)}
+                      className="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    >
+                      {audioPlaying === selectedInterview._id ? (
+                        <>
+                          <Pause className="w-4 h-4 mr-2" />
+                          Pause Audio
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-4 h-4 mr-2" />
+                          Play Audio
+                        </>
+                      )}
+                    </button>
+                    <video
+                      ref={(el) => {
+                        if (el && audioPlaying === selectedInterview._id) {
+                          const fullAudioUrl = selectedInterview.audioRecording.audioUrl.startsWith('http') 
+                            ? selectedInterview.audioRecording.audioUrl 
+                            : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}${selectedInterview.audioRecording.audioUrl}`;
+                          el.src = fullAudioUrl;
+                        }
+                      }}
+                      onEnded={() => setAudioPlaying(null)}
+                      onError={(e) => {
+                        console.error('Video element error:', e);
+                        showError('Failed to load audio file');
+                      }}
+                      className="w-full"
+                      controls
+                      style={{ 
+                        height: '40px', // Make it look like an audio player
+                        objectFit: 'none' // Hide video content
+                      }}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-gray-50 p-4 rounded-lg text-center">
+                  <Headphones className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-sm text-gray-600">No audio recording available</p>
+                </div>
+              )}
+
+              {/* Quality Metrics */}
+              {selectedInterview.qualityMetrics && (
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-gray-900 mb-3">Quality Metrics</h4>
+                  <div className="space-y-2 text-sm">
+                    {Object.entries(selectedInterview.qualityMetrics).map(([key, value]) => (
+                      <div key={key} className="flex justify-between">
+                        <span className="text-gray-600 capitalize">{key.replace(/([A-Z])/g, ' $1')}:</span>
+                        <span className="font-medium">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
+  );
+};
+
+export default MyInterviews;
