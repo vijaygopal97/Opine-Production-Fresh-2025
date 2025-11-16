@@ -8,6 +8,7 @@ const {
   getQualityAgentTrends,
   getQualityAgentReviews
 } = require('../controllers/performanceController');
+const { getQCPerformanceBySurvey, getQCPerformanceTrends } = require('../controllers/qcPerformanceController');
 const { protect, authorize } = require('../middleware/auth');
 
 // All routes are protected
@@ -59,5 +60,16 @@ router.get('/quality-agent/trends', authorize('quality_agent'), getQualityAgentT
 // @desc    Get quality agent reviewed responses history
 // @access  Private (Quality Agent)
 router.get('/quality-agent/reviews', authorize('quality_agent'), getQualityAgentReviews);
+
+// QC Performance Routes (for Company Admin)
+// @route   GET /api/performance/qc-performance/survey/:surveyId
+// @desc    Get QC performance for a specific survey (all quality agents)
+// @access  Private (Company Admin)
+router.get('/qc-performance/survey/:surveyId', authorize('company_admin'), getQCPerformanceBySurvey);
+
+// @route   GET /api/performance/qc-performance/survey/:surveyId/trends
+// @desc    Get QC performance trends for a specific survey (daily breakdown)
+// @access  Private (Company Admin)
+router.get('/qc-performance/survey/:surveyId/trends', authorize('company_admin'), getQCPerformanceTrends);
 
 module.exports = router;

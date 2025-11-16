@@ -20,6 +20,7 @@ import DataAnalystDashboard from './components/dashboard/DataAnalystDashboard';
 import ComingSoon from './components/dashboard/ComingSoon';
 import ViewResponsesPage from './pages/ViewResponsesPage';
 import SurveyReportsPage from './pages/SurveyReportsPage';
+import QCPerformancePage from './pages/QCPerformancePage';
 import PageTitleManager from './components/PageTitleManager';
 import './App.css';
 
@@ -104,6 +105,9 @@ function App() {
             
             {/* Survey Reports Page */}
             <Route path="/company/surveys/:surveyId/reports" element={<SurveyReportsPage />} />
+            
+            {/* QC Performance Page */}
+            <Route path="/company/surveys/:surveyId/qc-performance" element={<QCPerformancePage />} />
             
             {/* Project Manager routes */}
             <Route path="/project-manager/dashboard" element={<AdminDashboard />} />

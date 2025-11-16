@@ -862,6 +862,24 @@ export const performanceAPI = {
     } catch (error) {
       throw error;
     }
+  },
+
+  // Get QC performance for a specific survey (Company Admin)
+  getQCPerformanceBySurvey: async (surveyId, params = {}) => {
+    try {
+      const response = await api.get(`/api/performance/qc-performance/survey/${surveyId}`, { params });
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+  getQCPerformanceTrends: async (surveyId, params = {}) => {
+    try {
+      const response = await api.get(`/api/performance/qc-performance/survey/${surveyId}/trends`, { params });
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
   }
 };
 

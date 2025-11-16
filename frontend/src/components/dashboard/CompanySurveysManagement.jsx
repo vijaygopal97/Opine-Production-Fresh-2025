@@ -239,6 +239,10 @@ const CompanySurveysManagement = () => {
     navigate(`/company/surveys/${survey._id || survey.id}/responses`);
   };
 
+  const handleQCPerformance = (survey) => {
+    navigate(`/company/surveys/${survey._id || survey.id}/qc-performance`);
+  };
+
   const handleDeleteSurvey = async (surveyId) => {
     try {
       // Deleting survey
@@ -578,14 +582,24 @@ const CompanySurveysManagement = () => {
               <div className="flex flex-col space-y-2 ml-4">
                 {/* View Responses Button - Only show if there are approved responses */}
                 {(survey.analytics?.totalResponses || 0) > 0 && (
-                  <button
-                    onClick={() => handleViewResponses(survey)}
-                    className="flex items-center space-x-1 px-3 py-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors text-sm font-medium"
-                    title="View Responses"
-                  >
-                    <BarChart3 className="w-4 h-4" />
-                    <span>View Responses</span>
-                  </button>
+                  <>
+                    <button
+                      onClick={() => handleViewResponses(survey)}
+                      className="flex items-center space-x-1 px-3 py-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors text-sm font-medium"
+                      title="View Responses"
+                    >
+                      <BarChart3 className="w-4 h-4" />
+                      <span>View Responses</span>
+                    </button>
+                    <button
+                      onClick={() => handleQCPerformance(survey)}
+                      className="flex items-center space-x-1 px-3 py-1.5 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors text-sm font-medium"
+                      title="QC Performance"
+                    >
+                      <Target className="w-4 h-4" />
+                      <span>QC Performance</span>
+                    </button>
+                  </>
                 )}
                 
                 {/* Action Buttons Row 1 */}
