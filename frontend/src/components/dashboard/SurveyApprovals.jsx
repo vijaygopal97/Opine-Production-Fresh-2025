@@ -431,22 +431,32 @@ const SurveyApprovals = () => {
   // Helper function to get respondent info from responses
   const getRespondentInfo = (responses) => {
     const nameResponse = responses.find(r => 
-      r.questionText.toLowerCase().includes('name') || 
-      r.questionText.toLowerCase().includes('respondent')
+      r.questionText?.toLowerCase().includes('name') || 
+      r.questionText?.toLowerCase().includes('respondent')
     );
     const genderResponse = responses.find(r => 
-      r.questionText.toLowerCase().includes('gender') || 
-      r.questionText.toLowerCase().includes('sex')
+      r.questionText?.toLowerCase().includes('gender') || 
+      r.questionText?.toLowerCase().includes('sex')
     );
     const ageResponse = responses.find(r => 
-      r.questionText.toLowerCase().includes('age') || 
-      r.questionText.toLowerCase().includes('year')
+      r.questionText?.toLowerCase().includes('age') || 
+      r.questionText?.toLowerCase().includes('year')
     );
 
+    // Helper to extract value from response (handle arrays)
+    const extractValue = (response) => {
+      if (!response || response === null || response === undefined) return null;
+      if (Array.isArray(response)) {
+        // For arrays, return the first value (or join if needed)
+        return response.length > 0 ? response[0] : null;
+      }
+      return response;
+    };
+
     return {
-      name: nameResponse?.response || 'Not Available',
-      gender: genderResponse?.response || 'Not Available',
-      age: ageResponse?.response || 'Not Available'
+      name: extractValue(nameResponse?.response) || 'Not Available',
+      gender: extractValue(genderResponse?.response) || 'Not Available',
+      age: extractValue(ageResponse?.response) || 'Not Available'
     };
   };
 

@@ -915,9 +915,38 @@ const getMyInterviews = async (req, res) => {
         return false;
       }
 
-      const responseValue = targetResponse.response;
+      let responseValue = targetResponse.response;
       const conditionValue = condition.value;
 
+      // Handle array responses
+      const isArrayResponse = Array.isArray(responseValue);
+      if (isArrayResponse) {
+        // For array responses, check if any element matches the condition
+        switch (condition.operator) {
+          case 'equals':
+            return responseValue.includes(conditionValue);
+          case 'not_equals':
+            return !responseValue.includes(conditionValue);
+          case 'contains':
+            return responseValue.some(val => val.toString().toLowerCase().includes(conditionValue.toString().toLowerCase()));
+          case 'not_contains':
+            return !responseValue.some(val => val.toString().toLowerCase().includes(conditionValue.toString().toLowerCase()));
+          case 'is_selected':
+            return responseValue.includes(conditionValue);
+          case 'is_not_selected':
+            return !responseValue.includes(conditionValue);
+          case 'is_empty':
+            return responseValue.length === 0;
+          case 'is_not_empty':
+            return responseValue.length > 0;
+          default:
+            // For other operators, use first value or return false
+            if (responseValue.length === 0) return false;
+            responseValue = responseValue[0];
+        }
+      }
+
+      // Handle non-array responses
       switch (condition.operator) {
         case 'equals':
           return responseValue === conditionValue;
@@ -1033,6 +1062,24 @@ const getPendingApprovals = async (req, res) => {
     console.log('getPendingApprovals - User ID:', req.user.id, 'Type:', typeof req.user.id);
 
     // Build query - only get responses with status 'Pending_Approval' for surveys belonging to this company
+    const mongoose = require('mongoose');
+    const Survey = require('../models/Survey');
+    
+    // Convert companyId to ObjectId for proper matching
+    const companyObjectId = mongoose.Types.ObjectId.isValid(companyId) 
+      ? new mongoose.Types.ObjectId(companyId) 
+      : companyId;
+
+    // For company admins, first get all surveys for the company to filter responses
+    let companySurveyIds = null;
+    if (userType !== 'quality_agent') {
+      const companySurveys = await Survey.find({ company: companyObjectId })
+        .select('_id')
+        .lean();
+      companySurveyIds = companySurveys.map(s => s._id);
+      console.log('getPendingApprovals - Company survey IDs:', companySurveyIds.length);
+    }
+
     let query = { 
       status: 'Pending_Approval'
     };
@@ -1041,9 +1088,6 @@ const getPendingApprovals = async (req, res) => {
     let assignedSurveyIds = null;
     let surveyAssignmentsMap = {}; // Map to store AC assignments for each survey
     if (userType === 'quality_agent') {
-      const Survey = require('../models/Survey');
-      const mongoose = require('mongoose');
-      
       // Convert userId to ObjectId for proper matching
       const userIdObjectId = mongoose.Types.ObjectId.isValid(userId) 
         ? new mongoose.Types.ObjectId(userId) 
@@ -1128,6 +1172,19 @@ const getPendingApprovals = async (req, res) => {
       // Check how many pending responses exist for these surveys
       const pendingCount = await SurveyResponse.countDocuments(query);
       console.log('getPendingApprovals - Total pending responses for assigned surveys:', pendingCount);
+    } else if (companySurveyIds && companySurveyIds.length > 0) {
+      // For company admins, filter by company survey IDs
+      query.survey = { $in: companySurveyIds };
+      console.log('getPendingApprovals - Filtering by company survey IDs:', companySurveyIds.length);
+    } else if (companySurveyIds && companySurveyIds.length === 0) {
+      // Company has no surveys, return empty
+      return res.status(200).json({
+        success: true,
+        data: {
+          interviews: [],
+          total: 0
+        }
+      });
     }
 
     // Build sort object
@@ -1139,7 +1196,6 @@ const getPendingApprovals = async (req, res) => {
       .populate({
         path: 'survey',
         select: 'surveyName description category sections company assignedQualityAgents',
-        ...(userType !== 'quality_agent' ? { match: { company: companyId } } : {}), // Only filter by company if not quality agent (we already filtered by survey IDs)
         populate: {
           path: 'assignedQualityAgents.qualityAgent',
           select: 'firstName lastName email _id'
@@ -1262,29 +1318,42 @@ const getPendingApprovals = async (req, res) => {
     }
 
     // Helper functions to extract respondent info
+    // Helper to extract value from response (handle arrays)
+    function extractResponseValue(response) {
+      if (!response || response === null || response === undefined) return null;
+      if (Array.isArray(response)) {
+        // For arrays, return the first value (or join if needed)
+        return response.length > 0 ? response[0] : null;
+      }
+      return response;
+    }
+
     function getRespondentName(responses) {
       const nameResponse = responses.find(r => 
-        r.questionText.toLowerCase().includes('name') || 
-        r.questionText.toLowerCase().includes('respondent')
+        r.questionText?.toLowerCase().includes('name') || 
+        r.questionText?.toLowerCase().includes('respondent')
       );
-      return nameResponse?.response || 'Not Available';
+      const value = extractResponseValue(nameResponse?.response);
+      return value || 'Not Available';
     }
 
     function getRespondentGender(responses) {
       const genderResponse = responses.find(r => 
-        r.questionText.toLowerCase().includes('gender') || 
-        r.questionText.toLowerCase().includes('sex')
+        r.questionText?.toLowerCase().includes('gender') || 
+        r.questionText?.toLowerCase().includes('sex')
       );
-      return genderResponse?.response || 'Not Available';
+      const value = extractResponseValue(genderResponse?.response);
+      return value || 'Not Available';
     }
 
     function getRespondentAge(responses) {
       const ageResponse = responses.find(r => 
-        r.questionText.toLowerCase().includes('age') || 
-        r.questionText.toLowerCase().includes('year')
+        r.questionText?.toLowerCase().includes('age') || 
+        r.questionText?.toLowerCase().includes('year')
       );
-      if (!ageResponse?.response) return null;
-      const ageMatch = ageResponse.response.toString().match(/\d+/);
+      const value = extractResponseValue(ageResponse?.response);
+      if (!value) return null;
+      const ageMatch = value.toString().match(/\d+/);
       return ageMatch ? parseInt(ageMatch[0]) : null;
     }
 
@@ -1303,9 +1372,38 @@ const getPendingApprovals = async (req, res) => {
         return false;
       }
 
-      const responseValue = targetResponse.response;
+      let responseValue = targetResponse.response;
       const conditionValue = condition.value;
 
+      // Handle array responses
+      const isArrayResponse = Array.isArray(responseValue);
+      if (isArrayResponse) {
+        // For array responses, check if any element matches the condition
+        switch (condition.operator) {
+          case 'equals':
+            return responseValue.includes(conditionValue);
+          case 'not_equals':
+            return !responseValue.includes(conditionValue);
+          case 'contains':
+            return responseValue.some(val => val.toString().toLowerCase().includes(conditionValue.toString().toLowerCase()));
+          case 'not_contains':
+            return !responseValue.some(val => val.toString().toLowerCase().includes(conditionValue.toString().toLowerCase()));
+          case 'is_selected':
+            return responseValue.includes(conditionValue);
+          case 'is_not_selected':
+            return !responseValue.includes(conditionValue);
+          case 'is_empty':
+            return responseValue.length === 0;
+          case 'is_not_empty':
+            return responseValue.length > 0;
+          default:
+            // For other operators, use first value or return false
+            if (responseValue.length === 0) return false;
+            responseValue = responseValue[0];
+        }
+      }
+
+      // Handle non-array responses
       switch (condition.operator) {
         case 'equals':
           return responseValue === conditionValue;
@@ -1416,6 +1514,14 @@ const getNextReviewAssignment = async (req, res) => {
 
     console.log('getNextReviewAssignment - User:', req.user.email, req.user.userType);
 
+    const mongoose = require('mongoose');
+    const Survey = require('../models/Survey');
+    
+    // Convert companyId to ObjectId for proper matching
+    const companyObjectId = mongoose.Types.ObjectId.isValid(companyId) 
+      ? new mongoose.Types.ObjectId(companyId) 
+      : companyId;
+
     // Build base query - only get responses with status 'Pending_Approval' that are NOT assigned
     // Check for responses that either don't have reviewAssignment, or have expired assignments
     const now = new Date();
@@ -1432,15 +1538,12 @@ const getNextReviewAssignment = async (req, res) => {
     let assignedSurveyIds = null;
     let surveyAssignmentsMap = {};
     if (userType === 'quality_agent') {
-      const Survey = require('../models/Survey');
-      const mongoose = require('mongoose');
-      
       const userIdObjectId = mongoose.Types.ObjectId.isValid(userId) 
         ? new mongoose.Types.ObjectId(userId) 
         : userId;
       
       const assignedSurveys = await Survey.find({
-        company: companyId,
+        company: companyObjectId,
         'assignedQualityAgents.qualityAgent': { $in: [userIdObjectId, userId] }
       })
       .select('_id surveyName assignedQualityAgents')
@@ -1479,8 +1582,23 @@ const getNextReviewAssignment = async (req, res) => {
       
       query.survey = { $in: assignedSurveyIds };
     } else {
-      // For company admin, we'll filter by company in the populate match
-      // Don't add survey.company to query as it won't work before populate
+      // For company admin, get all surveys for the company and filter responses
+      const companySurveys = await Survey.find({ company: companyObjectId })
+        .select('_id')
+        .lean();
+      const companySurveyIds = companySurveys.map(s => s._id);
+      
+      if (companySurveyIds.length === 0) {
+        return res.status(200).json({
+          success: true,
+          data: {
+            interview: null,
+            message: 'No surveys found for your company'
+          }
+        });
+      }
+      
+      query.survey = { $in: companySurveyIds };
     }
 
     // Find the next available response (oldest first)
@@ -1488,7 +1606,6 @@ const getNextReviewAssignment = async (req, res) => {
       .populate({
         path: 'survey',
         select: 'surveyName description category sections company assignedQualityAgents',
-        ...(userType !== 'quality_agent' ? { match: { company: companyId } } : {}),
         populate: {
           path: 'assignedQualityAgents.qualityAgent',
           select: 'firstName lastName email _id'
@@ -1498,7 +1615,7 @@ const getNextReviewAssignment = async (req, res) => {
       .sort({ createdAt: 1 }) // Oldest first
       .lean();
 
-    // Filter out null surveys
+    // Filter out null surveys (shouldn't happen now, but keep as safety check)
     availableResponses = availableResponses.filter(response => response.survey !== null);
 
     // If quality agent, filter by AC assignments
@@ -1555,12 +1672,23 @@ const getNextReviewAssignment = async (req, res) => {
     }
 
     // Helper functions
+    // Helper to extract value from response (handle arrays)
+    function extractResponseValue(response) {
+      if (!response || response === null || response === undefined) return null;
+      if (Array.isArray(response)) {
+        // For arrays, return the first value (or join if needed)
+        return response.length > 0 ? response[0] : null;
+      }
+      return response;
+    }
+
     function getRespondentName(responses) {
       const nameResponse = responses?.find(r => 
         r.questionText?.toLowerCase().includes('name') || 
         r.questionText?.toLowerCase().includes('respondent')
       );
-      return nameResponse?.response || 'Not Available';
+      const value = extractResponseValue(nameResponse?.response);
+      return value || 'Not Available';
     }
 
     function getRespondentGender(responses) {
@@ -1568,7 +1696,8 @@ const getNextReviewAssignment = async (req, res) => {
         r.questionText?.toLowerCase().includes('gender') || 
         r.questionText?.toLowerCase().includes('sex')
       );
-      return genderResponse?.response || 'Not Available';
+      const value = extractResponseValue(genderResponse?.response);
+      return value || 'Not Available';
     }
 
     function getRespondentAge(responses) {
@@ -1576,8 +1705,9 @@ const getNextReviewAssignment = async (req, res) => {
         r.questionText?.toLowerCase().includes('age') || 
         r.questionText?.toLowerCase().includes('year')
       );
-      if (!ageResponse?.response) return null;
-      const ageMatch = ageResponse.response.toString().match(/\d+/);
+      const value = extractResponseValue(ageResponse?.response);
+      if (!value) return null;
+      const ageMatch = value.toString().match(/\d+/);
       return ageMatch ? parseInt(ageMatch[0]) : null;
     }
 
@@ -1647,8 +1777,38 @@ const getNextReviewAssignment = async (req, res) => {
       if (!targetResponse || !targetResponse.response) {
         return false;
       }
-      const responseValue = targetResponse.response;
+      let responseValue = targetResponse.response;
       const conditionValue = condition.value;
+
+      // Handle array responses
+      const isArrayResponse = Array.isArray(responseValue);
+      if (isArrayResponse) {
+        // For array responses, check if any element matches the condition
+        switch (condition.operator) {
+          case 'equals':
+            return responseValue.includes(conditionValue);
+          case 'not_equals':
+            return !responseValue.includes(conditionValue);
+          case 'contains':
+            return responseValue.some(val => val.toString().toLowerCase().includes(conditionValue.toString().toLowerCase()));
+          case 'not_contains':
+            return !responseValue.some(val => val.toString().toLowerCase().includes(conditionValue.toString().toLowerCase()));
+          case 'is_selected':
+            return responseValue.includes(conditionValue);
+          case 'is_not_selected':
+            return !responseValue.includes(conditionValue);
+          case 'is_empty':
+            return responseValue.length === 0;
+          case 'is_not_empty':
+            return responseValue.length > 0;
+          default:
+            // For other operators, use first value or return false
+            if (responseValue.length === 0) return false;
+            responseValue = responseValue[0];
+        }
+      }
+
+      // Handle non-array responses
       switch (condition.operator) {
         case 'equals': return responseValue === conditionValue;
         case 'not_equals': return responseValue !== conditionValue;

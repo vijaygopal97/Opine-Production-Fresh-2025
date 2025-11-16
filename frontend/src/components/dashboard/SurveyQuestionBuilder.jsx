@@ -259,7 +259,8 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
       settings: {
         allowMultiple: type === 'multiple_choice',
         allowOther: false,
-        required: true
+        required: true,
+        shuffleOptions: type === 'multiple_choice' ? true : undefined // Default to true for multiple_choice questions
       }
     };
 
@@ -983,50 +984,68 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
                               </label>
                               
                               {question.type === 'multiple_choice' && (
-                                <div className="flex items-center space-x-4 flex-wrap">
+                                <div className="space-y-3">
+                                  <div className="flex items-center space-x-4 flex-wrap">
+                                    <label className="flex items-center space-x-2">
+                                      <input
+                                        type="checkbox"
+                                        checked={question.settings?.allowMultiple || false}
+                                        onChange={(e) => !isFixed && updateQuestion(currentSection, questionIndex, {
+                                          settings: { 
+                                            ...question.settings, 
+                                            allowMultiple: e.target.checked,
+                                            // Reset maxSelections when disabling multiple selections
+                                            maxSelections: e.target.checked ? (question.settings?.maxSelections || null) : null
+                                          }
+                                        })}
+                                        className={`w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 ${isFixed ? 'cursor-not-allowed opacity-50' : ''}`}
+                                        disabled={isFixed}
+                                      />
+                                      <span className={`text-sm ${isFixed ? 'text-gray-500' : 'text-gray-700'}`}>Allow multiple selections</span>
+                                    </label>
+                                    
+                                    {question.settings?.allowMultiple && (
+                                      <div className="flex items-center space-x-2">
+                                        <label className="text-sm text-gray-700">Maximum selections:</label>
+                                        <input
+                                          type="number"
+                                          min="2"
+                                          max={question.options?.length || 999}
+                                          value={question.settings?.maxSelections || ''}
+                                          onChange={(e) => !isFixed && updateQuestion(currentSection, questionIndex, {
+                                            settings: { 
+                                              ...question.settings, 
+                                              maxSelections: e.target.value ? parseInt(e.target.value) : null
+                                            }
+                                          })}
+                                          placeholder="Unlimited"
+                                          className={`w-24 px-2 py-1 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${isFixed ? 'border-gray-200 bg-gray-50 text-gray-600 cursor-not-allowed' : 'border-gray-300'}`}
+                                          disabled={isFixed}
+                                        />
+                                        {question.settings?.maxSelections && (
+                                          <span className="text-xs text-gray-500">
+                                            (Max {question.settings.maxSelections} can be selected)
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                  
                                   <label className="flex items-center space-x-2">
                                     <input
                                       type="checkbox"
-                                      checked={question.settings?.allowMultiple || false}
+                                      checked={question.settings?.shuffleOptions !== false} // Default to true if not set
                                       onChange={(e) => !isFixed && updateQuestion(currentSection, questionIndex, {
                                         settings: { 
                                           ...question.settings, 
-                                          allowMultiple: e.target.checked,
-                                          // Reset maxSelections when disabling multiple selections
-                                          maxSelections: e.target.checked ? (question.settings?.maxSelections || null) : null
+                                          shuffleOptions: e.target.checked
                                         }
                                       })}
                                       className={`w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 ${isFixed ? 'cursor-not-allowed opacity-50' : ''}`}
                                       disabled={isFixed}
                                     />
-                                    <span className={`text-sm ${isFixed ? 'text-gray-500' : 'text-gray-700'}`}>Allow multiple selections</span>
+                                    <span className={`text-sm ${isFixed ? 'text-gray-500' : 'text-gray-700'}`}>Shuffle options</span>
                                   </label>
-                                  
-                                  {question.settings?.allowMultiple && (
-                                    <div className="flex items-center space-x-2">
-                                      <label className="text-sm text-gray-700">Maximum selections:</label>
-                                      <input
-                                        type="number"
-                                        min="2"
-                                        max={question.options?.length || 999}
-                                        value={question.settings?.maxSelections || ''}
-                                        onChange={(e) => !isFixed && updateQuestion(currentSection, questionIndex, {
-                                          settings: { 
-                                            ...question.settings, 
-                                            maxSelections: e.target.value ? parseInt(e.target.value) : null
-                                          }
-                                        })}
-                                        placeholder="Unlimited"
-                                        className={`w-24 px-2 py-1 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${isFixed ? 'border-gray-200 bg-gray-50 text-gray-600 cursor-not-allowed' : 'border-gray-300'}`}
-                                        disabled={isFixed}
-                                      />
-                                      {question.settings?.maxSelections && (
-                                        <span className="text-xs text-gray-500">
-                                          (Max {question.settings.maxSelections} can be selected)
-                                        </span>
-                                      )}
-                                    </div>
-                                  )}
                                 </div>
                               )}
 

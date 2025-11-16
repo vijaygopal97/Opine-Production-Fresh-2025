@@ -59,25 +59,35 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
       return { name: 'N/A', gender: 'N/A', age: 'N/A', city: 'N/A', district: 'N/A', ac: 'N/A', lokSabha: 'N/A', state: 'N/A' };
     }
 
+    // Helper to extract value from response (handle arrays)
+    const extractValue = (response) => {
+      if (!response || response === null || response === undefined) return null;
+      if (Array.isArray(response)) {
+        // For arrays, return the first value (or join if needed)
+        return response.length > 0 ? response[0] : null;
+      }
+      return response;
+    };
+
     const nameResponse = responses.find(r => 
-      r.questionText.toLowerCase().includes('name') || 
-      r.questionText.toLowerCase().includes('respondent') ||
-      r.questionText.toLowerCase().includes('full name')
+      r.questionText?.toLowerCase().includes('name') || 
+      r.questionText?.toLowerCase().includes('respondent') ||
+      r.questionText?.toLowerCase().includes('full name')
     );
     
     const genderResponse = responses.find(r => 
-      r.questionText.toLowerCase().includes('gender') || 
-      r.questionText.toLowerCase().includes('sex')
+      r.questionText?.toLowerCase().includes('gender') || 
+      r.questionText?.toLowerCase().includes('sex')
     );
     
     const ageResponse = responses.find(r => 
-      r.questionText.toLowerCase().includes('age') || 
-      r.questionText.toLowerCase().includes('year')
+      r.questionText?.toLowerCase().includes('age') || 
+      r.questionText?.toLowerCase().includes('year')
     );
 
     const acResponse = responses.find(r => 
-      r.questionText.toLowerCase().includes('assembly') ||
-      r.questionText.toLowerCase().includes('constituency')
+      r.questionText?.toLowerCase().includes('assembly') ||
+      r.questionText?.toLowerCase().includes('constituency')
     );
 
     // Get city from GPS location if available, otherwise from responses
@@ -86,14 +96,14 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
       city = responseData.location.city;
     } else {
       const cityResponse = responses.find(r => 
-        r.questionText.toLowerCase().includes('city') || 
-        r.questionText.toLowerCase().includes('location')
+        r.questionText?.toLowerCase().includes('city') || 
+        r.questionText?.toLowerCase().includes('location')
       );
-      city = cityResponse?.response || 'N/A';
+      city = extractValue(cityResponse?.response) || 'N/A';
     }
 
     // Get district from AC using assemblyConstituencies.json
-    const acName = acResponse?.response || 'N/A';
+    const acName = extractValue(acResponse?.response) || 'N/A';
     const district = getDistrictFromAC(acName);
 
     // Get Lok Sabha from AC using assemblyConstituencies.json
@@ -103,9 +113,9 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
     const state = getStateFromGPS(responseData?.location);
 
     return {
-      name: nameResponse?.response || 'N/A',
-      gender: genderResponse?.response || 'N/A',
-      age: ageResponse?.response || 'N/A',
+      name: extractValue(nameResponse?.response) || 'N/A',
+      gender: extractValue(genderResponse?.response) || 'N/A',
+      age: extractValue(ageResponse?.response) || 'N/A',
       city: city,
       district: district,
       ac: acName,
