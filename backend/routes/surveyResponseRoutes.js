@@ -16,6 +16,8 @@ const {
   uploadAudioFile,
   getMyInterviews,
   getPendingApprovals,
+  getNextReviewAssignment,
+  releaseReviewAssignment,
   submitVerification,
   debugSurveyResponses,
   getSurveyResponseById,
@@ -98,6 +100,13 @@ router.get('/my-interviews', getMyInterviews);
 // Get pending approval responses for company admin
 router.get('/pending-approvals', getPendingApprovals);
 
+// Get next available response from queue for review (Queue-based assignment)
+// IMPORTANT: This must come BEFORE /:responseId route to avoid route conflicts
+router.get('/next-review', getNextReviewAssignment);
+
+// Release review assignment (when user abandons review)
+router.post('/release-review/:responseId', releaseReviewAssignment);
+
 // Submit survey response verification
 router.post('/verify', submitVerification);
 
@@ -113,7 +122,7 @@ router.patch('/:responseId/approve', approveSurveyResponse);
 // Reject survey response
 router.patch('/:responseId/reject', rejectSurveyResponse);
 
-// Get survey response details by ID (must be last to avoid conflicts)
+// Get survey response details by ID (must be last to avoid conflicts with other routes)
 router.get('/:responseId', getSurveyResponseById);
 
 module.exports = router;

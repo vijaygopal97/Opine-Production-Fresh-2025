@@ -56,6 +56,10 @@ const SurveyApprovals = () => {
     customFeedback: ''
   });
   const [isSubmittingVerification, setIsSubmittingVerification] = useState(false);
+  const [currentAssignment, setCurrentAssignment] = useState(null);
+  const [assignmentExpiresAt, setAssignmentExpiresAt] = useState(null);
+  const [isGettingNextAssignment, setIsGettingNextAssignment] = useState(false);
+  const [timeRemaining, setTimeRemaining] = useState(null);
   const { showSuccess, showError } = useToast();
 
   // Helper function to get target audience from survey object
@@ -139,34 +143,115 @@ const SurveyApprovals = () => {
     }
   };
 
-  // Fetch pending approval interviews for the company
+  // Fetch all responses for stats (no longer fetching pending approvals list)
   useEffect(() => {
-    fetchPendingApprovals();
-    fetchAllResponses(); // Also fetch all responses for stats
-  }, [searchTerm, filterGender, filterMode, ageRange, sortBy, sortOrder]);
-
-  const fetchPendingApprovals = async () => {
-    try {
+    const loadData = async () => {
       setLoading(true);
+      try {
+        await fetchAllResponses();
+      } catch (error) {
+        console.error('Error loading data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, []);
+
+  // Timer for assignment expiration
+  useEffect(() => {
+    if (!assignmentExpiresAt) {
+      setTimeRemaining(null);
+      return;
+    }
+
+    const updateTimer = () => {
+      const now = new Date();
+      const expires = new Date(assignmentExpiresAt);
+      const diff = Math.max(0, Math.floor((expires - now) / 1000));
+      
+      if (diff === 0) {
+        // Assignment expired
+        setTimeRemaining(null);
+        setAssignmentExpiresAt(null);
+        if (currentAssignment) {
+          showError('Your review assignment has expired. Please start a new quality check.');
+          handleReleaseAssignment();
+        }
+      } else {
+        const minutes = Math.floor(diff / 60);
+        const seconds = diff % 60;
+        setTimeRemaining(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+
+    return () => clearInterval(interval);
+  }, [assignmentExpiresAt, currentAssignment]);
+
+  // Get next available response from queue
+  const handleStartQualityCheck = async () => {
+    try {
+      setIsGettingNextAssignment(true);
       const params = {
         search: searchTerm,
         gender: filterGender,
         mode: filterMode,
         ageMin: ageRange.min,
-        ageMax: ageRange.max,
-        sortBy,
-        sortOrder
+        ageMax: ageRange.max
       };
       
-      const response = await surveyResponseAPI.getPendingApprovals(params);
+      const response = await surveyResponseAPI.getNextReviewAssignment(params);
       
-      setInterviews(response.data.interviews || []);
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to get next assignment');
+      }
+
+      if (!response.data.interview) {
+        showError(response.data.message || 'No responses available for review');
+        return;
+      }
+
+      // Set the assigned response
+      setCurrentAssignment(response.data.interview);
+      setAssignmentExpiresAt(response.data.expiresAt);
+      setSelectedInterview(response.data.interview);
+      setShowResponseDetails(true);
+      
+      // Fetch full survey data
+      await fetchFullSurveyData(response.data.interview.survey._id, response.data.interview.survey);
+      
+      showSuccess('Response assigned. You have 30 minutes to complete the review.');
     } catch (error) {
-      console.error('Error fetching pending approvals:', error);
-      showError('Failed to fetch pending approvals');
+      console.error('Error getting next assignment:', error);
+      showError(error.response?.data?.message || 'Failed to get next assignment. Please try again.');
     } finally {
-      setLoading(false);
+      setIsGettingNextAssignment(false);
     }
+  };
+
+  // Release assignment (when user closes modal without submitting)
+  const handleReleaseAssignment = async () => {
+    if (!currentAssignment) return;
+
+    try {
+      await surveyResponseAPI.releaseReviewAssignment(currentAssignment.responseId);
+      setCurrentAssignment(null);
+      setAssignmentExpiresAt(null);
+      setSelectedInterview(null);
+      setShowResponseDetails(false);
+      resetVerificationForm();
+    } catch (error) {
+      console.error('Error releasing assignment:', error);
+      // Don't show error if assignment already expired or doesn't exist
+    }
+  };
+
+  const fetchPendingApprovals = async () => {
+    // This function is kept for compatibility but no longer used
+    // Queue-based system doesn't need to fetch all pending approvals
   };
 
   // Handle verification form input changes
@@ -206,7 +291,7 @@ const SurveyApprovals = () => {
   }, []);
 
   // Cleanup audio when modal closes
-  const handleCloseModal = () => {
+  const handleCloseModal = async () => {
     // Stop any playing audio
     const allAudioElements = document.querySelectorAll('audio[data-interview-id]');
     allAudioElements.forEach(el => {
@@ -218,9 +303,16 @@ const SurveyApprovals = () => {
       setAudioElement(null);
     }
     setAudioPlaying(null);
+    
+    // Release assignment if one exists (user is closing without submitting)
+    if (currentAssignment) {
+      await handleReleaseAssignment();
+    }
+    
     setShowResponseDetails(false);
     setSelectedInterview(null);
     setFullSurveyData(null); // Clear full survey data
+    resetVerificationForm();
   };
 
   // Check if form is complete and valid
@@ -285,10 +377,12 @@ const SurveyApprovals = () => {
         showSuccess('Survey response has been rejected with feedback provided to interviewer.');
       }
       
+      // Clear assignment and close modal
+      setCurrentAssignment(null);
+      setAssignmentExpiresAt(null);
       handleCloseModal();
       
-      // Force refresh the data
-      await fetchPendingApprovals();
+      // Refresh stats
       await fetchAllResponses();
       
     } catch (error) {
@@ -761,14 +855,35 @@ const SurveyApprovals = () => {
           <h1 className="text-2xl font-bold text-gray-900">Survey Approvals</h1>
           <p className="text-gray-600">Review and verify pending survey responses for quality assurance</p>
         </div>
-        <button
-          onClick={fetchPendingApprovals}
-          disabled={loading}
-          className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-        >
-          <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          {timeRemaining && currentAssignment && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <Clock className="w-4 h-4 text-yellow-600" />
+              <span className="text-sm font-medium text-yellow-800">
+                Time remaining: {timeRemaining}
+              </span>
+            </div>
+          )}
+          {!currentAssignment && (
+            <button
+              onClick={handleStartQualityCheck}
+              disabled={isGettingNextAssignment}
+              className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg shadow-sm text-sm font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {isGettingNextAssignment ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Getting Next Response...
+                </>
+              ) : (
+                <>
+                  <CheckSquare className="w-4 h-4 mr-2" />
+                  Start Quality Check
+                </>
+              )}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Statistics Cards */}
@@ -968,19 +1083,104 @@ const SurveyApprovals = () => {
         )}
       </div>
 
-      {/* Results */}
-      {loading ? (
-        <div className="flex justify-center items-center py-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-          <span className="ml-2 text-gray-600">Loading pending approvals...</span>
-        </div>
-      ) : sortedInterviews.length === 0 ? (
-        <div className="text-center py-12">
-          <Shield className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No Pending Approvals</h3>
-          <p className="text-gray-600">All survey responses have been reviewed and approved.</p>
+      {/* Queue-based Assignment UI */}
+      {!currentAssignment ? (
+        <div className="bg-white rounded-xl p-12 shadow-sm border border-gray-100 text-center">
+          <div className="max-w-md mx-auto">
+            <div className="mb-6">
+              <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-blue-100 mb-4">
+                <CheckSquare className="w-10 h-10 text-blue-600" />
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">Ready to Review?</h3>
+              <p className="text-gray-600 mb-6">
+                Click "Start Quality Check" to get the next available response from the queue. 
+                You'll have 30 minutes to complete the review.
+              </p>
+              <button
+                onClick={handleStartQualityCheck}
+                disabled={isGettingNextAssignment}
+                className="inline-flex items-center px-8 py-4 bg-blue-600 text-white rounded-lg shadow-sm text-base font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isGettingNextAssignment ? (
+                  <>
+                    <RefreshCw className="w-5 h-5 mr-3 animate-spin" />
+                    Getting Next Response...
+                  </>
+                ) : (
+                  <>
+                    <CheckSquare className="w-5 h-5 mr-3" />
+                    Start Quality Check
+                  </>
+                )}
+              </button>
+            </div>
+            <div className="mt-8 pt-8 border-t border-gray-200">
+              <p className="text-sm text-gray-500">
+                <strong>How it works:</strong> Each reviewer gets assigned one response at a time from the queue. 
+                This ensures fair distribution and prevents duplicate reviews.
+              </p>
+            </div>
+          </div>
         </div>
       ) : (
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Current Assignment</h3>
+              <p className="text-sm text-gray-600">Review this response and submit your verification</p>
+            </div>
+            {timeRemaining && (
+              <div className="flex items-center gap-2 px-4 py-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <Clock className="w-4 h-4 text-yellow-600" />
+                <span className="text-sm font-medium text-yellow-800">
+                  {timeRemaining} remaining
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer"
+               onClick={() => setShowResponseDetails(true)}>
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <div className="flex items-center gap-3 mb-2">
+                  <h4 className="text-base font-medium text-gray-900">
+                    {currentAssignment.survey?.surveyName || 'Survey'}
+                  </h4>
+                  <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded">
+                    {currentAssignment.responseId}
+                  </span>
+                </div>
+                <div className="flex items-center gap-4 text-sm text-gray-600">
+                  <span className="flex items-center gap-1">
+                    <User className="w-4 h-4" />
+                    {getRespondentInfo(currentAssignment.responses).name}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-4 h-4" />
+                    {formatDuration(currentAssignment.totalTimeSpent)}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Target className="w-4 h-4" />
+                    {currentAssignment.completionPercentage}% Complete
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowResponseDetails(true);
+                }}
+                className="ml-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+              >
+                Review Now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Legacy list view - hidden but kept for reference */}
+      {false && sortedInterviews.length > 0 && (
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">

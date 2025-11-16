@@ -238,6 +238,20 @@ const surveyResponseSchema = new mongoose.Schema({
     }
   },
 
+  // Review Assignment (Queue-based assignment system)
+  reviewAssignment: {
+    assignedTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    assignedAt: {
+      type: Date
+    },
+    expiresAt: {
+      type: Date
+    }
+  },
+
   // Verification Data (for company admin review)
   verificationData: {
     reviewer: {

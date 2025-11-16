@@ -750,6 +750,26 @@ export const surveyResponseAPI = {
     }
   },
 
+  // Get next available response from queue for review (Queue-based assignment)
+  getNextReviewAssignment: async (params = {}) => {
+    try {
+      const response = await api.get('/api/survey-responses/next-review', { params });
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Release review assignment (when user abandons review)
+  releaseReviewAssignment: async (responseId) => {
+    try {
+      const response = await api.post(`/api/survey-responses/release-review/${responseId}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
     // Submit survey response verification
     submitVerification: async (verificationData) => {
       try {
