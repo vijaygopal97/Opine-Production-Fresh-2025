@@ -238,8 +238,8 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
       required: true,
       order: globalOrder, // Add order number
       options: type === 'multiple_choice' || type === 'dropdown' ? [
-        { id: `${questionId}_opt_1`, text: 'Option 1', value: 'option1' },
-        { id: `${questionId}_opt_2`, text: 'Option 2', value: 'option2' }
+        { id: `${questionId}_opt_1`, text: 'Option 1', value: 'option1', code: '1' },
+        { id: `${questionId}_opt_2`, text: 'Option 2', value: 'option2', code: '2' }
       ] : [],
       settings: {
         allowMultiple: type === 'multiple_choice',
@@ -838,11 +838,38 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
                             {(question.type === 'multiple_choice' || question.type === 'dropdown') && (
                               <div className="space-y-2">
                                 <label className="block text-sm font-medium text-gray-700">Options</label>
+                                <div className="text-xs text-gray-500 mb-2">Each option can have a code (default: 1, 2, 3, 4...)</div>
                                 {question.options.map((option, optionIndex) => {
                                   // Ensure option has a unique ID
                                   const optionId = option.id || generateUniqueId(`opt_${question.id}`);
+                                  // Default code is optionIndex + 1 if not set
+                                  const defaultCode = option.code || String(optionIndex + 1);
                                   return (
                                     <div key={optionId} className="flex items-center space-x-2">
+                                      {/* Code input */}
+                                      <input
+                                        type="text"
+                                        value={option.code || defaultCode}
+                                        onChange={(e) => {
+                                          if (!isFixed) {
+                                            const updatedOptions = [...question.options];
+                                            updatedOptions[optionIndex] = {
+                                              ...option,
+                                              id: optionId,
+                                              code: e.target.value || String(optionIndex + 1)
+                                            };
+                                            updateQuestion(currentSection, questionIndex, { options: updatedOptions });
+                                            setTimeout(() => {
+                                              onUpdate(sections);
+                                            }, 0);
+                                          }
+                                        }}
+                                        className={`w-16 px-2 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm ${isFixed ? 'border-gray-200 bg-gray-50 text-gray-600 cursor-not-allowed' : 'border-gray-300'}`}
+                                        placeholder={String(optionIndex + 1)}
+                                        disabled={isFixed}
+                                        title="Option Code"
+                                      />
+                                      {/* Option text input */}
                                       <input
                                         type="text"
                                         value={option.text || ''}
@@ -850,9 +877,11 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
                                           if (!isFixed) {
                                             const updatedOptions = [...question.options];
                                             updatedOptions[optionIndex] = {
+                                              ...option,
                                               id: optionId,
                                               text: e.target.value,
-                                              value: e.target.value.toLowerCase().replace(/\s+/g, '_')
+                                              value: e.target.value.toLowerCase().replace(/\s+/g, '_'),
+                                              code: option.code || String(optionIndex + 1)
                                             };
                                             updateQuestion(currentSection, questionIndex, { options: updatedOptions });
                                             // Update parent component
@@ -869,7 +898,12 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
                                         <button
                                           onClick={() => {
                                             const updatedOptions = question.options.filter((_, i) => i !== optionIndex);
-                                            updateQuestion(currentSection, questionIndex, { options: updatedOptions });
+                                            // Reassign codes after deletion
+                                            const reindexedOptions = updatedOptions.map((opt, idx) => ({
+                                              ...opt,
+                                              code: opt.code || String(idx + 1)
+                                            }));
+                                            updateQuestion(currentSection, questionIndex, { options: reindexedOptions });
                                           }}
                                           className="p-2 text-red-600 hover:text-red-700 transition-colors"
                                         >
@@ -885,7 +919,8 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
                                       const newOption = {
                                         id: generateUniqueId(`opt_${question.id}`),
                                         text: `Option ${question.options.length + 1}`,
-                                        value: `option${question.options.length + 1}`
+                                        value: `option${question.options.length + 1}`,
+                                        code: String(question.options.length + 1)
                                       };
                                       const updatedOptions = [...question.options, newOption];
                                       updateQuestion(currentSection, questionIndex, { options: updatedOptions });

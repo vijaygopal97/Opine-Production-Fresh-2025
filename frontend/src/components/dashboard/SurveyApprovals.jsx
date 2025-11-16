@@ -569,6 +569,11 @@ const SurveyApprovals = () => {
       
       // Map each value to its display text using the question options
       const displayTexts = response.map(value => {
+        // Check if this is an "Others: [specified text]" response
+        if (typeof value === 'string' && value.startsWith('Others: ')) {
+          return value; // Return as-is (e.g., "Others: Custom text")
+        }
+        
         if (surveyQuestion && surveyQuestion.options) {
           const option = surveyQuestion.options.find(opt => opt.value === value);
           return option ? option.text : value;
@@ -581,6 +586,11 @@ const SurveyApprovals = () => {
 
     // If it's a string or single value
     if (typeof response === 'string' || typeof response === 'number') {
+      // Check if this is an "Others: [specified text]" response
+      if (typeof response === 'string' && response.startsWith('Others: ')) {
+        return response; // Return as-is (e.g., "Others: Custom text")
+      }
+      
       // Map to display text using question options
       if (surveyQuestion && surveyQuestion.options) {
         const option = surveyQuestion.options.find(opt => opt.value === response);

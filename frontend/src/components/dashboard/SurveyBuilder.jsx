@@ -529,9 +529,10 @@ const SurveyBuilder = ({ onClose, onSave, editingSurvey }) => {
         return questions.map(question => ({
           ...question,
           id: question.id || generateId(),
-          options: question.options?.map(option => ({
+          options: question.options?.map((option, idx) => ({
             ...option,
-            id: option.id || generateId()
+            id: option.id || generateId(),
+            code: option.code || String(idx + 1) // Preserve code or default to index + 1
           })) || []
         }));
       };
@@ -571,6 +572,24 @@ const SurveyBuilder = ({ onClose, onSave, editingSurvey }) => {
             });
           }
           
+          // Preserve options with codes
+          const preservedOptions = normalizedQuestion.options?.map((opt, idx) => {
+            if (typeof opt === 'string') {
+              return {
+                id: generateId(),
+                text: opt,
+                value: opt.toLowerCase().replace(/\s+/g, '_'),
+                code: String(idx + 1) // Default code
+              };
+            }
+            return {
+              id: opt.id || generateId(),
+              text: opt.text || opt.value || '',
+              value: opt.value || opt.text?.toLowerCase().replace(/\s+/g, '_') || '',
+              code: opt.code || String(idx + 1) // Preserve code or default to index + 1
+            };
+          }) || [];
+          
           return {
             ...normalizedQuestion,
             id: normalizedQuestion.id || generateId(),
@@ -579,7 +598,7 @@ const SurveyBuilder = ({ onClose, onSave, editingSurvey }) => {
             description: normalizedQuestion.description || '',
             required: normalizedQuestion.required !== undefined ? normalizedQuestion.required : true,
             order: normalizedQuestion.order || 0,
-            options: normalizedQuestion.options || [],
+            options: preservedOptions,
             settings: preservedSettings,
             isFixed: normalizedQuestion.isFixed || false,
             isLocked: normalizedQuestion.isLocked || false
@@ -869,9 +888,10 @@ const SurveyBuilder = ({ onClose, onSave, editingSurvey }) => {
         return questions.map(question => ({
           ...question,
           id: question.id || generateId(),
-          options: question.options?.map(option => ({
+          options: question.options?.map((option, idx) => ({
             ...option,
-            id: option.id || generateId()
+            id: option.id || generateId(),
+            code: option.code || String(idx + 1) // Preserve code or default to index + 1
           })) || []
         }));
       };
@@ -911,6 +931,24 @@ const SurveyBuilder = ({ onClose, onSave, editingSurvey }) => {
             });
           }
           
+          // Preserve options with codes
+          const preservedOptions = normalizedQuestion.options?.map((opt, idx) => {
+            if (typeof opt === 'string') {
+              return {
+                id: generateId(),
+                text: opt,
+                value: opt.toLowerCase().replace(/\s+/g, '_'),
+                code: String(idx + 1) // Default code
+              };
+            }
+            return {
+              id: opt.id || generateId(),
+              text: opt.text || opt.value || '',
+              value: opt.value || opt.text?.toLowerCase().replace(/\s+/g, '_') || '',
+              code: opt.code || String(idx + 1) // Preserve code or default to index + 1
+            };
+          }) || [];
+          
           return {
             ...normalizedQuestion,
             id: normalizedQuestion.id || generateId(),
@@ -919,7 +957,7 @@ const SurveyBuilder = ({ onClose, onSave, editingSurvey }) => {
             description: normalizedQuestion.description || '',
             required: normalizedQuestion.required !== undefined ? normalizedQuestion.required : true,
             order: normalizedQuestion.order || 0,
-            options: normalizedQuestion.options || [],
+            options: preservedOptions,
             settings: preservedSettings,
             isFixed: normalizedQuestion.isFixed || false,
             isLocked: normalizedQuestion.isLocked || false

@@ -385,7 +385,8 @@ const surveySchema = new mongoose.Schema({
       options: [{
         id: { type: String, required: true },
         text: { type: String, required: true },
-        value: { type: String, required: true }
+        value: { type: String, required: true },
+        code: { type: String, default: null } // Option code (default: 1,2,3,4...)
       }],
       scale: {
         min: { type: Number },

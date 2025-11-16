@@ -224,9 +224,24 @@ const ViewResponsesModal = ({ survey, onClose }) => {
           const questionResponse = response.responses[question.id];
           if (questionResponse) {
             if (question.type === 'multiple_choice' && question.options) {
-              // Find the option text for the selected value
-              const option = question.options.find(opt => opt.value === questionResponse);
-              row.push(option ? option.text : questionResponse);
+              // Check if this is an "Others: [specified text]" response
+              if (typeof questionResponse === 'string' && questionResponse.startsWith('Others: ')) {
+                row.push(questionResponse); // Return as-is (e.g., "Others: Custom text")
+              } else if (Array.isArray(questionResponse)) {
+                // Handle array responses
+                const displayTexts = questionResponse.map((val: any) => {
+                  if (typeof val === 'string' && val.startsWith('Others: ')) {
+                    return val;
+                  }
+                  const option = question.options.find((opt: any) => opt.value === val);
+                  return option ? option.text : val;
+                });
+                row.push(displayTexts.join(', '));
+              } else {
+                // Find the option text for the selected value
+                const option = question.options.find((opt: any) => opt.value === questionResponse);
+                row.push(option ? option.text : questionResponse);
+              }
             } else {
               row.push(questionResponse);
             }

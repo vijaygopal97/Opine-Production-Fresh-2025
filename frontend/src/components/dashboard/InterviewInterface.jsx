@@ -29,6 +29,8 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
   const [validationErrors, setValidationErrors] = useState(new Set());
   const [targetAudienceErrors, setTargetAudienceErrors] = useState(new Map());
   const [genderQuotas, setGenderQuotas] = useState(null);
+  const [othersTextInputs, setOthersTextInputs] = useState({}); // Store "Others" text input values by questionId
+  const [shuffledOptions, setShuffledOptions] = useState({}); // Store shuffled options per questionId to maintain consistent order
   
   // Audio recording state
   const [isRecording, setIsRecording] = useState(false);
@@ -1321,6 +1323,129 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
             return option;
           }) : [];
         
+        // Find "Others" option value for this question
+        const othersOption = question.options?.find(opt => {
+          const optText = typeof opt === 'object' ? opt.text : opt;
+          return optText && (optText.toLowerCase().trim() === 'others' || optText.toLowerCase().trim() === 'other');
+        });
+        const othersOptionValue = othersOption ? (typeof othersOption === 'object' ? othersOption.value || othersOption.text : othersOption) : null;
+        
+        // Process response to include option codes and handle "Others" text input
+        let processedResponse = response || (question.type === 'multiple_choice' ? [] : '');
+        let responseCodes = null;
+        let responseWithCodes = null;
+        
+        if (question.type === 'multiple_choice' && question.options) {
+          if (Array.isArray(processedResponse)) {
+            // Multiple selection
+            responseCodes = [];
+            responseWithCodes = [];
+            
+            processedResponse.forEach(respValue => {
+              const selectedOption = question.options.find(opt => {
+                const optValue = typeof opt === 'object' ? opt.value || opt.text : opt;
+                return optValue === respValue;
+              });
+              
+              if (selectedOption) {
+                const optText = typeof selectedOption === 'object' ? selectedOption.text : selectedOption;
+                const optCode = typeof selectedOption === 'object' ? selectedOption.code : null;
+                const isOthersOption = optText && (optText.toLowerCase().trim() === 'others' || optText.toLowerCase().trim() === 'other');
+                
+                if (isOthersOption) {
+                  // Get the "Others" text input value
+                  const othersText = othersTextInputs[`${question.id}_${respValue}`] || '';
+                  if (othersText) {
+                    // Save with code but answer is the text input
+                    responseCodes.push(optCode || respValue);
+                    responseWithCodes.push({
+                      code: optCode || respValue,
+                      answer: othersText,
+                      optionText: optText
+                    });
+                  } else {
+                    // No text provided, just save the option
+                    responseCodes.push(optCode || respValue);
+                    responseWithCodes.push({
+                      code: optCode || respValue,
+                      answer: optText,
+                      optionText: optText
+                    });
+                  }
+                } else {
+                  // Regular option
+                  responseCodes.push(optCode || respValue);
+                  responseWithCodes.push({
+                    code: optCode || respValue,
+                    answer: optText,
+                    optionText: optText
+                  });
+                }
+              }
+            });
+          } else {
+            // Single selection
+            const selectedOption = question.options.find(opt => {
+              const optValue = typeof opt === 'object' ? opt.value || opt.text : opt;
+              return optValue === processedResponse;
+            });
+            
+            if (selectedOption) {
+              const optText = typeof selectedOption === 'object' ? selectedOption.text : selectedOption;
+              const optCode = typeof selectedOption === 'object' ? selectedOption.code : null;
+              const isOthersOption = optText && (optText.toLowerCase().trim() === 'others' || optText.toLowerCase().trim() === 'other');
+              
+              if (isOthersOption) {
+                // Get the "Others" text input value
+                const othersText = othersTextInputs[`${question.id}_${processedResponse}`] || '';
+                if (othersText) {
+                  responseCodes = optCode || processedResponse;
+                  responseWithCodes = {
+                    code: optCode || processedResponse,
+                    answer: othersText,
+                    optionText: optText
+                  };
+                } else {
+                  responseCodes = optCode || processedResponse;
+                  responseWithCodes = {
+                    code: optCode || processedResponse,
+                    answer: optText,
+                    optionText: optText
+                  };
+                }
+              } else {
+                responseCodes = optCode || processedResponse;
+                responseWithCodes = {
+                  code: optCode || processedResponse,
+                  answer: optText,
+                  optionText: optText
+                };
+              }
+            }
+          }
+        }
+        
+        // For "Others" option, update the response to include the specified text
+        let finalResponse = processedResponse;
+        if (question.type === 'multiple_choice' && responseWithCodes) {
+          // Check if any response has "Others" with specified text
+          if (Array.isArray(responseWithCodes)) {
+            const othersResponse = responseWithCodes.find(r => r.optionText && (r.optionText.toLowerCase().trim() === 'others' || r.optionText.toLowerCase().trim() === 'other') && r.answer !== r.optionText);
+            if (othersResponse) {
+              // Replace the "Others" value with the specified text in the response array
+              finalResponse = processedResponse.map((val) => {
+                if (val === othersResponse.code || val === othersOptionValue) {
+                  return `Others: ${othersResponse.answer}`;
+                }
+                return val;
+              });
+            }
+          } else if (responseWithCodes.optionText && (responseWithCodes.optionText.toLowerCase().trim() === 'others' || responseWithCodes.optionText.toLowerCase().trim() === 'other') && responseWithCodes.answer !== responseWithCodes.optionText) {
+            // Single selection with "Others" specified text
+            finalResponse = `Others: ${responseWithCodes.answer}`;
+          }
+        }
+        
         finalResponses.push({
           sectionIndex: question.sectionIndex,
           questionIndex: question.questionIndex,
@@ -1329,7 +1454,9 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
           questionText: question.text,
           questionDescription: question.description,
           questionOptions: questionOptions,
-          response: response || (question.type === 'multiple_choice' ? [] : ''),
+          response: finalResponse, // Use finalResponse which includes "Others: [specified text]"
+          responseCodes: responseCodes, // Include option codes
+          responseWithCodes: responseWithCodes, // Include structured response with codes
           responseTime,
           isRequired: question.required || false,
           isSkipped: !hasResponseContent(response)
@@ -1501,12 +1628,47 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
   }, [isInterviewActive, isPaused]);
 
 
+  // Fisher-Yates shuffle algorithm for randomizing options
+  const shuffleArray = (array) => {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+  };
+
+  // Get shuffled options for a question (shuffle once, then reuse)
+  const getShuffledOptions = (questionId, originalOptions) => {
+    if (!originalOptions || originalOptions.length === 0) return originalOptions;
+    
+    // If already shuffled for this question, return cached shuffled order
+    if (shuffledOptions[questionId]) {
+      return shuffledOptions[questionId];
+    }
+    
+    // Shuffle options for the first time
+    const shuffled = shuffleArray(originalOptions);
+    setShuffledOptions(prev => ({
+      ...prev,
+      [questionId]: shuffled
+    }));
+    
+    return shuffled;
+  };
+
   // Render question input based on type
   const renderQuestionInput = () => {
     if (!currentVisibleQuestion) return null;
 
     const { type, options, required } = currentVisibleQuestion;
     const currentResponse = responses[currentVisibleQuestion.id] || '';
+    const questionId = currentVisibleQuestion.id;
+    
+    // Get shuffled options for display (for multiple_choice, single_choice, and dropdown)
+    const displayOptions = (type === 'multiple_choice' || type === 'single_choice' || type === 'dropdown') 
+      ? getShuffledOptions(questionId, options)
+      : options;
 
     switch (type) {
       case 'text':
@@ -1528,6 +1690,34 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
         const isGenderQuestion = currentVisibleQuestion.id === 'fixed_respondent_gender';
         const currentSelections = Array.isArray(currentResponse) ? currentResponse.length : 0;
         
+        // Use shuffled options for display
+        const shuffledMultipleChoiceOptions = displayOptions || options;
+        
+        // Check if "None" option exists
+        const noneOption = shuffledMultipleChoiceOptions.find(opt => {
+          const optText = typeof opt === 'object' ? opt.text : opt;
+          return optText && optText.toLowerCase().trim() === 'none';
+        });
+        const noneOptionValue = noneOption ? (typeof noneOption === 'object' ? noneOption.value || noneOption.text : noneOption) : null;
+        
+        // Check if "Others" option exists
+        const othersOption = shuffledMultipleChoiceOptions.find(opt => {
+          const optText = typeof opt === 'object' ? opt.text : opt;
+          return optText && (optText.toLowerCase().trim() === 'others' || optText.toLowerCase().trim() === 'other');
+        });
+        const othersOptionValue = othersOption ? (typeof othersOption === 'object' ? othersOption.value || othersOption.text : othersOption) : null;
+        const othersOptionCode = othersOption && typeof othersOption === 'object' ? othersOption.code : null;
+        
+        // Check if "Others" is selected
+        const isOthersSelected = allowMultiple 
+          ? (Array.isArray(currentResponse) && currentResponse.includes(othersOptionValue))
+          : (currentResponse === othersOptionValue);
+        
+        // Check if "None" is selected
+        const isNoneSelected = allowMultiple
+          ? (Array.isArray(currentResponse) && currentResponse.includes(noneOptionValue))
+          : (currentResponse === noneOptionValue);
+        
         return (
           <div className="space-y-4">
             {allowMultiple && maxSelections && (
@@ -1537,10 +1727,13 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                 </p>
               </div>
             )}
-            {options.map((option, index) => {
+            {shuffledMultipleChoiceOptions.map((option, index) => {
               const optionValue = typeof option === 'object' ? option.value || option.text : option;
               const optionText = typeof option === 'object' ? option.text : option;
               const optionId = typeof option === 'object' ? option.id : index;
+              const optionCode = typeof option === 'object' ? option.code : null;
+              const isNoneOption = optionText && optionText.toLowerCase().trim() === 'none';
+              const isOthersOption = optionText && (optionText.toLowerCase().trim() === 'others' || optionText.toLowerCase().trim() === 'other');
               
               // Get quota information for gender question
               let quotaInfo = null;
@@ -1562,30 +1755,105 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                   <label className="flex items-center space-x-4 cursor-pointer group">
                   <input
                     type={allowMultiple ? "checkbox" : "radio"}
-                    name={allowMultiple ? undefined : `question-${currentVisibleQuestion.id}`}
+                    name={allowMultiple ? undefined : `question-${questionId}`}
                     checked={allowMultiple 
                       ? (Array.isArray(currentResponse) && currentResponse.includes(optionValue))
                       : (currentResponse === optionValue)
                     }
                     onChange={(e) => {
                       if (allowMultiple) {
-                        const newResponse = Array.isArray(currentResponse) ? [...currentResponse] : [];
+                        let newResponse = Array.isArray(currentResponse) ? [...currentResponse] : [];
                         const maxSelections = currentVisibleQuestion.settings?.maxSelections;
                         
                         if (e.target.checked) {
-                          // Check if we've reached the maximum selections limit
-                          if (maxSelections && newResponse.length >= maxSelections) {
-                            // Don't allow selecting more if limit is reached
-                            return;
+                          // Handle "None" option - mutual exclusivity
+                          if (isNoneOption) {
+                            // If "None" is selected, clear all other selections
+                            newResponse = [optionValue];
+                            // Clear "Others" text input if it was selected
+                            if (othersOptionValue && newResponse.includes(othersOptionValue)) {
+                              setOthersTextInputs(prev => {
+                                const updated = { ...prev };
+                                delete updated[`${questionId}_${othersOptionValue}`];
+                                return updated;
+                              });
+                            }
+                          } else if (isOthersOption) {
+                            // If "Others" is selected, clear all other selections (mutual exclusivity)
+                            newResponse = [optionValue];
+                            // Clear "None" if it exists
+                            if (noneOptionValue && newResponse.includes(noneOptionValue)) {
+                              newResponse = newResponse.filter(v => v !== noneOptionValue);
+                            }
+                          } else {
+                            // If any other option is selected, remove "None" and "Others" if they exist
+                            if (noneOptionValue && newResponse.includes(noneOptionValue)) {
+                              newResponse = newResponse.filter(v => v !== noneOptionValue);
+                            }
+                            if (othersOptionValue && newResponse.includes(othersOptionValue)) {
+                              newResponse = newResponse.filter(v => v !== othersOptionValue);
+                              // Clear "Others" text input
+                              setOthersTextInputs(prev => {
+                                const updated = { ...prev };
+                                delete updated[`${questionId}_${othersOptionValue}`];
+                                return updated;
+                              });
+                            }
+                            
+                            // Check if we've reached the maximum selections limit
+                            if (maxSelections && newResponse.length >= maxSelections) {
+                              // Don't allow selecting more if limit is reached
+                              return;
+                            }
+                            newResponse.push(optionValue);
                           }
-                          newResponse.push(optionValue);
                         } else {
+                          // Remove the option
                           const index = newResponse.indexOf(optionValue);
                           if (index > -1) newResponse.splice(index, 1);
+                          
+                          // Clear "Others" text input if "Others" is deselected
+                          if (isOthersOption) {
+                            setOthersTextInputs(prev => {
+                              const updated = { ...prev };
+                              delete updated[`${questionId}_${optionValue}`];
+                              return updated;
+                            });
+                          }
                         }
-                        handleResponseChange(currentVisibleQuestion.id, newResponse);
+                        handleResponseChange(questionId, newResponse);
                       } else {
-                        handleResponseChange(currentVisibleQuestion.id, optionValue);
+                        // Single selection
+                        if (isNoneOption) {
+                          // "None" selected - just set it
+                          handleResponseChange(questionId, optionValue);
+                          // Clear "Others" text input if it exists
+                          if (othersOptionValue && currentResponse === othersOptionValue) {
+                            setOthersTextInputs(prev => {
+                              const updated = { ...prev };
+                              delete updated[`${questionId}_${othersOptionValue}`];
+                              return updated;
+                            });
+                          }
+                        } else if (isOthersOption) {
+                          // "Others" selected - just set it
+                          handleResponseChange(questionId, optionValue);
+                        } else {
+                          // Other option selected - clear "None" and "Others" if they were selected
+                          if (noneOptionValue && currentResponse === noneOptionValue) {
+                            handleResponseChange(questionId, optionValue);
+                          } else if (othersOptionValue && currentResponse === othersOptionValue) {
+                            handleResponseChange(questionId, optionValue);
+                            // Clear "Others" text input
+                            setOthersTextInputs(prev => {
+                              const updated = { ...prev };
+                              delete updated[`${questionId}_${othersOptionValue}`];
+                              return updated;
+                            });
+                          } else {
+                            handleResponseChange(questionId, optionValue);
+                          }
+                        }
                       }
                     }}
                       className={`w-6 h-6 border-2 border-gray-300 rounded focus:ring-blue-500 group-hover:border-blue-400 transition-colors ${
@@ -1614,6 +1882,23 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                       )}
                     </div>
                 </label>
+                {/* Show text input for "Others" option when selected */}
+                {isOthersOption && isOthersSelected && (
+                  <div className="ml-10 mt-2">
+                    <input
+                      type="text"
+                      value={othersTextInputs[`${questionId}_${optionValue}`] || ''}
+                      onChange={(e) => {
+                        setOthersTextInputs(prev => ({
+                          ...prev,
+                          [`${questionId}_${optionValue}`]: e.target.value
+                        }));
+                      }}
+                      placeholder="Please specify..."
+                      className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                )}
                 </div>
               );
             })}
@@ -1621,9 +1906,12 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
         );
 
       case 'single_choice':
+        // Use shuffled options for display
+        const shuffledSingleChoiceOptions = displayOptions || options;
+        
         return (
           <div className="space-y-4">
-            {options.map((option, index) => {
+            {shuffledSingleChoiceOptions.map((option, index) => {
               const optionValue = typeof option === 'object' ? option.value || option.text : option;
               const optionText = typeof option === 'object' ? option.text : option;
               const optionId = typeof option === 'object' ? option.id : index;
@@ -1699,6 +1987,9 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
         );
 
       case 'dropdown':
+        // Use shuffled options for display
+        const shuffledDropdownOptions = displayOptions || options;
+        
         return (
           <select
             value={currentResponse}
@@ -1707,7 +1998,7 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
             required={required}
           >
             <option value="">Select an option...</option>
-            {options.map((option, index) => {
+            {shuffledDropdownOptions.map((option, index) => {
               const optionValue = typeof option === 'object' ? option.value || option.text : option;
               const optionText = typeof option === 'object' ? option.text : option;
               return (
