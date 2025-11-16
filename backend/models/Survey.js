@@ -409,6 +409,10 @@ const surveySchema = new mongoose.Schema({
         maxValue: { type: Number },
         pattern: { type: String }
       },
+      settings: {
+        type: mongoose.Schema.Types.Mixed,
+        default: {}
+      },
       isFixed: { type: Boolean, default: false },
       isLocked: { type: Boolean, default: false }
     }]
@@ -452,6 +456,10 @@ const surveySchema = new mongoose.Schema({
       minValue: { type: Number },
       maxValue: { type: Number },
       pattern: { type: String }
+    },
+    settings: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {}
     }
   }],
 

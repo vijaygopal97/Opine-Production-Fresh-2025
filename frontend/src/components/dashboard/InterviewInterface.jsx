@@ -1524,10 +1524,19 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
 
       case 'multiple_choice':
         const allowMultiple = currentVisibleQuestion.settings?.allowMultiple || false;
+        const maxSelections = currentVisibleQuestion.settings?.maxSelections;
         const isGenderQuestion = currentVisibleQuestion.id === 'fixed_respondent_gender';
+        const currentSelections = Array.isArray(currentResponse) ? currentResponse.length : 0;
         
         return (
           <div className="space-y-4">
+            {allowMultiple && maxSelections && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm text-blue-800">
+                  <span className="font-medium">Selection limit:</span> {currentSelections} / {maxSelections} selected
+                </p>
+              </div>
+            )}
             {options.map((option, index) => {
               const optionValue = typeof option === 'object' ? option.value || option.text : option;
               const optionText = typeof option === 'object' ? option.text : option;
@@ -1561,7 +1570,14 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                     onChange={(e) => {
                       if (allowMultiple) {
                         const newResponse = Array.isArray(currentResponse) ? [...currentResponse] : [];
+                        const maxSelections = currentVisibleQuestion.settings?.maxSelections;
+                        
                         if (e.target.checked) {
+                          // Check if we've reached the maximum selections limit
+                          if (maxSelections && newResponse.length >= maxSelections) {
+                            // Don't allow selecting more if limit is reached
+                            return;
+                          }
                           newResponse.push(optionValue);
                         } else {
                           const index = newResponse.indexOf(optionValue);

@@ -118,7 +118,27 @@ exports.createSurvey = async (req, res) => {
       maxInterviewsPerInterviewer: maxInterviewsPerInterviewer ? parseInt(maxInterviewsPerInterviewer) : undefined,
       onlineContactMode: onlineContactMode || [],
       contactList: contactList || [],
-      sections: sections || [],
+      sections: (() => {
+        // Debug: Log sections with settings when receiving
+        if (sections && Array.isArray(sections)) {
+          sections.forEach((section, sectionIdx) => {
+            if (section.questions && Array.isArray(section.questions)) {
+              section.questions.forEach((question, questionIdx) => {
+                if (question.type === 'multiple_choice' && question.settings) {
+                  console.log('🔍 Backend received question with settings:', {
+                    sectionIndex: sectionIdx,
+                    questionIndex: questionIdx,
+                    questionId: question.id,
+                    questionText: question.text,
+                    settings: question.settings
+                  });
+                }
+              });
+            }
+          });
+        }
+        return sections || [];
+      })(),
       templateUsed: templateUsed || {},
       settings: settings || {},
       notifications: notifications || {},
@@ -1032,7 +1052,27 @@ exports.updateSurvey = async (req, res) => {
       contactList,
       assignedInterviewers: processedAssignedInterviewers,
       assignedQualityAgents: processedAssignedQualityAgents,
-      sections,
+      sections: (() => {
+        // Debug: Log sections with settings when updating
+        if (sections && Array.isArray(sections)) {
+          sections.forEach((section, sectionIdx) => {
+            if (section.questions && Array.isArray(section.questions)) {
+              section.questions.forEach((question, questionIdx) => {
+                if (question.type === 'multiple_choice' && question.settings) {
+                  console.log('🔍 Backend updating question with settings:', {
+                    sectionIndex: sectionIdx,
+                    questionIndex: questionIdx,
+                    questionId: question.id,
+                    questionText: question.text,
+                    settings: question.settings
+                  });
+                }
+              });
+            }
+          });
+        }
+        return sections;
+      })(),
       templateUsed,
       settings,
       notifications,

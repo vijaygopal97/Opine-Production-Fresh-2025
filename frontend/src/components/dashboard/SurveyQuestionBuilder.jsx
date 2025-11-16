@@ -74,14 +74,29 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
       // Ensure fixed questions are included
       const sectionsWithFixedQuestions = ensureFixedQuestionsInSurvey(initialData);
       
-      // Ensure all questions have proper order numbers
+      // Ensure all questions have proper order numbers and preserve settings
       let globalOrder = 0;
       const updatedSections = sectionsWithFixedQuestions.map((section, sectionIndex) => ({
         ...section,
         questions: section.questions.map((question, questionIndex) => {
+          // Preserve settings object if it exists
+          const preservedSettings = question.settings && typeof question.settings === 'object' 
+            ? { ...question.settings } 
+            : {};
+          
+          // Debug logging for settings loading
+          if (question.type === 'multiple_choice' && (preservedSettings.allowMultiple || preservedSettings.maxSelections)) {
+            console.log('🔍 Loading settings for question:', {
+              questionId: question.id,
+              questionText: question.text,
+              settings: preservedSettings
+            });
+          }
+          
           const updatedQuestion = {
             ...question,
-            order: question.order !== undefined ? question.order : globalOrder
+            order: question.order !== undefined ? question.order : globalOrder,
+            settings: preservedSettings
           };
           globalOrder++;
           return updatedQuestion;
@@ -249,17 +264,43 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
         ...updatedSections[sectionIndex],
         questions: [...updatedSections[sectionIndex].questions]
       };
+      
+      // Preserve existing settings when updating
+      const currentQuestion = updatedSections[sectionIndex].questions[questionIndex];
+      const currentSettings = currentQuestion?.settings && typeof currentQuestion.settings === 'object' 
+        ? { ...currentQuestion.settings } 
+        : {};
+      
+      // Merge settings if updates contain settings
+      let mergedSettings = currentSettings;
+      if (updates.settings) {
+        mergedSettings = {
+          ...currentSettings,
+          ...updates.settings
+        };
+      }
+      
       updatedSections[sectionIndex].questions[questionIndex] = {
-        ...updatedSections[sectionIndex].questions[questionIndex],
-        ...updates
+        ...currentQuestion,
+        ...updates,
+        settings: mergedSettings
       };
       
-      // Update parent component for conditional logic changes
-      if (updates.conditions !== undefined) {
-        setTimeout(() => {
-          onUpdate(updatedSections);
-        }, 0);
+      // Debug logging for settings updates
+      if (updates.settings && (updates.settings.allowMultiple !== undefined || updates.settings.maxSelections !== undefined)) {
+        console.log('🔍 Updating question settings:', {
+          questionId: updatedSections[sectionIndex].questions[questionIndex].id,
+          questionText: updatedSections[sectionIndex].questions[questionIndex].text,
+          oldSettings: currentSettings,
+          newSettings: mergedSettings,
+          updates: updates.settings
+        });
       }
+      
+      // Update parent component for any changes (not just conditions)
+      setTimeout(() => {
+        onUpdate(updatedSections);
+      }, 0);
       
       return updatedSections;
     });
@@ -392,6 +433,11 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
             <h3 className="text-lg font-medium text-gray-900">{question.text}</h3>
             {question.description && (
               <p className="text-gray-600">{question.description}</p>
+            )}
+            {question.settings?.allowMultiple && question.settings?.maxSelections && (
+              <p className="text-sm text-blue-600 font-medium">
+                Maximum {question.settings.maxSelections} selection{question.settings.maxSelections > 1 ? 's' : ''} allowed
+              </p>
             )}
             <div className="space-y-2">
               {question.options.map((option, index) => (
@@ -867,18 +913,51 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
                               </label>
                               
                               {question.type === 'multiple_choice' && (
-                                <label className="flex items-center space-x-2">
-                                  <input
-                                    type="checkbox"
-                                    checked={question.settings?.allowMultiple || false}
-                                    onChange={(e) => !isFixed && updateQuestion(currentSection, questionIndex, {
-                                      settings: { ...question.settings, allowMultiple: e.target.checked }
-                                    })}
-                                    className={`w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 ${isFixed ? 'cursor-not-allowed opacity-50' : ''}`}
-                                    disabled={isFixed}
-                                  />
-                                  <span className={`text-sm ${isFixed ? 'text-gray-500' : 'text-gray-700'}`}>Allow multiple selections</span>
-                                </label>
+                                <div className="flex items-center space-x-4 flex-wrap">
+                                  <label className="flex items-center space-x-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={question.settings?.allowMultiple || false}
+                                      onChange={(e) => !isFixed && updateQuestion(currentSection, questionIndex, {
+                                        settings: { 
+                                          ...question.settings, 
+                                          allowMultiple: e.target.checked,
+                                          // Reset maxSelections when disabling multiple selections
+                                          maxSelections: e.target.checked ? (question.settings?.maxSelections || null) : null
+                                        }
+                                      })}
+                                      className={`w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 ${isFixed ? 'cursor-not-allowed opacity-50' : ''}`}
+                                      disabled={isFixed}
+                                    />
+                                    <span className={`text-sm ${isFixed ? 'text-gray-500' : 'text-gray-700'}`}>Allow multiple selections</span>
+                                  </label>
+                                  
+                                  {question.settings?.allowMultiple && (
+                                    <div className="flex items-center space-x-2">
+                                      <label className="text-sm text-gray-700">Maximum selections:</label>
+                                      <input
+                                        type="number"
+                                        min="2"
+                                        max={question.options?.length || 999}
+                                        value={question.settings?.maxSelections || ''}
+                                        onChange={(e) => !isFixed && updateQuestion(currentSection, questionIndex, {
+                                          settings: { 
+                                            ...question.settings, 
+                                            maxSelections: e.target.value ? parseInt(e.target.value) : null
+                                          }
+                                        })}
+                                        placeholder="Unlimited"
+                                        className={`w-24 px-2 py-1 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${isFixed ? 'border-gray-200 bg-gray-50 text-gray-600 cursor-not-allowed' : 'border-gray-300'}`}
+                                        disabled={isFixed}
+                                      />
+                                      {question.settings?.maxSelections && (
+                                        <span className="text-xs text-gray-500">
+                                          (Max {question.settings.maxSelections} can be selected)
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
                               )}
                             </div>
 

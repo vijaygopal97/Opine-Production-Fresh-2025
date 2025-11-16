@@ -382,6 +382,26 @@ const SurveyBuilder = ({ onClose, onSave, editingSurvey }) => {
   const updateSurveyData = useCallback((step, data) => {
     console.log('🔧 SurveyBuilder updateSurveyData called:', { step, data });
     
+    // Debug logging for questions/sections updates
+    if (step === 'questions' && Array.isArray(data) && data.length > 0) {
+      // Check if any question has settings
+      data.forEach((section, sectionIdx) => {
+        if (section.questions && Array.isArray(section.questions)) {
+          section.questions.forEach((question, questionIdx) => {
+            if (question.type === 'multiple_choice' && question.settings) {
+              console.log('🔍 Question with settings in updateSurveyData:', {
+                sectionIndex: sectionIdx,
+                questionIndex: questionIdx,
+                questionId: question.id,
+                questionText: question.text,
+                settings: question.settings
+              });
+            }
+          });
+        }
+      });
+    }
+    
     // Prevent infinite loops by checking if the data is actually different
     if (step === 'capiInterviewers' && Array.isArray(data) && data.length === 0) {
       // Only update if the current capiInterviewers is not already empty
@@ -479,14 +499,28 @@ const SurveyBuilder = ({ onClose, onSave, editingSurvey }) => {
         return sections.map(section => ({
           ...section,
           id: section.id || generateId(),
-          questions: section.questions?.map(question => ({
-            ...question,
-            id: question.id || generateId(),
-            options: question.options?.map(option => ({
-              ...option,
-              id: option.id || generateId()
-            })) || []
-          })) || []
+          questions: section.questions?.map(question => {
+            // Preserve all question fields including settings
+            const questionWithIds = {
+              ...question,
+              id: question.id || generateId(),
+              options: question.options?.map(option => ({
+                ...option,
+                id: option.id || generateId()
+              })) || []
+            };
+            
+            // Debug: Log if settings are being preserved
+            if (question.type === 'multiple_choice' && question.settings) {
+              console.log('🔍 addIdsToSections preserving settings:', {
+                questionId: questionWithIds.id,
+                questionText: questionWithIds.text,
+                settings: questionWithIds.settings
+              });
+            }
+            
+            return questionWithIds;
+          }) || []
         }));
       };
       
@@ -523,6 +557,20 @@ const SurveyBuilder = ({ onClose, onSave, editingSurvey }) => {
           }
           
           // Ensure all required fields are present
+          // Preserve settings object and ensure it's properly structured
+          const preservedSettings = normalizedQuestion.settings && typeof normalizedQuestion.settings === 'object' 
+            ? { ...normalizedQuestion.settings } 
+            : {};
+          
+          // Debug logging for settings preservation
+          if (normalizedQuestion.type === 'multiple_choice' && (preservedSettings.allowMultiple || preservedSettings.maxSelections)) {
+            console.log('🔍 Preserving settings for question:', {
+              questionId: normalizedQuestion.id,
+              questionText: normalizedQuestion.text,
+              settings: preservedSettings
+            });
+          }
+          
           return {
             ...normalizedQuestion,
             id: normalizedQuestion.id || generateId(),
@@ -532,7 +580,7 @@ const SurveyBuilder = ({ onClose, onSave, editingSurvey }) => {
             required: normalizedQuestion.required !== undefined ? normalizedQuestion.required : true,
             order: normalizedQuestion.order || 0,
             options: normalizedQuestion.options || [],
-            settings: normalizedQuestion.settings || {},
+            settings: preservedSettings,
             isFixed: normalizedQuestion.isFixed || false,
             isLocked: normalizedQuestion.isLocked || false
           };
@@ -791,14 +839,28 @@ const SurveyBuilder = ({ onClose, onSave, editingSurvey }) => {
         return sections.map(section => ({
           ...section,
           id: section.id || generateId(),
-          questions: section.questions?.map(question => ({
-            ...question,
-            id: question.id || generateId(),
-            options: question.options?.map(option => ({
-              ...option,
-              id: option.id || generateId()
-            })) || []
-          })) || []
+          questions: section.questions?.map(question => {
+            // Preserve all question fields including settings
+            const questionWithIds = {
+              ...question,
+              id: question.id || generateId(),
+              options: question.options?.map(option => ({
+                ...option,
+                id: option.id || generateId()
+              })) || []
+            };
+            
+            // Debug: Log if settings are being preserved
+            if (question.type === 'multiple_choice' && question.settings) {
+              console.log('🔍 addIdsToSections preserving settings:', {
+                questionId: questionWithIds.id,
+                questionText: questionWithIds.text,
+                settings: questionWithIds.settings
+              });
+            }
+            
+            return questionWithIds;
+          }) || []
         }));
       };
       
@@ -835,6 +897,20 @@ const SurveyBuilder = ({ onClose, onSave, editingSurvey }) => {
           }
           
           // Ensure all required fields are present
+          // Preserve settings object and ensure it's properly structured
+          const preservedSettings = normalizedQuestion.settings && typeof normalizedQuestion.settings === 'object' 
+            ? { ...normalizedQuestion.settings } 
+            : {};
+          
+          // Debug logging for settings preservation
+          if (normalizedQuestion.type === 'multiple_choice' && (preservedSettings.allowMultiple || preservedSettings.maxSelections)) {
+            console.log('🔍 Preserving settings for question:', {
+              questionId: normalizedQuestion.id,
+              questionText: normalizedQuestion.text,
+              settings: preservedSettings
+            });
+          }
+          
           return {
             ...normalizedQuestion,
             id: normalizedQuestion.id || generateId(),
@@ -844,7 +920,7 @@ const SurveyBuilder = ({ onClose, onSave, editingSurvey }) => {
             required: normalizedQuestion.required !== undefined ? normalizedQuestion.required : true,
             order: normalizedQuestion.order || 0,
             options: normalizedQuestion.options || [],
-            settings: normalizedQuestion.settings || {},
+            settings: preservedSettings,
             isFixed: normalizedQuestion.isFixed || false,
             isLocked: normalizedQuestion.isLocked || false
           };
