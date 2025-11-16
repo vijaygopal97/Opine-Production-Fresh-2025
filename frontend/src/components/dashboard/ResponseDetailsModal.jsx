@@ -376,7 +376,9 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                   <div>
                     <p className="text-sm font-medium text-gray-700">Interviewer</p>
                     <p className="text-sm text-gray-600">
-                      {response.interviewer ? `${response.interviewer.firstName} ${response.interviewer.lastName}` : 'Unknown'}
+                      {response.interviewer 
+                        ? `${response.interviewer.firstName} ${response.interviewer.lastName}${response.interviewer.email ? ` (${response.interviewer.email})` : ''}`
+                        : 'Unknown'}
                     </p>
                   </div>
                 </div>
@@ -419,6 +421,64 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                 </div>
               </div>
             </div>
+
+            {/* Review Information - Only show if response has been reviewed */}
+            {response.verificationData?.reviewer && (
+              <div className="bg-blue-50 rounded-lg p-4 mb-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Review Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex items-center space-x-3">
+                    <User className="w-5 h-5 text-blue-600" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-700">Reviewed By</p>
+                      <p className="text-sm text-gray-600">
+                        {response.verificationData.reviewer?.firstName && response.verificationData.reviewer?.lastName
+                          ? `${response.verificationData.reviewer.firstName} ${response.verificationData.reviewer.lastName}${response.verificationData.reviewer?.email ? ` (${response.verificationData.reviewer.email})` : ''}`
+                          : response.verificationData.reviewer?.email || 'Unknown Reviewer'}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center space-x-3">
+                    <Calendar className="w-5 h-5 text-blue-600" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-700">Reviewed At</p>
+                      <p className="text-sm text-gray-600">
+                        {response.verificationData.reviewedAt
+                          ? new Date(response.verificationData.reviewedAt).toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })
+                          : 'N/A'}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center space-x-3">
+                    <CheckCircle className={`w-5 h-5 ${
+                      response.status === 'Approved' ? 'text-green-600' : 
+                      response.status === 'Rejected' ? 'text-red-600' : 
+                      'text-gray-400'
+                    }`} />
+                    <div>
+                      <p className="text-sm font-medium text-gray-700">Review Decision</p>
+                      <p className={`text-sm font-semibold ${
+                        response.status === 'Approved' ? 'text-green-600' : 
+                        response.status === 'Rejected' ? 'text-red-600' : 
+                        'text-gray-600'
+                      }`}>
+                        {response.status === 'Approved' ? 'Approved' : 
+                         response.status === 'Rejected' ? 'Rejected' : 
+                         response.status}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Demographics */}
             <div className="bg-blue-50 rounded-lg p-4 mb-6">

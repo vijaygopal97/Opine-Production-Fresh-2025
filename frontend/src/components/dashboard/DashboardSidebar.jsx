@@ -232,9 +232,7 @@ const DashboardSidebar = ({ sidebarOpen, userType }) => {
     } else if (userType === 'quality_agent') {
       return [
         { icon: Home, label: 'Dashboard', path: '/quality-agent/dashboard' },
-        { icon: ClipboardCheck, label: 'Available Interviews', path: '/quality-agent/available-surveys' },
         { icon: CheckSquare, label: 'Survey Approvals', path: '/quality-agent/survey-approvals' },
-        { icon: Target, label: 'Validation History', path: '/quality-agent/validation-history' },
         { icon: BarChart3, label: 'Performance Monitoring', path: '/quality-agent/performance' },
         { icon: DollarSign, label: 'Payments History', path: '/quality-agent/payments-history' },
         { icon: Settings, label: 'Payment Settings', path: '/quality-agent/payment-settings' },
