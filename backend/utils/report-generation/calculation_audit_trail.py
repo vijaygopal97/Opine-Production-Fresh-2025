@@ -69,7 +69,10 @@ class CalculationAuditTrail:
         print(f"\nData Source:")
         print(f"  Question: {vote_question}")
         print(f"  Date Filter: All data up to {self.reference_date.date()}")
-        print(f"  Sample Size: {len(self.df_filtered):,} records")
+        # Sample size: only count records with non-empty responses to main question
+        vote_question = '8. If assembly elections (MLA) were to be held tomorrow, then which party would you vote for?'
+        sample_size = len(self.df_filtered[self.df_filtered[vote_question].notna()].copy()) if vote_question in self.df_filtered.columns else len(self.df_filtered)
+        print(f"  Sample Size: {sample_size:,} records (only non-empty responses)")
         print(f"  Weights: NOT USED (raw calculation)")
         
         # Get raw party code distribution
@@ -300,9 +303,13 @@ class CalculationAuditTrail:
             (self.df_filtered['Survey Date'] <= end_date)
         ].copy()
         
+        # Sample size: only count records with non-empty responses to main question
+        vote_question = '8. If assembly elections (MLA) were to be held tomorrow, then which party would you vote for?'
+        sample_size_7dma = len(dma7_data[dma7_data[vote_question].notna()].copy()) if vote_question in dma7_data.columns else len(dma7_data)
+        
         print(f"\nData Filtering:")
         print(f"  Date Filter: {cutoff_date.date()} to {end_date.date()}")
-        print(f"  Sample Size: {len(dma7_data):,} records")
+        print(f"  Sample Size: {sample_size_7dma:,} records (only non-empty responses)")
         
         # Show date distribution
         date_counts = dma7_data.groupby('Survey Date').size().sort_index()
@@ -3399,22 +3406,31 @@ class CalculationAuditTrail:
         print(f"  Note: Graph starts from first date with actual data for each district")
     
     def get_overall_metrics(self):
-        """Get overall metrics for audit trail"""
+        """Get overall metrics for audit trail - only count records with non-empty responses"""
         filtered_df = self.df_filtered.copy()
         
-        sample_size = len(filtered_df)
-        start_date = filtered_df['Survey Date'].min() if len(filtered_df) > 0 else None
-        end_date = min(self.reference_date, filtered_df['Survey Date'].max()) if len(filtered_df) > 0 else None
+        # Overall sample size: only count records with non-empty responses to main question
+        vote_question = '8. If assembly elections (MLA) were to be held tomorrow, then which party would you vote for?'
+        sample_size = len(filtered_df[filtered_df[vote_question].notna()].copy()) if vote_question in filtered_df.columns else 0
+        
+        # For date calculations, use all records (even empty ones) for date range
+        valid_date_df = filtered_df[filtered_df['Survey Date'].notna()].copy()
+        start_date = valid_date_df['Survey Date'].min() if len(valid_date_df) > 0 else None
+        end_date = min(self.reference_date, valid_date_df['Survey Date'].max()) if len(valid_date_df) > 0 else None
         duration_days = (end_date - start_date).days + 1 if start_date and end_date else 0
         
-        daily_samples = filtered_df.groupby('Survey Date').size()
+        # Calculate daily average sample - only count records with valid responses
+        valid_response_df = filtered_df[filtered_df[vote_question].notna()].copy() if vote_question in filtered_df.columns else pd.DataFrame()
+        daily_samples = valid_response_df.groupby('Survey Date').size() if len(valid_response_df) > 0 else pd.Series()
         avg_daily_sample = int(daily_samples.mean()) if len(daily_samples) > 0 else 0
         
-        male_sample = len(filtered_df[filtered_df['Gender'] == 1]) if 'Gender' in filtered_df.columns else 0
-        female_sample = len(filtered_df[filtered_df['Gender'] == 2]) if 'Gender' in filtered_df.columns else 0
+        # Calculate gender breakdown - only count those with valid responses
+        male_sample = len(valid_response_df[valid_response_df['Gender'] == 1]) if 'Gender' in valid_response_df.columns else 0
+        female_sample = len(valid_response_df[valid_response_df['Gender'] == 2]) if 'Gender' in valid_response_df.columns else 0
         
-        f2f_sample = len(filtered_df[filtered_df['Data Type'] == 1]) if 'Data Type' in filtered_df.columns else 0
-        cati_sample = len(filtered_df[filtered_df['Data Type'] == 2]) if 'Data Type' in filtered_df.columns else 0
+        # Calculate F2F and CATI samples - only with valid responses
+        f2f_sample = len(valid_response_df[valid_response_df['Data Type'] == 1]) if 'Data Type' in valid_response_df.columns else 0
+        cati_sample = len(valid_response_df[valid_response_df['Data Type'] == 2]) if 'Data Type' in valid_response_df.columns else 0
         
         zones_covered = filtered_df['Region Name'].nunique() if 'Region Name' in filtered_df.columns else 0
         

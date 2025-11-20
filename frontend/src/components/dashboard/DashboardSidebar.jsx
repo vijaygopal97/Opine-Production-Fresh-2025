@@ -18,7 +18,8 @@ import {
   User,
   Lock,
   FileBarChart,
-  CheckSquare
+  CheckSquare,
+  PhoneCall
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { authAPI } from '../../services/api';
@@ -208,6 +209,9 @@ const DashboardSidebar = ({ sidebarOpen, userType }) => {
       if (user && user.email === 'ajayadarsh@gmail.com') {
         items.splice(5, 0, { icon: FileBarChart, label: 'Generate Report', path: '/company/generate-report' });
       }
+      
+      // Add CATI Test menu item
+      items.splice(6, 0, { icon: PhoneCall, label: 'CATI Test', path: '/company/cati-test' });
       
       return items;
     } else if (userType === 'project_manager') {

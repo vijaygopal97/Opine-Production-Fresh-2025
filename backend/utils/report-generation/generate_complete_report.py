@@ -58,6 +58,76 @@ class CompleteReportGenerator:
         # Load template PPT
         self.load_template()
     
+    def get_weight_column(self, level='Region', period='Overall', fallback_to_exact=True):
+        """
+        Get the correct weight column name from the dataframe
+        
+        Args:
+            level: 'Region', 'District', or 'AC'
+            period: 'Overall', 'L7D', or 'L15D'
+            fallback_to_exact: If True, try exact match first before pattern matching
+        
+        Returns:
+            Column name if found, None otherwise
+        """
+        # Try exact match first if fallback_to_exact
+        if fallback_to_exact:
+            exact_name = f'Weight - with Vote Share - AE 2021 - {level}'
+            if period != 'Overall':
+                exact_name += f' {period}'
+            if exact_name in self.df.columns:
+                return exact_name
+        
+        # Pattern match based on actual column names in Excel
+        # Pattern: "Weight Voteshare {period} {level} Level"
+        if period == 'Overall':
+            pattern = f'Weight Voteshare Overall {level} Level'
+        elif period == 'L7D':
+            pattern = f'Weight Voteshare L7D {level} Level'
+        elif period == 'L15D':
+            pattern = f'Weight Voteshare L15D {level} Level'
+        else:
+            pattern = None
+        
+        if pattern and pattern in self.df.columns:
+            return pattern
+        
+        # Try alternative patterns
+        alternatives = [
+            f'Weight Voteshare {period} {level} Level' if period != 'Overall' else f'Weight Voteshare Overall {level} Level',
+            f'Weight - with Vote Share - AE 2021 - {level}' + (f' {period}' if period != 'Overall' else ''),
+        ]
+        
+        for alt in alternatives:
+            if alt in self.df.columns:
+                return alt
+        
+        return None
+    
+    def get_sample_size(self, data, question_column=None):
+        """
+        Get sample size by counting only records with non-empty responses to a question
+        
+        Args:
+            data: DataFrame to count from
+            question_column: Column name for the question. If None, uses the main vote question.
+                           If 'overall', counts records with at least one non-empty response to main question.
+        
+        Returns:
+            Sample size (count of non-empty responses)
+        """
+        if question_column is None:
+            question_column = self.calculator.vote_question
+        elif question_column == 'overall':
+            # For overall sample size, count records with at least one non-empty response to main question
+            question_column = self.calculator.vote_question
+        
+        if question_column not in data.columns:
+            return 0
+        
+        # Count only records with non-empty (not null/NaN) responses
+        return len(data[data[question_column].notna()].copy())
+    
     def load_data(self):
         """Load and preprocess Excel data"""
         print(f"Loading data from: {self.excel_path}")
@@ -76,7 +146,7 @@ class CompleteReportGenerator:
     
     def load_ae2021_vote_shares(self):
         """Load 2021 AE vote shares from master sheet for overall tables"""
-        master_file = '/Users/vijaygopal/Documents/Report_Generation/West_Bengal_State_Master_-_2025 v3 (1).xlsx'
+        master_file = '/var/www/West_Bengal_State_Master_-_2025 v3 (1).xlsx'
         
         try:
             # Read Region Data sheet - row 2 (index 2) is state-level
@@ -134,22 +204,29 @@ class CompleteReportGenerator:
         # Filter data up to reference_date only
         filtered_df = self.df[self.df['Survey Date'] <= self.reference_date].copy()
         
-        sample_size = len(filtered_df)
-        start_date = filtered_df['Survey Date'].min() if len(filtered_df) > 0 else None
-        end_date = min(self.reference_date, filtered_df['Survey Date'].max()) if len(filtered_df) > 0 else None
+        # Overall sample size: only count records with non-empty responses to main question
+        sample_size = self.get_sample_size(filtered_df, 'overall')
+        
+        # For date calculations, use all records (even empty ones) for date range
+        valid_date_df = filtered_df[filtered_df['Survey Date'].notna()].copy()
+        start_date = valid_date_df['Survey Date'].min() if len(valid_date_df) > 0 else None
+        end_date = min(self.reference_date, valid_date_df['Survey Date'].max()) if len(valid_date_df) > 0 else None
         duration_days = (end_date - start_date).days + 1 if start_date and end_date else 0
         
         # Calculate daily average sample (for "Total Sample conducted Daily")
-        daily_samples = filtered_df.groupby('Survey Date').size()
+        # Only count records with valid responses for daily averages
+        valid_response_df = filtered_df[filtered_df[self.calculator.vote_question].notna()].copy()
+        daily_samples = valid_response_df.groupby('Survey Date').size()
         avg_daily_sample = int(daily_samples.mean()) if len(daily_samples) > 0 else 0  # Round to nearest integer
         
-        # Calculate gender breakdown
-        male_sample = len(filtered_df[filtered_df['Gender'] == 1])
-        female_sample = len(filtered_df[filtered_df['Gender'] == 2])
+        # Calculate gender breakdown - only count those with valid responses
+        valid_response_df = filtered_df[filtered_df[self.calculator.vote_question].notna()].copy()
+        male_sample = len(valid_response_df[valid_response_df['Gender'] == 1])
+        female_sample = len(valid_response_df[valid_response_df['Gender'] == 2])
         
-        # Calculate F2F and CATI samples (Data Type: 1 = F2F, 2 = CATI)
-        f2f_sample = len(filtered_df[filtered_df['Data Type'] == 1]) if 'Data Type' in filtered_df.columns else 0
-        cati_sample = len(filtered_df[filtered_df['Data Type'] == 2]) if 'Data Type' in filtered_df.columns else 0
+        # Calculate F2F and CATI samples (Data Type: 1 = F2F, 2 = CATI) - only with valid responses
+        f2f_sample = len(valid_response_df[valid_response_df['Data Type'] == 1]) if 'Data Type' in valid_response_df.columns else 0
+        cati_sample = len(valid_response_df[valid_response_df['Data Type'] == 2]) if 'Data Type' in valid_response_df.columns else 0
         
         # Calculate zones covered
         if 'Region Name' in filtered_df.columns:
@@ -199,22 +276,28 @@ class CompleteReportGenerator:
         
         # For 7DMA, use L7D weights when >=50% available, otherwise use regular weights
         # This matches the final PPT behavior where L7D weights are only used when sufficient
-        l7d_col = 'Weight - with Vote Share - AE 2021 - Region L7D'
-        regular_col = 'Weight - with Vote Share - AE 2021 - Region'
+        l7d_col = self.get_weight_column('Region', 'L7D') or 'Weight Voteshare L7D Region Level'
+        regular_col = self.get_weight_column('Region', 'Overall') or 'Weight Voteshare Overall Region Level'
         
-        l7d_available = dma7_data[l7d_col].notna().sum()
+        # Check if columns exist, if not use fallback
+        if l7d_col not in dma7_data.columns:
+            l7d_col = None
+        if regular_col not in dma7_data.columns:
+            regular_col = None
+        
+        l7d_available = dma7_data[l7d_col].notna().sum() if l7d_col else 0
         total_records = len(dma7_data)
         
         # For 7DMA: Use L7D weights if >=50% of records have L7D weights, otherwise use regular weights
         # This ensures we don't use sparse L7D weights which give incorrect results
-        if l7d_available > 0 and (l7d_available / total_records) >= 0.5:
+        if l7d_col and l7d_available > 0 and (l7d_available / total_records) >= 0.5:
             # Use L7D weights - filter to only records with L7D weights
             dma7_data_with_weights = dma7_data[dma7_data[l7d_col].notna()].copy()
             dma7_weight_column = l7d_col
         else:
-            # Fall back to regular weights when L7D weights are sparse (<50%)
+            # Fall back to regular weights when L7D weights are sparse (<50%) or not available
             dma7_data_with_weights = dma7_data.copy()
-            dma7_weight_column = regular_col
+            dma7_weight_column = regular_col if regular_col else None
         
         # Use 7DMA-specific weights for 7DMA calculations
         # For sample size, calculate_vote_share will count all valid votes from dma7_data_with_weights
@@ -235,7 +318,7 @@ class CompleteReportGenerator:
         # Normalized vote share uses same data filtered up to reference date
         normalized_vote_shares = self.calculator.calculate_vote_share(
             overall_data,  # Already filtered to reference_date
-            weight_column='Weight - with Vote Share - AE 2021 - Region',
+            weight_column=self.get_weight_column('Region', 'Overall') or 'Weight Voteshare Overall Region Level',
             use_weights=True
         )
         
@@ -571,9 +654,9 @@ class CompleteReportGenerator:
             category_overall_data = overall_data[category_filter[overall_data.index]].copy() if has_overall else pd.DataFrame()
             
             # Weight columns
-            l7d_col = 'Weight - with Vote Share - AE 2021 - Region L7D'
-            l15d_col = 'Weight - with Vote Share - AE 2021 - Region L15D'
-            regular_col = 'Weight - with Vote Share - AE 2021 - Region'
+            l7d_col = self.get_weight_column('Region', 'L7D') or 'Weight Voteshare L7D Region Level'
+            l15d_col = self.get_weight_column('Region', 'L15D') or 'Weight Voteshare L15D Region Level'
+            regular_col = self.get_weight_column('Region', 'Overall') or 'Weight Voteshare Overall Region Level'
             
             # Calculate 7DMA vote shares (using L7D weights)
             dma7_vote_shares = {}
@@ -871,8 +954,8 @@ class CompleteReportGenerator:
                 ].copy()
                 
                 # Check for L15D weights (30 DMA might use 15D weights)
-                l15d_col = 'Weight - with Vote Share - AE 2021 - Region L15D'
-                regular_col = 'Weight - with Vote Share - AE 2021 - Region'
+                l15d_col = self.get_weight_column('Region', 'L15D') or 'Weight Voteshare L15D Region Level'
+                regular_col = self.get_weight_column('Region', 'Overall') or 'Weight Voteshare Overall Region Level'
                 
                 l15d_available = filtered_data[l15d_col].notna().sum() if l15d_col in filtered_data.columns else 0
                 total_records = len(filtered_data)
@@ -887,7 +970,7 @@ class CompleteReportGenerator:
                 filtered_data = caste_data[
                     caste_data['Survey Date'] <= self.reference_date
                 ].copy()
-                weight_column = 'Weight - with Vote Share - AE 2021 - Region'
+                weight_column = self.get_weight_column('Region', 'Overall') or 'Weight Voteshare Overall Region Level'
             
             # Calculate vote shares
             vote_shares = self.calculator.calculate_vote_share(
@@ -963,7 +1046,7 @@ class CompleteReportGenerator:
                 # Calculate overall normalized vote share (cumulative) for this date
                 vote_shares = self.calculator.calculate_vote_share(
                     date_data,
-                    weight_column='Weight - with Vote Share - AE 2021 - Region',
+                    weight_column=self.get_weight_column('Region', 'Overall') or 'Weight Voteshare Overall Region Level',
                     use_weights=True
                 )
                 
@@ -1116,7 +1199,7 @@ class CompleteReportGenerator:
                 # Calculate overall normalized vote share (cumulative) for this demographic and date
                 vote_shares = self.calculator.calculate_vote_share(
                     date_data,
-                    weight_column='Weight - with Vote Share - AE 2021 - Region',
+                    weight_column=self.get_weight_column('Region', 'Overall') or 'Weight Voteshare Overall Region Level',
                     use_weights=True
                 )
                 
@@ -1320,8 +1403,8 @@ class CompleteReportGenerator:
             if len(date_data) > 0:
                 # For 7DMA, use L7D weights when >=50% available, otherwise use regular weights
                 # This matches the final PPT behavior where L7D weights are only used when sufficient
-                l7d_col = 'Weight - with Vote Share - AE 2021 - Region L7D'
-                regular_col = 'Weight - with Vote Share - AE 2021 - Region'
+                l7d_col = self.get_weight_column('Region', 'L7D') or 'Weight Voteshare L7D Region Level'
+                regular_col = self.get_weight_column('Region', 'Overall') or 'Weight Voteshare Overall Region Level'
                 
                 # Check if L7D weights are available
                 l7d_available = date_data[l7d_col].notna().sum()
@@ -1516,21 +1599,14 @@ class CompleteReportGenerator:
             
             filtered_data = self.df[date_filter & demographic_filter].copy()
             
-            # Check if L7D weights are available
-            l7d_col = 'Weight - with Vote Share - AE 2021 - Region L7D'
-            l7d_available = filtered_data[l7d_col].notna().sum()
-            total_records = len(filtered_data)
-            
-            # If using L7D weights, count all records with L7D weights
-            if l7d_available > 0 and (l7d_available / total_records) >= 0.5:
-                sample_size = len(filtered_data[filtered_data[l7d_col].notna()].copy())
-            else:
-                sample_size = len(filtered_data)
+            # Sample size: only count records with non-empty responses to main question
+            sample_size = self.get_sample_size(filtered_data)
         else:
             # For Overall: use all data up to reference_date
             date_filter = self.df['Survey Date'] <= self.reference_date
             filtered_data = self.df[date_filter & demographic_filter].copy()
-            sample_size = len(filtered_data)
+            # Sample size: only count records with non-empty responses to main question
+            sample_size = self.get_sample_size(filtered_data)
         
         return sample_size
     
@@ -1833,8 +1909,8 @@ class CompleteReportGenerator:
         # Set axis labels to vertical rotation (like format final file)
         self._set_axis_labels_vertical(chart)
         
-        # Calculate sample size: all records up to reference_date
-        sample_size = len(self.df_filtered)
+        # Calculate sample size: only count records with non-empty responses to main question
+        sample_size = self.get_sample_size(self.df_filtered, 'overall')
         
         print(f"Updated Slide 6 chart with {len(daily_data)} days of Overall Normalized Vote Share data")
         return sample_size
@@ -1898,8 +1974,8 @@ class CompleteReportGenerator:
             if len(date_data) > 0:
                 # For 7DMA, use L7D weights when >=50% available, otherwise use regular weights
                 # This matches the final PPT behavior where L7D weights are only used when sufficient
-                l7d_col = 'Weight - with Vote Share - AE 2021 - Region L7D'
-                regular_col = 'Weight - with Vote Share - AE 2021 - Region'
+                l7d_col = self.get_weight_column('Region', 'L7D') or 'Weight Voteshare L7D Region Level'
+                regular_col = self.get_weight_column('Region', 'Overall') or 'Weight Voteshare Overall Region Level'
                 
                 # Check if L7D weights are available
                 l7d_available = date_data[l7d_col].notna().sum()
@@ -2017,15 +2093,12 @@ class CompleteReportGenerator:
         ].copy()
         
         # Check if L7D weights are available
-        l7d_col = 'Weight - with Vote Share - AE 2021 - Region L7D'
+        l7d_col = self.get_weight_column('Region', 'L7D') or 'Weight Voteshare L7D Region Level'
         l7d_available = dma7_data[l7d_col].notna().sum()
         total_records = len(dma7_data)
         
-        # If using L7D weights, count all records with L7D weights
-        if l7d_available > 0 and (l7d_available / total_records) >= 0.5:
-            sample_size = len(dma7_data[dma7_data[l7d_col].notna()].copy())
-        else:
-            sample_size = len(dma7_data)
+        # Sample size: only count records with non-empty responses to main question
+        sample_size = self.get_sample_size(dma7_data)
         
         print(f"Updated Slide 7 chart with {len(daily_data)} days of 7 DMA data")
         return sample_size
@@ -2086,8 +2159,8 @@ class CompleteReportGenerator:
         
         # For 7DMA, ALWAYS use L7D weights (as per user requirement)
         # Filter to only include records with L7D weights when available
-        l7d_col = 'Weight - with Vote Share - AE 2021 - Region L7D'
-        regular_col = 'Weight - with Vote Share - AE 2021 - Region'
+        l7d_col = self.get_weight_column('Region', 'L7D') or 'Weight Voteshare L7D Region Level'
+        regular_col = self.get_weight_column('Region', 'Overall') or 'Weight Voteshare Overall Region Level'
         
         if is_7dma:
             # Check if L7D weights are available
@@ -2270,19 +2343,23 @@ class CompleteReportGenerator:
         else:
             return 'Others'
     
-    def calculate_ae2021_vote_shares_from_survey(self, data_filtered, weight_column='Weight - with Vote Share - AE 2021 - Region', use_weights=True):
+    def calculate_ae2021_vote_shares_from_survey(self, data_filtered, weight_column=None, use_weights=True):
         """
         Calculate 2021 AE vote shares from survey responses (Q5)
         Used for demographic tables where we don't have government data
         
         Args:
             data_filtered: Filtered DataFrame
-            weight_column: Column name for weights
+            weight_column: Column name for weights (if None, will auto-detect)
             use_weights: If True, use weights for normalization
         
         Returns:
             Dictionary with party vote shares
         """
+        # Auto-detect weight column if not provided
+        if weight_column is None:
+            weight_column = self.get_weight_column('Region', 'Overall') or 'Weight Voteshare Overall Region Level'
+        
         question_2021 = '5. Which party did you vote for in the last assembly elections (MLA) in 2021?'
         
         if question_2021 not in data_filtered.columns:
@@ -2332,7 +2409,7 @@ class CompleteReportGenerator:
         """
         question_2021 = '5. Which party did you vote for in the last assembly elections (MLA) in 2021?'
         question_2025 = '8. If assembly elections (MLA) were to be held tomorrow, then which party would you vote for?'
-        weight_column = 'Weight - with Vote Share - AE 2021 - Region'
+        weight_column = self.get_weight_column('Region', 'Overall') or 'Weight Voteshare Overall Region Level'
         
         # Filter to only records that voted in 2021 (have valid Q5 response)
         eligible_data = data_filtered[data_filtered[question_2021].notna()].copy()
@@ -2553,7 +2630,7 @@ class CompleteReportGenerator:
             # For demographic tables, calculate from survey data
             ae2021_vs = self.calculate_ae2021_vote_shares_from_survey(
                 filtered_data,
-                weight_column='Weight - with Vote Share - AE 2021 - Region',
+                weight_column=self.get_weight_column('Region', 'Overall') or 'Weight Voteshare Overall Region Level',
                 use_weights=True
             )
         else:
@@ -2770,7 +2847,7 @@ class CompleteReportGenerator:
                     question_second_choice = col
                     break
         question_second_choice_reason = '10. Could you tell us the reason for choosing the above party as your second choice?'
-        weight_column = 'Weight - with Vote Share - AE 2021 - Region'
+        weight_column = self.get_weight_column('Region', 'Overall') or 'Weight Voteshare Overall Region Level'
         
         # Filter to records with first choice
         eligible_data = data_filtered[data_filtered[question_first_choice].notna()].copy()
@@ -2983,7 +3060,7 @@ class CompleteReportGenerator:
             Dictionary with CM candidate percentages and base sample size
         """
         question = '17. Who do you think is the best leader to be the Chief Minister of West Bengal?'
-        weight_column = 'Weight - with Vote Share - AE 2021 - Region'
+        weight_column = self.get_weight_column('Region', 'Overall') or 'Weight Voteshare Overall Region Level'
         
         # Filter to records with valid response
         eligible_data = data_filtered[data_filtered[question].notna()].copy()
@@ -3144,7 +3221,7 @@ class CompleteReportGenerator:
             Dictionary with rating percentages and base sample size
         """
         question = '14. How satisfied or dissatisfied are you with the performance of the state govt led by Mamata Banerjee?'
-        weight_column = 'Weight - with Vote Share - AE 2021 - Region'
+        weight_column = self.get_weight_column('Region', 'Overall') or 'Weight Voteshare Overall Region Level'
         
         # Filter to records with valid response
         eligible_data = data_filtered[data_filtered[question].notna()].copy()
@@ -3266,7 +3343,7 @@ class CompleteReportGenerator:
             Dictionary with party percentages and base sample size
         """
         question = '19. In your opinion, which party would win the next election in your constituency, when you would elect your MLA?'
-        weight_column = 'Weight - with Vote Share - AE 2021 - Region'
+        weight_column = self.get_weight_column('Region', 'Overall') or 'Weight Voteshare Overall Region Level'
         
         # Filter to records with valid response
         eligible_data = data_filtered[data_filtered[question].notna()].copy()
@@ -3379,7 +3456,7 @@ class CompleteReportGenerator:
             Dictionary with top issues, percentages, and base sample size
         """
         question_prefix = '13. According to you, what are the three most pressing issues of your assembly constituency?'
-        weight_column = 'Weight - with Vote Share - AE 2021 - Region'
+        weight_column = self.get_weight_column('Region', 'Overall') or 'Weight Voteshare Overall Region Level'
         
         # Find all Q13 columns
         issue_cols = [col for col in data_filtered.columns 
@@ -3519,7 +3596,7 @@ class CompleteReportGenerator:
             Dictionary with vote shares by region and base sample sizes
         """
         question = '8. If assembly elections (MLA) were to be held tomorrow, then which party would you vote for?'
-        weight_column = 'Weight - with Vote Share - AE 2021 - Region'
+        weight_column = self.get_weight_column('Region', 'Overall') or 'Weight Voteshare Overall Region Level'
         region_column = 'Region Name'
         
         # Filter to records with valid response
@@ -3861,8 +3938,8 @@ class CompleteReportGenerator:
                 continue
             
             # Use L7D weights if available (with >=50% threshold)
-            l7d_col = 'Weight - with Vote Share - AE 2021 - Region L7D'
-            regular_col = 'Weight - with Vote Share - AE 2021 - Region'
+            l7d_col = self.get_weight_column('Region', 'L7D') or 'Weight Voteshare L7D Region Level'
+            regular_col = self.get_weight_column('Region', 'Overall') or 'Weight Voteshare Overall Region Level'
             
             l7d_available = date_data[l7d_col].notna().sum() if l7d_col in date_data.columns else 0
             total_records = len(date_data)
@@ -3935,7 +4012,7 @@ class CompleteReportGenerator:
             date_data_with_votes = date_data[date_data[question].notna()].copy()
             if len(date_data_with_votes) > 0:
                 # Calculate vote shares
-                weight_column = 'Weight - with Vote Share - AE 2021 - Region'
+                weight_column = self.get_weight_column('Region', 'Overall') or 'Weight Voteshare Overall Region Level'
                 vote_shares = self.calculator.calculate_vote_share(date_data, weight_column=weight_column, use_weights=True)
                 last_vote_shares = vote_shares
             elif last_vote_shares is not None:
@@ -3964,9 +4041,8 @@ class CompleteReportGenerator:
         return daily_results
     
     def _get_region_sample_size(self, region_name, is_7dma=False):
-        """Get sample size for a region"""
+        """Get sample size for a region - only count records with non-empty responses"""
         region_data = self.df[self.df['Region Name'] == region_name].copy()
-        question = '8. If assembly elections (MLA) were to be held tomorrow, then which party would you vote for?'
         
         if is_7dma:
             # Filter for 7DMA window
@@ -3980,8 +4056,8 @@ class CompleteReportGenerator:
             # Filter for overall
             region_data = region_data[region_data['Survey Date'] <= self.reference_date].copy()
         
-        # Count records with valid votes
-        return len(region_data[region_data[question].notna()].copy())
+        # Count only records with valid (non-empty) responses to main question
+        return self.get_sample_size(region_data)
     
     def _set_axis_labels_vertical(self, chart):
         """
@@ -4203,7 +4279,7 @@ class CompleteReportGenerator:
             ].copy()
             weight_column = 'Weight - with Vote Share - AE 2021 - District L15D'
             if weight_column not in filtered_data.columns:
-                weight_column = 'Weight - with Vote Share - AE 2021 - District'
+                weight_column = self.get_weight_column('District', 'Overall') or 'Weight Voteshare Overall District Level'
         elif is_7dma:
             end_date = self.reference_date - timedelta(days=1)
             cutoff_date = end_date - timedelta(days=6)
@@ -4211,12 +4287,12 @@ class CompleteReportGenerator:
                 (self.df['Survey Date'] >= cutoff_date) & 
                 (self.df['Survey Date'] <= end_date)
             ].copy()
-            weight_column = 'Weight - with Vote Share - AE 2021 - District L7D'
+            weight_column = self.get_weight_column('District', 'L7D') or 'Weight Voteshare L7D District Level'
             if weight_column not in filtered_data.columns:
-                weight_column = 'Weight - with Vote Share - AE 2021 - District'
+                weight_column = self.get_weight_column('District', 'Overall') or 'Weight Voteshare Overall District Level'
         else:
             filtered_data = self.df[self.df['Survey Date'] <= self.reference_date].copy()
-            weight_column = 'Weight - with Vote Share - AE 2021 - District'
+            weight_column = self.get_weight_column('District', 'Overall') or 'Weight Voteshare Overall District Level'
         
         # Update table rows (starting from row 2, row 0 is header, row 1 is sub-header)
         total_sample = 0
@@ -4228,16 +4304,14 @@ class CompleteReportGenerator:
             if len(district_data) == 0:
                 continue
             
-            # Calculate actual sample size from original district_data (before weight filtering)
-            # This should be the actual count of responses, not normalized
-            question = '8. If assembly elections (MLA) were to be held tomorrow, then which party would you vote for?'
-            sample_size = len(district_data[district_data[question].notna()].copy())
+            # Calculate actual sample size: only count records with non-empty responses
+            sample_size = self.get_sample_size(district_data)
             total_sample += sample_size
             
             # For 15DMA and 7DMA, check if L15D/L7D weights are available (with >=50% threshold)
             if is_15dma:
                 l15d_col = 'Weight - with Vote Share - AE 2021 - District L15D'
-                regular_col = 'Weight - with Vote Share - AE 2021 - District'
+                regular_col = self.get_weight_column('District', 'Overall') or 'Weight Voteshare Overall District Level'
                 l15d_available = district_data[l15d_col].notna().sum() if l15d_col in district_data.columns else 0
                 total_records = len(district_data)
                 
@@ -4250,8 +4324,8 @@ class CompleteReportGenerator:
                     district_data_with_weights = district_data.copy()
                     weight_column_used = regular_col
             elif is_7dma:
-                l7d_col = 'Weight - with Vote Share - AE 2021 - District L7D'
-                regular_col = 'Weight - with Vote Share - AE 2021 - District'
+                l7d_col = self.get_weight_column('District', 'L7D') or 'Weight Voteshare L7D District Level'
+                regular_col = self.get_weight_column('District', 'Overall') or 'Weight Voteshare Overall District Level'
                 l7d_available = district_data[l7d_col].notna().sum() if l7d_col in district_data.columns else 0
                 total_records = len(district_data)
                 
@@ -4476,7 +4550,7 @@ class CompleteReportGenerator:
             # Use L15D weights if available
             weight_column = 'Weight - with Vote Share - AE 2021 - District L15D'
             if weight_column not in date_data.columns:
-                weight_column = 'Weight - with Vote Share - AE 2021 - District'
+                weight_column = self.get_weight_column('District', 'Overall') or 'Weight Voteshare Overall District Level'
             
             vote_shares = self.calculator.calculate_vote_share(date_data, weight_column=weight_column, use_weights=True)
             
@@ -4522,7 +4596,7 @@ class CompleteReportGenerator:
             if len(date_data) == 0:
                 continue
             
-            weight_column = 'Weight - with Vote Share - AE 2021 - District'
+            weight_column = self.get_weight_column('District', 'Overall') or 'Weight Voteshare Overall District Level'
             vote_shares = self.calculator.calculate_vote_share(date_data, weight_column=weight_column, use_weights=True)
             
             # Convert date to Excel serial number and date label
@@ -4544,9 +4618,8 @@ class CompleteReportGenerator:
         return daily_results
     
     def _get_district_sample_size(self, district_name, is_15dma=False):
-        """Get sample size for a district"""
+        """Get sample size for a district - only count records with non-empty responses"""
         district_data = self.df[self.df['District Name'] == district_name].copy()
-        question = '8. If assembly elections (MLA) were to be held tomorrow, then which party would you vote for?'
         
         if is_15dma:
             # Filter for 15DMA window
@@ -4560,8 +4633,8 @@ class CompleteReportGenerator:
             # Filter for overall
             district_data = district_data[district_data['Survey Date'] <= self.reference_date].copy()
         
-        # Count records with valid votes
-        return len(district_data[district_data[question].notna()].copy())
+        # Count only records with valid (non-empty) responses to main question
+        return self.get_sample_size(district_data)
     
     def generate_complete_report(self, output_path):
         """

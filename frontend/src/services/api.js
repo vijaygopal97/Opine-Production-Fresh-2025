@@ -970,4 +970,47 @@ export const reportAPI = {
   }
 };
 
+// CATI Test API
+export const catiAPI = {
+  // Make a call
+  makeCall: async (callData) => {
+    try {
+      const response = await api.post('/api/cati/make-call', callData);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get all calls
+  getCalls: async (params = {}) => {
+    try {
+      const response = await api.get('/api/cati/calls', { params });
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get call by ID
+  getCallById: async (callId) => {
+    try {
+      const response = await api.get(`/api/cati/calls/${callId}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get call statistics
+  getCallStats: async () => {
+    try {
+      const response = await api.get('/api/cati/stats');
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  }
+};
+
 export default api;
