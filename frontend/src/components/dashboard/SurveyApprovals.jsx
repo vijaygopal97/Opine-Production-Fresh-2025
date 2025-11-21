@@ -28,9 +28,11 @@ import {
   TrendingUp,
   Shield,
   CheckSquare,
-  MapPin
+  MapPin,
+  PhoneCall
 } from 'lucide-react';
-import { surveyResponseAPI, surveyAPI } from '../../services/api';
+import { surveyResponseAPI, surveyAPI, catiAPI } from '../../services/api';
+import api from '../../services/api';
 
 const SurveyApprovals = () => {
   const { user } = useAuth();
@@ -60,6 +62,8 @@ const SurveyApprovals = () => {
   const [assignmentExpiresAt, setAssignmentExpiresAt] = useState(null);
   const [isGettingNextAssignment, setIsGettingNextAssignment] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState(null);
+  const [catiCallDetails, setCatiCallDetails] = useState(null);
+  const [catiRecordingBlobUrl, setCatiRecordingBlobUrl] = useState(null);
   const { showSuccess, showError } = useToast();
 
   // Helper function to get target audience from survey object
@@ -339,6 +343,12 @@ const SurveyApprovals = () => {
     }
     setAudioPlaying(null);
     
+    // Cleanup CATI recording blob URL
+    if (catiRecordingBlobUrl) {
+      URL.revokeObjectURL(catiRecordingBlobUrl);
+      setCatiRecordingBlobUrl(null);
+    }
+    
     // Release assignment if one exists (user is closing without submitting)
     if (currentAssignment) {
       await handleReleaseAssignment();
@@ -347,6 +357,7 @@ const SurveyApprovals = () => {
     setShowResponseDetails(false);
     setSelectedInterview(null);
     setFullSurveyData(null); // Clear full survey data
+    setCatiCallDetails(null); // Clear CATI call details
     resetVerificationForm();
   };
 
@@ -1443,14 +1454,55 @@ const SurveyApprovals = () => {
                         
                         <td className="px-6 py-4 whitespace-nowrap">
                           <button
-                            onClick={() => {
+                            onClick={async () => {
                               setSelectedInterview(interview);
                               resetVerificationForm();
+                              setCatiCallDetails(null);
+                              setCatiRecordingBlobUrl(null);
                               setShowResponseDetails(true);
                               // Fetch full survey data to get target audience
                               // Pass the survey data already in the interview object
                               if (interview?.survey?._id) {
                                 fetchFullSurveyData(interview.survey._id, interview.survey);
+                              }
+                              // If CATI interview, fetch call details using call_id
+                              if (interview.interviewMode === 'cati') {
+                                console.log('🔍 CATI interview detected, call_id:', interview.call_id);
+                                const callId = interview.call_id;
+                                if (callId) {
+                                  console.log('🔍 Fetching call details for callId:', callId);
+                                  try {
+                                    // Use getCallById which now supports both _id and callId
+                                    const callResponse = await catiAPI.getCallById(callId);
+                                    console.log('🔍 Call response:', callResponse);
+                                    if (callResponse.success && callResponse.data) {
+                                      console.log('✅ Call details fetched successfully:', callResponse.data);
+                                      setCatiCallDetails(callResponse.data);
+                                      // Fetch recording if available
+                                      if (callResponse.data.recordingUrl) {
+                                        try {
+                                          const recordingResponse = await api.get(`/api/cati/recording/${callResponse.data._id}`, {
+                                            responseType: 'blob'
+                                          });
+                                          if (recordingResponse.data) {
+                                            const blob = new Blob([recordingResponse.data], { type: 'audio/mpeg' });
+                                            const blobUrl = URL.createObjectURL(blob);
+                                            setCatiRecordingBlobUrl(blobUrl);
+                                          }
+                                        } catch (recordingError) {
+                                          console.error('Error fetching CATI recording:', recordingError);
+                                        }
+                                      }
+                                    } else {
+                                      console.warn('⚠️ Call response not successful or no data:', callResponse);
+                                    }
+                                  } catch (error) {
+                                    console.error('❌ Error fetching CATI call details:', error);
+                                    showError('Failed to fetch call details. Please try again.');
+                                  }
+                                } else {
+                                  console.warn('⚠️ No call_id found in SurveyResponse for CATI interview');
+                                }
                               }
                             }}
                             className="inline-flex items-center px-3 py-1 border border-transparent rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -1558,6 +1610,356 @@ const SurveyApprovals = () => {
                   )}
                 </div>
               </div>
+
+              {/* Call Information Section - Only for CATI interviews */}
+              {selectedInterview.interviewMode === 'cati' && catiCallDetails && (
+                <div className="mt-6 bg-white border border-gray-200 rounded-lg p-6">
+                  <h4 className="font-semibold text-gray-900 mb-4 flex items-center text-lg">
+                    <PhoneCall className="w-5 h-5 mr-2 text-blue-600" />
+                    Call Information
+                  </h4>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-600 font-medium">Call Status:</span>
+                      <div className="mt-1">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                          catiCallDetails.callStatus === 'completed' || catiCallDetails.callStatus === 'answered' 
+                            ? 'bg-green-100 text-green-800' 
+                            : catiCallDetails.callStatus === 'failed' || catiCallDetails.callStatus === 'busy'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {catiCallDetails.callStatusDescription || catiCallDetails.statusDescription || catiCallDetails.callStatus}
+                        </span>
+                      </div>
+                    </div>
+                    {(catiCallDetails.callStatusCode || catiCallDetails.originalStatusCode) && (
+                      <div>
+                        <span className="text-gray-600 font-medium">Status Code:</span>
+                        <span className="ml-2 font-medium">{catiCallDetails.callStatusCode || catiCallDetails.originalStatusCode}</span>
+                      </div>
+                    )}
+                    {catiCallDetails.callId && (
+                      <div className="col-span-2">
+                        <span className="text-gray-600 font-medium">Call ID:</span>
+                        <span className="ml-2 font-medium text-xs font-mono break-all">{catiCallDetails.callId}</span>
+                      </div>
+                    )}
+                    <div>
+                      <span className="text-gray-600 font-medium">From Number:</span>
+                      <span className="ml-2 font-medium">{catiCallDetails.fromNumber || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600 font-medium">To Number:</span>
+                      <span className="ml-2 font-medium">{catiCallDetails.toNumber || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600 font-medium">Call Duration:</span>
+                      <span className="ml-2 font-medium">
+                        {catiCallDetails.callDuration ? formatDuration(catiCallDetails.callDuration) : 'N/A'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600 font-medium">Talk Duration:</span>
+                      <span className="ml-2 font-medium">
+                        {catiCallDetails.talkDuration ? formatDuration(catiCallDetails.talkDuration) : 'N/A'}
+                      </span>
+                    </div>
+                    {(catiCallDetails.startTime || catiCallDetails.callStartTime) && (
+                      <div>
+                        <span className="text-gray-600 font-medium">Call Start Time:</span>
+                        <span className="ml-2 font-medium">
+                          {new Date(catiCallDetails.startTime || catiCallDetails.callStartTime).toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+                    {(catiCallDetails.endTime || catiCallDetails.callEndTime) && (
+                      <div>
+                        <span className="text-gray-600 font-medium">Call End Time:</span>
+                        <span className="ml-2 font-medium">
+                          {new Date(catiCallDetails.endTime || catiCallDetails.callEndTime).toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+                    {catiCallDetails.ringDuration && catiCallDetails.ringDuration > 0 && (
+                      <div>
+                        <span className="text-gray-600 font-medium">Ring Duration:</span>
+                        <span className="ml-2 font-medium">
+                          {formatDuration(catiCallDetails.ringDuration)}
+                        </span>
+                      </div>
+                    )}
+                    {catiCallDetails.hangupCause && (
+                      <div>
+                        <span className="text-gray-600 font-medium">Hangup Cause:</span>
+                        <span className="ml-2 font-medium">{catiCallDetails.hangupCause}</span>
+                      </div>
+                    )}
+                    {catiCallDetails.hangupBySource && (
+                      <div>
+                        <span className="text-gray-600 font-medium">Hangup By:</span>
+                        <span className="ml-2 font-medium">{catiCallDetails.hangupBySource}</span>
+                      </div>
+                    )}
+                    {catiCallDetails.fromType && (
+                      <div>
+                        <span className="text-gray-600 font-medium">From Type:</span>
+                        <span className="ml-2 font-medium">{catiCallDetails.fromType}</span>
+                      </div>
+                    )}
+                    {catiCallDetails.toType && (
+                      <div>
+                        <span className="text-gray-600 font-medium">To Type:</span>
+                        <span className="ml-2 font-medium">{catiCallDetails.toType}</span>
+                      </div>
+                    )}
+                    {catiCallDetails.recordingUrl && (
+                      <div className="col-span-2">
+                        <span className="text-gray-600 font-medium">Recording Available:</span>
+                        <span className="ml-2 font-medium text-green-600">Yes</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              {selectedInterview.interviewMode === 'cati' && !catiCallDetails && (
+                <div className="mt-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <div className="flex items-center">
+                    <AlertCircle className="w-5 h-5 mr-2 text-yellow-600" />
+                    <div>
+                      <h4 className="font-medium text-yellow-900">Call Information Not Available</h4>
+                      <p className="text-sm text-yellow-700 mt-1">
+                        Call details could not be loaded. This may be because the call record was not found or the interview was completed before the call was made.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {/* Target Audience Requirements */}
+              {(() => {
+                const targetAudience = getTargetAudience(selectedInterview);
+                return targetAudience;
+              })() && (
+                <div className="mt-6">
+                  <h4 className="font-medium text-gray-900 mb-3 flex items-center">
+                    <Target className="w-5 h-5 mr-2" />
+                    Target Audience Requirements
+                  </h4>
+                  <div className="bg-white border border-gray-200 rounded-lg p-4">
+                    <div className="space-y-4">
+                      {(() => {
+                        const targetAudience = getTargetAudience(selectedInterview);
+                        if (!targetAudience) return null;
+
+                        return (
+                          <>
+                            {/* Demographics */}
+                            {targetAudience.demographics && Object.keys(targetAudience.demographics).some(key => 
+                              targetAudience.demographics[key] && typeof targetAudience.demographics[key] === 'boolean'
+                            ) && (
+                              <div>
+                                <h5 className="text-sm font-semibold text-gray-800 mb-3 flex items-center">
+                                  <Users className="w-4 h-4 mr-2" />
+                                  Demographics
+                                </h5>
+                                <div className="space-y-3">
+                                  
+                                  {/* Age Group */}
+                                  {targetAudience.demographics['Age Group'] && targetAudience.demographics.ageRange && (
+                                    <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                                      <h6 className="text-xs font-medium text-blue-900 mb-1">Age Range</h6>
+                                      <span className="text-xs text-blue-700">
+                                        {targetAudience.demographics.ageRange.min || 'Not specified'} - {targetAudience.demographics.ageRange.max || 'Not specified'} years
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {/* Gender Requirements */}
+                                  {targetAudience.demographics['Gender'] && targetAudience.demographics.genderRequirements && (
+                                    <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                                      <h6 className="text-xs font-medium text-purple-900 mb-2">Gender Distribution</h6>
+                                      <div className="space-y-1">
+                                        {(() => {
+                                          const requirements = targetAudience.demographics.genderRequirements;
+                                          const selectedGenders = Object.keys(requirements).filter(g => requirements[g] && !g.includes('Percentage'));
+                                          
+                                          return selectedGenders.map(gender => {
+                                            const percentage = requirements[`${gender}Percentage`];
+                                            const displayPercentage = selectedGenders.length === 1 && !percentage ? 100 : (percentage || 0);
+                                            return (
+                                              <div key={gender} className="flex items-center justify-between">
+                                                <span className="text-xs text-purple-700">{gender}</span>
+                                                <span className="text-xs font-semibold text-purple-900">{displayPercentage}%</span>
+                                              </div>
+                                            );
+                                          });
+                                        })()}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Income Level */}
+                                  {targetAudience.demographics['Income Level'] && targetAudience.demographics.incomeRange && (
+                                    <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                                      <h6 className="text-xs font-medium text-green-900 mb-1">Income Range</h6>
+                                      <span className="text-xs text-green-700">
+                                        ₹{targetAudience.demographics.incomeRange.min?.toLocaleString() || 'Not specified'} - ₹{targetAudience.demographics.incomeRange.max?.toLocaleString() || 'Not specified'}
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {/* Education */}
+                                  {targetAudience.demographics['Education'] && targetAudience.demographics.educationRequirements && (
+                                    <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+                                      <h6 className="text-xs font-medium text-yellow-900 mb-2">Education Level</h6>
+                                      <div className="flex flex-wrap gap-1">
+                                        {Object.keys(targetAudience.demographics.educationRequirements)
+                                          .filter(edu => targetAudience.demographics.educationRequirements[edu])
+                                          .map(education => (
+                                            <span key={education} className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">
+                                              {education}
+                                            </span>
+                                          ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Occupation */}
+                                  {targetAudience.demographics['Occupation'] && targetAudience.demographics.occupationRequirements && (
+                                    <div className="p-3 bg-indigo-50 rounded-lg border border-indigo-200">
+                                      <h6 className="text-xs font-medium text-indigo-900 mb-1">Occupation Requirements</h6>
+                                      <p className="text-xs text-indigo-700">{targetAudience.demographics.occupationRequirements}</p>
+                                    </div>
+                                  )}
+
+                                  {/* Marital Status */}
+                                  {targetAudience.demographics['Marital Status'] && targetAudience.demographics.maritalStatusRequirements && (
+                                    <div className="p-3 bg-pink-50 rounded-lg border border-pink-200">
+                                      <h6 className="text-xs font-medium text-pink-900 mb-2">Marital Status</h6>
+                                      <div className="flex flex-wrap gap-1">
+                                        {Object.keys(targetAudience.demographics.maritalStatusRequirements)
+                                          .filter(status => targetAudience.demographics.maritalStatusRequirements[status])
+                                          .map(status => (
+                                            <span key={status} className="px-2 py-1 bg-pink-100 text-pink-800 text-xs rounded-full">
+                                              {status}
+                                            </span>
+                                          ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Family Size */}
+                                  {targetAudience.demographics['Family Size'] && targetAudience.demographics.familySizeRange && (
+                                    <div className="p-3 bg-teal-50 rounded-lg border border-teal-200">
+                                      <h6 className="text-xs font-medium text-teal-900 mb-1">Family Size Range</h6>
+                                      <span className="text-xs text-teal-700">
+                                        {targetAudience.demographics.familySizeRange.min || 'Not specified'} - {targetAudience.demographics.familySizeRange.max || 'Not specified'} members
+                                      </span>
+                                    </div>
+                                  )}
+
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Geographic */}
+                            {targetAudience.geographic && Object.keys(targetAudience.geographic).some(key => 
+                              targetAudience.geographic[key] && typeof targetAudience.geographic[key] === 'boolean'
+                            ) && (
+                              <div>
+                                <h5 className="text-sm font-semibold text-gray-800 mb-3 flex items-center">
+                                  <MapPin className="w-4 h-4 mr-2" />
+                                  Geographic Targeting
+                                </h5>
+                                <div className="space-y-3">
+                                  
+                                  {/* Country */}
+                                  {targetAudience.geographic['Country'] && targetAudience.geographic.countryRequirements && (
+                                    <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                                      <h6 className="text-xs font-medium text-green-900 mb-1">Target Countries</h6>
+                                      <p className="text-xs text-green-700">{targetAudience.geographic.countryRequirements}</p>
+                                    </div>
+                                  )}
+
+                                  {/* State/Province */}
+                                  {targetAudience.geographic['State/Province'] && targetAudience.geographic.stateRequirements && (
+                                    <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                                      <h6 className="text-xs font-medium text-blue-900 mb-1">Target States/Provinces</h6>
+                                      <p className="text-xs text-blue-700">{targetAudience.geographic.stateRequirements}</p>
+                                    </div>
+                                  )}
+
+                                  {/* City */}
+                                  {targetAudience.geographic['City'] && targetAudience.geographic.cityRequirements && (
+                                    <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                                      <h6 className="text-xs font-medium text-purple-900 mb-1">Target Cities</h6>
+                                      <p className="text-xs text-purple-700">{targetAudience.geographic.cityRequirements}</p>
+                                    </div>
+                                  )}
+
+                                  {/* Urban/Rural */}
+                                  {targetAudience.geographic['Urban/Rural'] && targetAudience.geographic.areaTypeRequirements && (
+                                    <div className="p-3 bg-orange-50 rounded-lg border border-orange-200">
+                                      <h6 className="text-xs font-medium text-orange-900 mb-2">Area Type</h6>
+                                      <div className="flex flex-wrap gap-1">
+                                        {Object.keys(targetAudience.geographic.areaTypeRequirements)
+                                          .filter(area => targetAudience.geographic.areaTypeRequirements[area])
+                                          .map(area => (
+                                            <span key={area} className="px-2 py-1 bg-orange-100 text-orange-800 text-xs rounded-full">
+                                              {area}
+                                            </span>
+                                          ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Postal Code */}
+                                  {targetAudience.geographic['Postal Code'] && targetAudience.geographic.postalCodeRequirements && (
+                                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                      <h6 className="text-xs font-medium text-gray-900 mb-1">Postal Code Requirements</h6>
+                                      <p className="text-xs text-gray-700">{targetAudience.geographic.postalCodeRequirements}</p>
+                                    </div>
+                                  )}
+
+                                  {/* Timezone */}
+                                  {targetAudience.geographic['Timezone'] && targetAudience.geographic.timezoneRequirements && (
+                                    <div className="p-3 bg-cyan-50 rounded-lg border border-cyan-200">
+                                      <h6 className="text-xs font-medium text-cyan-900 mb-2">Timezone Requirements</h6>
+                                      <div className="flex flex-wrap gap-1">
+                                        {Object.keys(targetAudience.geographic.timezoneRequirements)
+                                          .filter(tz => targetAudience.geographic.timezoneRequirements[tz])
+                                          .map(timezone => (
+                                            <span key={timezone} className="px-2 py-1 bg-cyan-100 text-cyan-800 text-xs rounded-full">
+                                              {timezone}
+                                            </span>
+                                          ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Custom Specifications */}
+                            {targetAudience.custom && targetAudience.custom.trim() && (
+                              <div>
+                                <h5 className="text-sm font-semibold text-gray-800 mb-3 flex items-center">
+                                  <AlertCircle className="w-4 h-4 mr-2" />
+                                  Custom Specifications
+                                </h5>
+                                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                  <p className="text-xs text-gray-700">{targetAudience.custom}</p>
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Target Audience Requirements */}
               {(() => {
@@ -1785,8 +2187,8 @@ const SurveyApprovals = () => {
                 </div>
               )}
 
-              {/* Location Map */}
-              {selectedInterview.location && (
+              {/* Location Map - Only for CAPI interviews */}
+              {selectedInterview.location && selectedInterview.interviewMode !== 'cati' && (
                 <div className="mt-6">
                   <h4 className="font-medium text-gray-900 mb-3">Interview Location</h4>
                   <div className="bg-white border border-gray-200 rounded-lg p-4">
@@ -1903,7 +2305,45 @@ const SurveyApprovals = () => {
 
             {/* Audio Player & Quality Metrics & Actions */}
             <div className="space-y-6">
-              {selectedInterview.audioRecording?.hasAudio ? (
+              {selectedInterview.interviewMode === 'cati' && catiCallDetails?.recordingUrl ? (
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-gray-900 mb-3 flex items-center">
+                    <Headphones className="w-5 h-5 mr-2" />
+                    Call Recording
+                  </h4>
+                  <div className="space-y-3">
+                    <div className="text-sm text-gray-600">
+                      <div>Call Duration: {catiCallDetails?.callDuration ? formatDuration(catiCallDetails.callDuration) : 'N/A'}</div>
+                      <div>Talk Duration: {catiCallDetails?.talkDuration ? formatDuration(catiCallDetails.talkDuration) : 'N/A'}</div>
+                      <div>Format: MP3</div>
+                      <div>Status: {catiCallDetails?.callStatusDescription || catiCallDetails?.callStatus || 'N/A'}</div>
+                    </div>
+                    {catiRecordingBlobUrl ? (
+                      <>
+                        <audio
+                          data-interview-id={selectedInterview._id}
+                          src={catiRecordingBlobUrl}
+                          onEnded={() => setAudioPlaying(null)}
+                          onPause={() => setAudioPlaying(null)}
+                          onPlay={() => setAudioPlaying(selectedInterview._id)}
+                          className="w-full"
+                          controls
+                        />
+                        <a
+                          href={catiRecordingBlobUrl}
+                          download={`cati_recording_${catiCallDetails?.callId || catiCallDetails?._id || 'recording'}.mp3`}
+                          className="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                        >
+                          <Download className="w-4 h-4 mr-2" />
+                          Download Recording
+                        </a>
+                      </>
+                    ) : (
+                      <div className="text-sm text-gray-500">Loading recording...</div>
+                    )}
+                  </div>
+                </div>
+              ) : selectedInterview.audioRecording?.hasAudio ? (
                 <div className="bg-gray-50 p-4 rounded-lg">
                   <h4 className="font-medium text-gray-900 mb-3 flex items-center">
                     <Headphones className="w-5 h-5 mr-2" />

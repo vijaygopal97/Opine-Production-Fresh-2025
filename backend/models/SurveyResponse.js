@@ -110,6 +110,13 @@ const surveyResponseSchema = new mongoose.Schema({
     required: true
   },
   
+  // CATI Call ID (DeepCall callId) - for linking to CatiCall record
+  call_id: {
+    type: String,
+    trim: true,
+    index: true
+  },
+  
   // Assembly Constituency Selection (for surveys with AC assignment)
   selectedAC: {
     type: String,

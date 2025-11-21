@@ -60,6 +60,8 @@ const SurveyReportsPage = () => {
   const [showACModal, setShowACModal] = useState(false);
   const [showInterviewerModal, setShowInterviewerModal] = useState(false);
   const [showDailyTrendsModal, setShowDailyTrendsModal] = useState(false);
+  const [catiStats, setCatiStats] = useState(null);
+  const [showCallRecords, setShowCallRecords] = useState(false);
   const { showError } = useToast();
 
   // Filter states
@@ -232,6 +234,23 @@ const SurveyReportsPage = () => {
       const response = await surveyResponseAPI.getSurveyResponses(surveyId, params);
       if (response.success) {
         setResponses(response.data.responses);
+      }
+
+      // Fetch CATI stats if survey has CATI mode
+      const isCatiSurvey = surveyResponse.data?.mode === 'cati' || 
+                          surveyResponse.data?.mode === 'multi_mode' ||
+                          (surveyResponse.data?.modes && surveyResponse.data.modes.includes('cati'));
+      
+      if (isCatiSurvey) {
+        try {
+          const catiStatsResponse = await surveyAPI.getCatiStats(surveyId);
+          if (catiStatsResponse.success) {
+            setCatiStats(catiStatsResponse.data);
+          }
+        } catch (catiError) {
+          console.error('Error fetching CATI stats:', catiError);
+          // Don't show error, just log it - CATI stats are optional
+        }
       }
     } catch (error) {
       console.error('Error fetching survey data:', error);
@@ -753,8 +772,8 @@ const SurveyReportsPage = () => {
     const capiApproved = capiResponsesForStats.filter(r => r.status?.toLowerCase() === 'approved').length;
     const capiRejected = capiResponsesForStats.filter(r => r.status?.toLowerCase() === 'rejected').length;
 
-    // CATI Performance stats (placeholder - all 0s for now)
-    const catiStats = {
+    // CATI Performance stats - use real data if available
+    const catiPerformanceData = catiStats || {
       callerPerformance: {
         callsMade: 0,
         callsAttended: 0,
@@ -799,7 +818,7 @@ const SurveyReportsPage = () => {
         rejected: capiRejected,
         total: capiResponsesForStats.length
       },
-      catiPerformance: catiStats
+      catiPerformance: catiPerformanceData
     };
   }, [filteredResponses, survey]);
 
@@ -1471,6 +1490,78 @@ const SurveyReportsPage = () => {
               </div>
             </div>
           </div>
+
+          {/* Call Records Section */}
+          {catiStats?.callRecords && catiStats.callRecords.length > 0 && (
+            <div className="mt-8">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-md font-semibold text-gray-800">Call Records</h4>
+                <button
+                  onClick={() => setShowCallRecords(!showCallRecords)}
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  {showCallRecords ? 'Hide' : 'Show'} Call Records ({catiStats.callRecords.length})
+                </button>
+              </div>
+              
+              {showCallRecords && (
+                <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Call ID</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">From</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">To</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Interviewer</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Talk Time</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {catiStats.callRecords.map((call) => (
+                          <tr key={call._id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 whitespace-nowrap text-sm font-mono text-gray-900">
+                              {call.callId?.substring(0, 20)}...
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{call.fromNumber}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{call.toNumber}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                              {call.interviewer ? call.interviewer.name : 'N/A'}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                                call.callStatus === 'answered' || call.callStatus === 'completed' 
+                                  ? 'bg-green-100 text-green-800'
+                                  : call.callStatus === 'no-answer'
+                                  ? 'bg-yellow-100 text-yellow-800'
+                                  : call.callStatus === 'failed'
+                                  ? 'bg-red-100 text-red-800'
+                                  : 'bg-gray-100 text-gray-800'
+                              }`}>
+                                {call.callStatusDescription || call.callStatus}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                              {call.callDuration ? `${Math.floor(call.callDuration / 60)}:${(call.callDuration % 60).toString().padStart(2, '0')}` : 'N/A'}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                              {call.talkDuration ? `${Math.floor(call.talkDuration / 60)}:${(call.talkDuration % 60).toString().padStart(2, '0')}` : 'N/A'}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                              {call.callStartTime ? new Date(call.callStartTime).toLocaleDateString() : 'N/A'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
         )}
 

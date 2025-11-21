@@ -2,6 +2,8 @@ const Survey = require('../models/Survey');
 const User = require('../models/User');
 const Company = require('../models/Company');
 const SurveyResponse = require('../models/SurveyResponse');
+const CatiCall = require('../models/CatiCall');
+const CatiRespondentQueue = require('../models/CatiRespondentQueue');
 const XLSX = require('xlsx');
 const multer = require('multer');
 const path = require('path');
@@ -1657,6 +1659,232 @@ exports.uploadRespondentContacts = async (req, res) => {
       success: false,
       message: 'Error parsing Excel file',
       error: error.message
+    });
+  }
+};
+
+// @desc    Get CATI performance stats for a survey
+// @route   GET /api/surveys/:id/cati-stats
+// @access  Private (Company Admin, Project Manager)
+exports.getCatiStats = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Get current user and their company
+    const currentUser = await User.findById(req.user.id).populate('company');
+    if (!currentUser || !currentUser.company) {
+      return res.status(400).json({
+        success: false,
+        message: 'User not associated with any company'
+      });
+    }
+
+    // Find survey
+    const survey = await Survey.findById(id);
+    if (!survey) {
+      return res.status(404).json({
+        success: false,
+        message: 'Survey not found'
+      });
+    }
+
+    // Check access
+    if (survey.company.toString() !== currentUser.company._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    // Get all queue entries for this survey
+    const queueEntries = await CatiRespondentQueue.find({
+      survey: id
+    }).populate('callRecord').populate('assignedTo', 'firstName lastName email');
+
+    // Get call records from queue entries and also directly by survey
+    const callRecordIds = queueEntries
+      .filter(q => q.callRecord)
+      .map(q => {
+        if (q.callRecord && q.callRecord._id) {
+          return q.callRecord._id;
+        }
+        return q.callRecord;
+      })
+      .filter(id => id); // Remove null/undefined
+    
+    // Also get calls directly linked to this survey
+    const directCallRecords = await CatiCall.find({
+      survey: id,
+      webhookReceived: true
+    });
+    
+    // Combine both sources
+    const allCallRecordIds = [
+      ...callRecordIds,
+      ...directCallRecords.map(c => c._id)
+    ];
+    
+    // Get unique call records
+    const uniqueCallRecordIds = [...new Set(allCallRecordIds.map(id => id.toString()))];
+    
+    const callRecords = await CatiCall.find({
+      _id: { $in: uniqueCallRecordIds },
+      webhookReceived: true
+    }).populate('createdBy', 'firstName lastName email');
+
+    // Get queue stats
+    const queueStats = await CatiRespondentQueue.aggregate([
+      { $match: { survey: survey._id } },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Calculate stats
+    const totalCalls = callRecords.length;
+    const callsConnected = callRecords.filter(c => 
+      c.callStatus === 'answered' || c.callStatus === 'completed'
+    ).length;
+    const callsAttended = callRecords.filter(c => 
+      c.callStatus === 'answered'
+    ).length;
+    
+    // Calculate total talk duration
+    const totalTalkDuration = callRecords.reduce((sum, c) => sum + (c.talkDuration || 0), 0);
+    const formatDuration = (seconds) => {
+      const hrs = Math.floor(seconds / 3600);
+      const mins = Math.floor((seconds % 3600) / 60);
+      const secs = seconds % 60;
+      return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    // Status breakdowns
+    const statusCounts = {
+      interview_success: 0,
+      call_failed: 0,
+      busy: 0,
+      not_interested: 0,
+      no_answer: 0,
+      switched_off: 0,
+      not_reachable: 0,
+      does_not_exist: 0,
+      rejected: 0,
+      call_later: 0
+    };
+
+    queueStats.forEach(stat => {
+      if (statusCounts.hasOwnProperty(stat._id)) {
+        statusCounts[stat._id] = stat.count;
+      }
+    });
+
+    // Call status breakdown from call records
+    const callStatusBreakdown = {
+      answered: callRecords.filter(c => c.callStatus === 'answered').length,
+      completed: callRecords.filter(c => c.callStatus === 'completed').length,
+      no_answer: callRecords.filter(c => c.callStatus === 'no-answer').length,
+      busy: callRecords.filter(c => c.callStatus === 'busy').length,
+      failed: callRecords.filter(c => c.callStatus === 'failed').length,
+      cancelled: callRecords.filter(c => c.callStatus === 'cancelled').length
+    };
+
+    // Interviewer performance - get from queue entries
+    const interviewerStatsMap = new Map();
+    queueEntries.forEach(entry => {
+      if (entry.assignedTo && entry.callRecord) {
+        const interviewerId = entry.assignedTo._id.toString();
+        if (!interviewerStatsMap.has(interviewerId)) {
+          interviewerStatsMap.set(interviewerId, {
+            interviewerId: entry.assignedTo._id,
+            interviewerName: `${entry.assignedTo.firstName} ${entry.assignedTo.lastName}`,
+            callsMade: 0,
+            callsConnected: 0,
+            totalTalkDuration: 0
+          });
+        }
+        const stat = interviewerStatsMap.get(interviewerId);
+        stat.callsMade += 1;
+        if (entry.status === 'interview_success') {
+          stat.callsConnected += 1;
+        }
+        // Get talk duration from call record if available
+        const callRecord = callRecords.find(c => 
+          c._id.toString() === (entry.callRecord._id?.toString() || entry.callRecord.toString())
+        );
+        if (callRecord && callRecord.talkDuration) {
+          stat.totalTalkDuration += callRecord.talkDuration;
+        }
+      }
+    });
+    const interviewerStats = Array.from(interviewerStatsMap.values());
+
+    res.status(200).json({
+      success: true,
+      data: {
+        callerPerformance: {
+          callsMade: totalCalls,
+          callsAttended: callsAttended,
+          dialsAttempted: totalCalls,
+          callsConnected: callsConnected,
+          totalTalkDuration: formatDuration(totalTalkDuration)
+        },
+        numberStats: {
+          callNotReceived: statusCounts.no_answer + statusCounts.switched_off + statusCounts.not_reachable,
+          ringing: callStatusBreakdown.no_answer,
+          notRinging: statusCounts.switched_off + statusCounts.not_reachable + statusCounts.does_not_exist,
+          noResponseByTelecaller: 0
+        },
+        callNotRingStatus: {
+          switchOff: statusCounts.switched_off,
+          numberNotReachable: statusCounts.not_reachable,
+          numberDoesNotExist: statusCounts.does_not_exist,
+          noResponseByTelecaller: 0
+        },
+        callRingStatus: {
+          callsConnected: callsConnected,
+          callsNotConnected: callStatusBreakdown.no_answer,
+          noResponseByTelecaller: 0
+        },
+        statusBreakdown: statusCounts,
+        callStatusBreakdown: callStatusBreakdown,
+        interviewerStats: interviewerStats.map(stat => ({
+          interviewerId: stat.interviewerId,
+          interviewerName: stat.interviewerName,
+          callsMade: stat.callsMade,
+          callsConnected: stat.callsConnected,
+          totalTalkDuration: formatDuration(stat.totalTalkDuration || 0)
+        })),
+        callRecords: callRecords.map(call => ({
+          _id: call._id,
+          callId: call.callId,
+          fromNumber: call.fromNumber,
+          toNumber: call.toNumber,
+          callStatus: call.callStatus,
+          callStatusDescription: call.callStatusDescription,
+          callStartTime: call.callStartTime,
+          callEndTime: call.callEndTime,
+          callDuration: call.callDuration,
+          talkDuration: call.talkDuration,
+          recordingUrl: call.recordingUrl,
+          interviewer: call.createdBy ? {
+            _id: call.createdBy._id,
+            name: `${call.createdBy.firstName} ${call.createdBy.lastName}`,
+            email: call.createdBy.email
+          } : null,
+          createdAt: call.createdAt
+        }))
+      }
+    });
+
+  } catch (error) {
+    console.error('Get CATI stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 };

@@ -8,10 +8,11 @@ import {
   Clock,
   ChevronLeft,
   ChevronRight,
-  Menu
+  Menu,
+  Phone
 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
-import { surveyResponseAPI } from '../../services/api';
+import { surveyResponseAPI, catiInterviewAPI } from '../../services/api';
 import { getApiUrl } from '../../utils/config';
 
 const InterviewInterface = ({ survey, onClose, onComplete }) => {
@@ -30,6 +31,7 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
   const [targetAudienceErrors, setTargetAudienceErrors] = useState(new Map());
   const [genderQuotas, setGenderQuotas] = useState(null);
   const [shuffledOptions, setShuffledOptions] = useState({}); // Store shuffled options per questionId to maintain consistent order
+  const [othersTextInputs, setOthersTextInputs] = useState({}); // Store "Others" text input values by questionId_optionValue
   
   // Audio recording state
   const [isRecording, setIsRecording] = useState(false);
@@ -65,6 +67,17 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
   const [showPermissionModal, setShowPermissionModal] = useState(false);
   const [permissionType, setPermissionType] = useState(null); // 'location' or 'audio'
   const [permissionError, setPermissionError] = useState(null);
+
+  // CATI-specific state
+  const isCatiMode = survey.mode === 'cati' || survey.assignedMode === 'cati';
+  const [catiRespondent, setCatiRespondent] = useState(null);
+  const [catiQueueId, setCatiQueueId] = useState(null);
+  const [callStatus, setCallStatus] = useState(null); // 'idle', 'calling', 'connected', 'failed'
+  const [callId, setCallId] = useState(null);
+  const [showAbandonModal, setShowAbandonModal] = useState(false);
+  const [abandonReason, setAbandonReason] = useState('');
+  const [abandonNotes, setAbandonNotes] = useState('');
+  const [callLaterDate, setCallLaterDate] = useState('');
 
 
   // Comprehensive location detection with WiFi triangulation and multiple fallbacks
@@ -751,6 +764,15 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
   const allQuestions = useMemo(() => getAllQuestions(), [sessionData, survey]);
   const currentQuestion = allQuestions[currentQuestionIndex];
 
+  // Helper function to check if an option is "Others"
+  const isOthersOption = (optText) => {
+    if (!optText) return false;
+    const normalized = optText.toLowerCase().trim();
+    return normalized === 'other' || 
+           normalized === 'others' || 
+           normalized === 'others (specify)';
+  };
+
   // Debug: Log when sessionData changes (can be removed in production)
   // useEffect(() => {
   //   console.log('=== sessionData CHANGED ===');
@@ -1095,37 +1117,84 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
   // Start the interview process after permissions are granted
   const startInterviewProcess = useCallback(async () => {
     try {
-      const response = await surveyResponseAPI.startInterview(survey._id);
+      let response;
       
-      if (response.success) {
-        setSessionData(response.data);
-        setSessionId(response.data.sessionId);
-        setIsPaused(false);
-        setIsInterviewActive(true);
-
-        // Start audio recording if supported and in CAPI mode
-        if (survey.mode === 'capi' && audioSupported) {
-          try {
-            await startAudioRecording();
-          } catch (error) {
-            // Audio recording failed, but continue with interview
-            console.warn('Audio recording failed, continuing without audio:', error);
-            showError('Audio recording unavailable. Interview will continue without audio recording.');
-          }
-        } else if (survey.mode === 'capi' && !audioSupported) {
-          console.warn('Audio recording not supported in this browser/environment');
+      if (isCatiMode) {
+        // CATI mode - use CATI-specific endpoint
+        response = await catiInterviewAPI.startCatiInterview(survey._id);
+        
+        if (response.success) {
+          setSessionData(response.data);
+          setSessionId(response.data.sessionId);
+          setCatiRespondent(response.data.respondent);
+          setCatiQueueId(response.data.respondent.id);
+          setIsPaused(false);
+          setIsInterviewActive(true);
+          setCallStatus('idle');
+          // No location or audio recording for CATI
+          // Auto-make call after interface is ready (using setTimeout to avoid dependency issue)
+          setTimeout(() => {
+            if (response.data.respondent.id) {
+              // Call the API directly to avoid dependency on makeCallToRespondent
+              catiInterviewAPI.makeCallToRespondent(response.data.respondent.id)
+                .then(callResponse => {
+                  if (callResponse.success) {
+                    setCallId(callResponse.data.callId);
+                    setCallStatus('calling');
+                    showSuccess('Call initiated. Waiting for connection...');
+                  } else {
+                    setCallStatus('failed');
+                    showError(callResponse.message || 'Failed to initiate call');
+                  }
+                })
+                .catch(error => {
+                  console.error('Error making call:', error);
+                  setCallStatus('failed');
+                  showError('Failed to make call');
+                });
+            }
+          }, 1500); // Delay to ensure UI is ready
+        } else {
+          // Show the actual error message from backend
+          const errorMessage = response.message || response.data?.message || 'Failed to start CATI interview';
+          showError(errorMessage);
         }
       } else {
-        showError('Failed to start interview');
+        // CAPI mode - use standard endpoint
+        response = await surveyResponseAPI.startInterview(survey._id);
+        
+        if (response.success) {
+          setSessionData(response.data);
+          setSessionId(response.data.sessionId);
+          setIsPaused(false);
+          setIsInterviewActive(true);
+
+          // Start audio recording if supported and in CAPI mode
+          if (survey.mode === 'capi' && audioSupported) {
+            try {
+              await startAudioRecording();
+            } catch (error) {
+              // Audio recording failed, but continue with interview
+              console.warn('Audio recording failed, continuing without audio:', error);
+              showError('Audio recording unavailable. Interview will continue without audio recording.');
+            }
+          } else if (survey.mode === 'capi' && !audioSupported) {
+            console.warn('Audio recording not supported in this browser/environment');
+          }
+        } else {
+          showError('Failed to start interview');
+        }
       }
     } catch (error) {
       console.error('Error starting interview:', error);
-      showError('Failed to start interview');
+      // Show backend error message if available
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to start interview';
+      showError(errorMessage);
     } finally {
       setIsLoading(false);
-        setIsStarting(false);
+      setIsStarting(false);
     }
-  }, [survey._id, survey.mode, audioSupported, startAudioRecording, showError]);
+  }, [survey._id, survey.mode, isCatiMode, audioSupported, startAudioRecording, showError]);
 
   // Check audio permission separately
   const checkAudioPermission = useCallback(async () => {
@@ -1155,31 +1224,37 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
       setIsStarting(true);
       setShowWelcomeModal(false);
       
-      // Check for location and audio permissions first
-      setLocationPermission('checking');
-      setLocationError(null);
-      
-      try {
-        // Get location
-        const locationData = await getCurrentLocation();
-        setGpsLocation(locationData);
-        setLocationPermission('granted');
-        console.log('Location obtained:', locationData);
+      if (isCatiMode) {
+        // CATI mode - skip location and audio, start directly
+        await startInterviewProcess();
+        // Auto-call is handled in startInterviewProcess after queueId is set
+      } else {
+        // CAPI mode - check for location and audio permissions first
+        setLocationPermission('checking');
+        setLocationError(null);
         
-        // Location successful, now check audio
-        await checkAudioPermission();
-      } catch (locationErr) {
-        console.error('Location error:', locationErr);
-        setLocationError(locationErr.message);
-        setLocationPermission('denied');
-        
-        // Show modern permission modal with option to continue without location
-        setPermissionType('location');
-        setPermissionError(locationErr.message);
-        setShowPermissionModal(true);
-        setIsLoading(false);
-        setIsStarting(false);
-        return;
+        try {
+          // Get location
+          const locationData = await getCurrentLocation();
+          setGpsLocation(locationData);
+          setLocationPermission('granted');
+          console.log('Location obtained:', locationData);
+          
+          // Location successful, now check audio
+          await checkAudioPermission();
+        } catch (locationErr) {
+          console.error('Location error:', locationErr);
+          setLocationError(locationErr.message);
+          setLocationPermission('denied');
+          
+          // Show modern permission modal with option to continue without location
+          setPermissionType('location');
+          setPermissionError(locationErr.message);
+          setShowPermissionModal(true);
+          setIsLoading(false);
+          setIsStarting(false);
+          return;
+        }
       }
     } catch (error) {
       console.error('Error starting interview:', error);
@@ -1187,7 +1262,80 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
       setIsLoading(false);
       setIsStarting(false);
     }
-  }, [survey._id, checkAudioPermission, getCurrentLocation, showError, startInterviewProcess]);
+  }, [isCatiMode, startInterviewProcess, checkAudioPermission, getCurrentLocation, showError]);
+
+  // Make call to respondent (CATI mode)
+  const makeCallToRespondent = async () => {
+    if (!catiQueueId) {
+      showError('No respondent assigned');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setCallStatus('calling');
+      
+      const response = await catiInterviewAPI.makeCallToRespondent(catiQueueId);
+      
+      if (response.success) {
+        setCallId(response.data.callId);
+        setCallStatus('calling');
+        showSuccess('Call initiated. Waiting for connection...');
+      } else {
+        setCallStatus('failed');
+        showError(response.message || 'Failed to initiate call');
+      }
+    } catch (error) {
+      console.error('Error making call:', error);
+      setCallStatus('failed');
+      showError('Failed to make call');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle interview abandonment (CATI mode)
+  const handleAbandonInterview = async () => {
+    if (!catiQueueId) {
+      showError('No respondent assigned');
+      return;
+    }
+
+    if (!abandonReason) {
+      showError('Please select a reason for abandoning the interview');
+      return;
+    }
+
+    if (abandonReason === 'call_later' && !callLaterDate) {
+      showError('Please select a date for calling later');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      
+      const response = await catiInterviewAPI.abandonInterview(
+        catiQueueId,
+        abandonReason,
+        abandonNotes,
+        abandonReason === 'call_later' ? callLaterDate : null
+      );
+
+      if (response.success) {
+        showSuccess('Interview abandonment recorded');
+        if (onClose) onClose();
+        if (onComplete) onComplete({ abandoned: true, reason: abandonReason });
+      } else {
+        showError(response.message || 'Failed to record abandonment');
+      }
+    } catch (error) {
+      console.error('Error abandoning interview:', error);
+      showError('Failed to abandon interview');
+    } finally {
+      setIsLoading(false);
+      setShowAbandonModal(false);
+    }
+  };
 
   // Complete interview
   const completeInterview = async () => {
@@ -1229,7 +1377,7 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
         }
       }
 
-      // Stop audio recording and upload if available
+      // Stop audio recording and upload if available (only for CAPI, not CATI)
       let audioUrl = null;
       let audioRecordingData = {
         hasAudio: false,
@@ -1242,7 +1390,8 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
         uploadedAt: null
       };
       
-      if (isRecording) {
+      // Only process audio for CAPI mode, not CATI
+      if (!isCatiMode && isRecording) {
         
         // Create a promise that resolves with the audio blob
         const audioBlobPromise = new Promise((resolve) => {
@@ -1310,8 +1459,44 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
       const finalResponses = [];
       
       allQuestions.forEach((question, index) => {
-        const response = responses[question.id];
+        let processedResponse = responses[question.id];
         const responseTime = stopQuestionTimer();
+        
+        // Handle "Others" option text input for multiple_choice and single_choice questions
+        if ((question.type === 'multiple_choice' || question.type === 'single_choice') && question.options) {
+          // Find "Others" option
+          const othersOption = question.options.find((opt) => {
+            const optText = typeof opt === 'object' ? opt.text : opt;
+            return isOthersOption(optText);
+          });
+          const othersOptionValue = othersOption ? (typeof othersOption === 'object' ? othersOption.value || othersOption.text : othersOption) : null;
+          
+          if (othersOptionValue) {
+            if (question.type === 'multiple_choice' && Array.isArray(processedResponse)) {
+              // Multiple selection - check if "Others" is in the response
+              const hasOthers = processedResponse.includes(othersOptionValue);
+              if (hasOthers) {
+                const othersText = othersTextInputs[`${question.id}_${othersOptionValue}`] || '';
+                if (othersText) {
+                  // Replace "Others" value with "Others: {text input}"
+                  processedResponse = processedResponse.map((val) => {
+                    if (val === othersOptionValue) {
+                      return `Others: ${othersText}`;
+                    }
+                    return val;
+                  });
+                }
+              }
+            } else if (processedResponse === othersOptionValue) {
+              // Single selection - check if "Others" is selected
+              const othersText = othersTextInputs[`${question.id}_${othersOptionValue}`] || '';
+              if (othersText) {
+                // Replace "Others" value with "Others: {text input}"
+                processedResponse = `Others: ${othersText}`;
+              }
+            }
+          }
+        }
         
         // Convert options to the format expected by backend (array of strings)
         const questionOptions = question.options ? 
@@ -1330,10 +1515,10 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
           questionText: question.text,
           questionDescription: question.description,
           questionOptions: questionOptions,
-          response: response || (question.type === 'multiple_choice' ? [] : ''),
+          response: processedResponse || (question.type === 'multiple_choice' ? [] : ''),
           responseTime,
           isRequired: question.required || false,
-          isSkipped: !hasResponseContent(response)
+          isSkipped: !hasResponseContent(processedResponse)
         });
       });
 
@@ -1349,45 +1534,62 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
       };
 
 
-      const response = await surveyResponseAPI.completeInterview(
-        sessionId, 
-        finalResponses, 
-        qualityMetrics, 
-        {
-          survey: survey._id,
-          interviewer: sessionData?.interviewer || 'current-user',
-          status: 'Pending_Approval', // Changed from 'completed' to 'Pending_Approval'
-          sessionId: sessionId,
-          startTime: sessionData?.startTime || new Date(),
-          endTime: new Date(),
-          totalTimeSpent: totalTime,
-          interviewMode: survey.mode || 'capi',
-          deviceInfo: {
-            userAgent: navigator.userAgent,
-            platform: navigator.platform,
-            browser: 'Chrome',
-            screenResolution: `${screen.width}x${screen.height}`,
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
-          },
-          audioRecording: audioRecordingData,
-          selectedAC: selectedAC, // Include selected AC in response data
-          location: gpsLocation, // Include location data
-          totalQuestions: allQuestions.length,
-          answeredQuestions: finalResponses.filter(r => hasResponseContent(r.response)).length,
-          skippedQuestions: finalResponses.filter(r => !hasResponseContent(r.response)).length,
-          completionPercentage: Math.round((finalResponses.filter(r => hasResponseContent(r.response)).length / allQuestions.length) * 100)
-        }
-      );
+      let response;
+      
+      if (isCatiMode && catiQueueId) {
+        // CATI mode - use CATI-specific completion endpoint
+        response = await catiInterviewAPI.completeCatiInterview(
+          catiQueueId,
+          sessionId,
+          finalResponses,
+          selectedAC,
+          totalTime,
+          sessionData?.startTime || new Date(),
+          new Date()
+        );
+      } else {
+        // CAPI mode - use standard completion endpoint
+        response = await surveyResponseAPI.completeInterview(
+          sessionId, 
+          finalResponses, 
+          qualityMetrics, 
+          {
+            survey: survey._id,
+            interviewer: sessionData?.interviewer || 'current-user',
+            status: 'Pending_Approval',
+            sessionId: sessionId,
+            startTime: sessionData?.startTime || new Date(),
+            endTime: new Date(),
+            totalTimeSpent: totalTime,
+            interviewMode: survey.mode || 'capi',
+            deviceInfo: {
+              userAgent: navigator.userAgent,
+              platform: navigator.platform,
+              browser: 'Chrome',
+              screenResolution: `${screen.width}x${screen.height}`,
+              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+            },
+            audioRecording: audioRecordingData,
+            selectedAC: selectedAC,
+            location: gpsLocation, // Include location data for CAPI
+            totalQuestions: allQuestions.length,
+            answeredQuestions: finalResponses.filter(r => hasResponseContent(r.response)).length,
+            skippedQuestions: finalResponses.filter(r => !hasResponseContent(r.response)).length,
+            completionPercentage: Math.round((finalResponses.filter(r => hasResponseContent(r.response)).length / allQuestions.length) * 100)
+          }
+        );
+      }
       
       if (response.success) {
-        showSuccess(`Interview completed successfully! Response ID: ${response.data.responseId}. Your response has been submitted for quality approval.`);
+        const responseId = response.data?.responseId || response.data?.responseId;
+        showSuccess(`Interview completed successfully! Response ID: ${responseId}. Your response has been submitted for quality approval.`);
         onComplete && onComplete({
           survey: survey._id,
           responses: finalResponses,
           sessionId: sessionId,
           totalTime: totalTime,
-          responseId: response.data.responseId,
-          status: response.data.status
+          responseId: responseId,
+          status: response.data?.status || 'Pending_Approval'
         });
         onClose();
       } else {
@@ -1403,15 +1605,21 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
 
   // Abandon interview
   const abandonInterview = async () => {
-    try {
-      if (sessionId) {
-        await surveyResponseAPI.abandonInterview(sessionId);
+    if (isCatiMode) {
+      // CATI mode - show abandonment modal
+      setShowAbandonModal(true);
+    } else {
+      // CAPI mode - standard abandonment
+      try {
+        if (sessionId) {
+          await surveyResponseAPI.abandonInterview(sessionId);
+        }
+        showSuccess('Interview abandoned');
+        onClose();
+      } catch (error) {
+        console.error('Error abandoning interview:', error);
+        showError('Failed to abandon interview');
       }
-      showSuccess('Interview abandoned');
-      onClose();
-    } catch (error) {
-      console.error('Error abandoning interview:', error);
-      showError('Failed to abandon interview');
     }
   };
 
@@ -1570,16 +1778,70 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
           />
         );
 
+      case 'number':
+      case 'numeric':
+        return (
+          <input
+            type="number"
+            value={currentResponse !== null && currentResponse !== undefined ? currentResponse.toString() : ''}
+            onChange={(e) => {
+              const text = e.target.value;
+              // Allow empty string or valid number (including 0 and negative numbers)
+              if (text === '') {
+                handleResponseChange(currentVisibleQuestion.id, '');
+              } else {
+                const numValue = parseFloat(text);
+                if (!isNaN(numValue) && isFinite(numValue)) {
+                  handleResponseChange(currentVisibleQuestion.id, numValue);
+                }
+              }
+            }}
+            placeholder="Enter a number..."
+            className="w-full p-6 text-lg border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200"
+            required={required}
+          />
+        );
+
       case 'multiple_choice':
         const allowMultiple = currentVisibleQuestion.settings?.allowMultiple || false;
+        const maxSelections = currentVisibleQuestion.settings?.maxSelections;
+        const currentSelections = Array.isArray(currentResponse) ? currentResponse.length : 0;
         const isGenderQuestion = currentVisibleQuestion.id === 'fixed_respondent_gender';
+        
+        // Check if "None" option exists
+        const noneOption = displayOptions.find((opt) => {
+          const optText = typeof opt === 'object' ? opt.text : opt;
+          return optText.toLowerCase().trim() === 'none';
+        });
+        const noneOptionValue = noneOption ? (typeof noneOption === 'object' ? noneOption.value || noneOption.text : noneOption) : null;
+        
+        // Check if "Others" option exists
+        const othersOption = displayOptions.find((opt) => {
+          const optText = typeof opt === 'object' ? opt.text : opt;
+          return isOthersOption(optText);
+        });
+        const othersOptionValue = othersOption ? (typeof othersOption === 'object' ? othersOption.value || othersOption.text : othersOption) : null;
+        
+        // Check if "Others" is selected
+        const isOthersSelected = allowMultiple 
+          ? (Array.isArray(currentResponse) && currentResponse.includes(othersOptionValue))
+          : (currentResponse === othersOptionValue);
         
         return (
           <div className="space-y-4">
+            {allowMultiple && maxSelections && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm text-blue-700 font-medium">
+                  Selection limit: {currentSelections} / {maxSelections}
+                </p>
+              </div>
+            )}
             {displayOptions.map((option, index) => {
               const optionValue = typeof option === 'object' ? option.value || option.text : option;
               const optionText = typeof option === 'object' ? option.text : option;
               const optionId = typeof option === 'object' ? option.id : index;
+              const isNoneOption = optionText.toLowerCase().trim() === 'none';
+              const isOthers = isOthersOption(optionText);
               
               // Get quota information for gender question
               let quotaInfo = null;
@@ -1596,28 +1858,110 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                 }
               }
               
+              const isSelected = allowMultiple 
+                ? (Array.isArray(currentResponse) && currentResponse.includes(optionValue))
+                : (currentResponse === optionValue);
+              
               return (
                 <div key={optionId} className="space-y-2">
                   <label className="flex items-center space-x-4 cursor-pointer group">
                   <input
                     type={allowMultiple ? "checkbox" : "radio"}
                     name={allowMultiple ? undefined : `question-${currentVisibleQuestion.id}`}
-                    checked={allowMultiple 
-                      ? (Array.isArray(currentResponse) && currentResponse.includes(optionValue))
-                      : (currentResponse === optionValue)
-                    }
+                    checked={isSelected}
                     onChange={(e) => {
                       if (allowMultiple) {
-                        const newResponse = Array.isArray(currentResponse) ? [...currentResponse] : [];
-                        if (e.target.checked) {
-                          newResponse.push(optionValue);
+                        let currentAnswers = Array.isArray(currentResponse) ? [...currentResponse] : [];
+                        
+                        if (currentAnswers.includes(optionValue)) {
+                          // Deselecting
+                          currentAnswers = currentAnswers.filter((a) => a !== optionValue);
+                          
+                          // Clear "Others" text input if "Others" is deselected
+                          if (isOthers) {
+                            setOthersTextInputs(prev => {
+                              const updated = { ...prev };
+                              delete updated[`${questionId}_${optionValue}`];
+                              return updated;
+                            });
+                          }
                         } else {
-                          const index = newResponse.indexOf(optionValue);
-                          if (index > -1) newResponse.splice(index, 1);
+                          // Selecting
+                          // Handle "None" option - mutual exclusivity
+                          if (isNoneOption) {
+                            // If "None" is selected, clear all other selections
+                            currentAnswers = [optionValue];
+                            // Clear "Others" text input if it was selected
+                            if (othersOptionValue && currentAnswers.includes(othersOptionValue)) {
+                              setOthersTextInputs(prev => {
+                                const updated = { ...prev };
+                                delete updated[`${questionId}_${othersOptionValue}`];
+                                return updated;
+                              });
+                            }
+                          } else if (isOthers) {
+                            // If "Others" is selected, clear all other selections (mutual exclusivity)
+                            currentAnswers = [optionValue];
+                            // Clear "None" if it exists
+                            if (noneOptionValue && currentAnswers.includes(noneOptionValue)) {
+                              currentAnswers = currentAnswers.filter((a) => a !== noneOptionValue);
+                            }
+                          } else {
+                            // If any other option is selected, remove "None" and "Others" if they exist
+                            if (noneOptionValue && currentAnswers.includes(noneOptionValue)) {
+                              currentAnswers = currentAnswers.filter((a) => a !== noneOptionValue);
+                            }
+                            if (othersOptionValue && currentAnswers.includes(othersOptionValue)) {
+                              currentAnswers = currentAnswers.filter((a) => a !== othersOptionValue);
+                              // Clear "Others" text input
+                              setOthersTextInputs(prev => {
+                                const updated = { ...prev };
+                                delete updated[`${questionId}_${othersOptionValue}`];
+                                return updated;
+                              });
+                            }
+                            
+                            // Check if we've reached the maximum selections limit
+                            if (maxSelections && currentAnswers.length >= maxSelections) {
+                              showError(`Maximum ${maxSelections} selection${maxSelections > 1 ? 's' : ''} allowed`);
+                              return;
+                            }
+                            currentAnswers.push(optionValue);
+                          }
                         }
-                        handleResponseChange(currentVisibleQuestion.id, newResponse);
+                        handleResponseChange(currentVisibleQuestion.id, currentAnswers);
                       } else {
-                        handleResponseChange(currentVisibleQuestion.id, optionValue);
+                        // Single selection
+                        if (isNoneOption) {
+                          // "None" selected - just set it
+                          handleResponseChange(currentVisibleQuestion.id, optionValue);
+                          // Clear "Others" text input if it exists
+                          if (othersOptionValue && currentResponse === othersOptionValue) {
+                            setOthersTextInputs(prev => {
+                              const updated = { ...prev };
+                              delete updated[`${questionId}_${othersOptionValue}`];
+                              return updated;
+                            });
+                          }
+                        } else if (isOthers) {
+                          // "Others" selected - just set it
+                          handleResponseChange(currentVisibleQuestion.id, optionValue);
+                        } else {
+                          // Other option selected - clear "None" and "Others" if they were selected
+                          if (noneOptionValue && currentResponse === noneOptionValue) {
+                            handleResponseChange(currentVisibleQuestion.id, optionValue);
+                          } else if (othersOptionValue && currentResponse === othersOptionValue) {
+                            handleResponseChange(currentVisibleQuestion.id, optionValue);
+                            // Clear "Others" text input
+                            setOthersTextInputs(prev => {
+                              const updated = { ...prev };
+                              delete updated[`${questionId}_${othersOptionValue}`];
+                              return updated;
+                            });
+                          } else {
+                            handleResponseChange(currentVisibleQuestion.id, optionValue);
+                          }
+                        }
                       }
                     }}
                       className={`w-6 h-6 border-2 border-gray-300 rounded focus:ring-blue-500 group-hover:border-blue-400 transition-colors ${
@@ -1649,6 +1993,23 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                 </div>
               );
             })}
+            {/* Show text input for "Others" option when selected */}
+            {isOthersSelected && othersOptionValue && (
+              <div className="mt-4">
+                <input
+                  type="text"
+                  value={othersTextInputs[`${questionId}_${othersOptionValue}`] || ''}
+                  onChange={(e) => {
+                    setOthersTextInputs(prev => ({
+                      ...prev,
+                      [`${questionId}_${othersOptionValue}`]: e.target.value
+                    }));
+                  }}
+                  placeholder="Please specify..."
+                  className="w-full p-4 text-lg border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200"
+                />
+              </div>
+            )}
           </div>
         );
 
@@ -1678,27 +2039,47 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
         );
 
       case 'rating':
+      case 'rating_scale':
+        const scale = currentVisibleQuestion.scale || { min: 1, max: 5 };
+        const min = scale.min || 1;
+        const max = scale.max || 5;
+        const labels = scale.labels || [];
+        const minLabel = scale.minLabel || '';
+        const maxLabel = scale.maxLabel || '';
+        const ratings = [];
+        for (let i = min; i <= max; i++) {
+          ratings.push(i);
+        }
         return (
           <div className="space-y-4">
-            <div className="flex items-center space-x-2">
-              {[1, 2, 3, 4, 5].map((rating) => (
-                <button
-                  key={rating}
-                  onClick={() => handleResponseChange(currentVisibleQuestion.id, rating)}
-                  className={`w-12 h-12 rounded-full border-2 transition-all duration-200 ${
-                    currentResponse === rating
-                      ? 'bg-yellow-400 border-yellow-500 text-yellow-900'
-                      : 'bg-white border-gray-300 text-gray-600 hover:border-yellow-400'
-                  }`}
-                >
-                  {rating}
-                </button>
-              ))}
+            <div className="flex items-center justify-center space-x-2 flex-wrap gap-2">
+              {ratings.map((rating) => {
+                const label = labels[rating - min] || '';
+                return (
+                  <div key={rating} className="flex flex-col items-center space-y-1">
+                    <button
+                      onClick={() => handleResponseChange(currentVisibleQuestion.id, rating)}
+                      className={`w-12 h-12 rounded-full border-2 transition-all duration-200 flex items-center justify-center font-semibold ${
+                        currentResponse === rating
+                          ? 'bg-yellow-400 border-yellow-500 text-yellow-900'
+                          : 'bg-white border-gray-300 text-gray-600 hover:border-yellow-400'
+                      }`}
+                    >
+                      {rating}
+                    </button>
+                    {label && (
+                      <span className="text-xs text-gray-600 text-center max-w-[60px]">{label}</span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-            <div className="flex justify-between text-sm text-gray-500">
-              <span>Poor</span>
-              <span>Excellent</span>
-            </div>
+            {(minLabel || maxLabel) && (
+              <div className="flex justify-between text-sm text-gray-500 px-2">
+                <span>{minLabel}</span>
+                <span>{maxLabel}</span>
+              </div>
+            )}
           </div>
         );
 
@@ -1805,9 +2186,14 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                 <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
                   <span className="text-blue-600 text-sm font-semibold">1</span>
                 </div>
-                <p className="text-sm text-gray-700">
+                <div className="text-sm text-gray-700">
                   <strong>Location & Audio Access Required:</strong> This interview requires location and microphone permissions to ensure data integrity
-                </p>
+                  {isCatiMode && (
+                    <div className="mt-2 text-sm text-gray-600">
+                      Note: CATI interviews do not require location or audio permissions as calls are recorded via webhook.
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="flex items-start space-x-3">
                 <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -1968,14 +2354,59 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
         </div>
         
         <div className="flex items-center space-x-4">
+          {/* CATI Respondent Info */}
+          {isCatiMode && catiRespondent && (
+            <div className="flex items-center space-x-2 px-3 py-1 bg-blue-50 rounded-lg border border-blue-200">
+              <Phone className="w-4 h-4 text-blue-600" />
+              <div className="text-sm">
+                <div className="font-medium text-blue-900">{catiRespondent.name}</div>
+                <div className="text-xs text-blue-700">{catiRespondent.phone}</div>
+              </div>
+            </div>
+          )}
+          
           <div className="flex items-center space-x-2 text-sm text-gray-600">
             <Clock className="w-4 h-4" />
             <span>{formatTime(totalTime)}</span>
           </div>
           
           <div className="flex items-center space-x-2">
-            {/* Audio Recording Indicator */}
-            {survey.mode === 'capi' && (
+            {/* CATI Call Management */}
+            {isCatiMode && catiQueueId && (
+              <>
+                {callStatus === 'idle' && (
+                  <button
+                    onClick={makeCallToRespondent}
+                    disabled={isLoading}
+                    className="px-3 py-1 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm flex items-center space-x-1 disabled:opacity-50"
+                  >
+                    <Phone className="w-4 h-4" />
+                    <span>Make Call</span>
+                  </button>
+                )}
+                {callStatus === 'calling' && (
+                  <div className="flex items-center space-x-2 px-3 py-1 bg-yellow-100 rounded-lg">
+                    <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
+                    <span className="text-xs text-yellow-800">Calling...</span>
+                  </div>
+                )}
+                {callStatus === 'connected' && (
+                  <div className="flex items-center space-x-2 px-3 py-1 bg-green-100 rounded-lg">
+                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                    <span className="text-xs text-green-800">Connected</span>
+                  </div>
+                )}
+                {callStatus === 'failed' && (
+                  <div className="flex items-center space-x-2 px-3 py-1 bg-red-100 rounded-lg">
+                    <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                    <span className="text-xs text-red-800">Call Failed</span>
+                  </div>
+                )}
+              </>
+            )}
+            
+            {/* Audio Recording Indicator - CAPI only */}
+            {!isCatiMode && survey.mode === 'capi' && (
               <div className="flex items-center space-x-2 px-3 py-1 bg-gray-100 rounded-lg">
                 <div className={`w-2 h-2 rounded-full ${
                   !audioSupported ? 'bg-red-500' :
@@ -1990,25 +2421,29 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
               </div>
             )}
             
-            {isPaused ? (
-              <button
-                onClick={resumeInterview}
-                className="px-3 py-1 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm flex items-center space-x-1"
-              >
-                <Play className="w-4 h-4" />
-                <span>Resume</span>
-              </button>
-            ) : (
-              <button
-                onClick={pauseInterview}
-                className="px-3 py-1 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors text-sm flex items-center space-x-1"
-              >
-                <Pause className="w-4 h-4" />
-                <span>Pause</span>
-              </button>
+            {!isCatiMode && (
+              <>
+                {isPaused ? (
+                  <button
+                    onClick={resumeInterview}
+                    className="px-3 py-1 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm flex items-center space-x-1"
+                  >
+                    <Play className="w-4 h-4" />
+                    <span>Resume</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={pauseInterview}
+                    className="px-3 py-1 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors text-sm flex items-center space-x-1"
+                  >
+                    <Pause className="w-4 h-4" />
+                    <span>Pause</span>
+                  </button>
+                )}
+              </>
             )}
             <button
-              onClick={() => setShowAbandonConfirm(true)}
+              onClick={isCatiMode ? () => setShowAbandonModal(true) : () => setShowAbandonConfirm(true)}
               className="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm flex items-center space-x-1"
             >
               <Square className="w-4 h-4" />
@@ -2172,8 +2607,96 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
         </div>
       </div>
 
-      {/* Abandon Confirmation Modal */}
-      {showAbandonConfirm && (
+      {/* CATI Abandonment Modal */}
+      {showAbandonModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Abandon Interview</h3>
+            <p className="text-gray-600 mb-4">
+              Please select a reason for abandoning this interview:
+            </p>
+            
+            <div className="space-y-2 mb-4">
+              {[
+                { value: 'call_later', label: 'Call Later' },
+                { value: 'not_interested', label: 'Not Interested' },
+                { value: 'busy', label: 'Busy' },
+                { value: 'no_answer', label: 'No Answer' },
+                { value: 'switched_off', label: 'Switched Off' },
+                { value: 'not_reachable', label: 'Not Reachable' },
+                { value: 'does_not_exist', label: 'Number Does Not Exist' },
+                { value: 'rejected', label: 'Call Rejected' },
+                { value: 'technical_issue', label: 'Technical Issue' },
+                { value: 'other', label: 'Other' }
+              ].map((reason) => (
+                <label key={reason.value} className="flex items-center space-x-2 cursor-pointer p-2 hover:bg-gray-50 rounded">
+                  <input
+                    type="radio"
+                    name="abandonReason"
+                    value={reason.value}
+                    checked={abandonReason === reason.value}
+                    onChange={(e) => setAbandonReason(e.target.value)}
+                    className="w-4 h-4 text-blue-600"
+                  />
+                  <span className="text-sm text-gray-700">{reason.label}</span>
+                </label>
+              ))}
+            </div>
+            
+            {abandonReason === 'call_later' && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Schedule Call For:
+                </label>
+                <input
+                  type="datetime-local"
+                  value={callLaterDate}
+                  onChange={(e) => setCallLaterDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  min={new Date().toISOString().slice(0, 16)}
+                />
+              </div>
+            )}
+            
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Additional Notes (Optional):
+              </label>
+              <textarea
+                value={abandonNotes}
+                onChange={(e) => setAbandonNotes(e.target.value)}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                placeholder="Add any additional notes..."
+              />
+            </div>
+            
+            <div className="flex space-x-3">
+              <button
+                onClick={() => {
+                  setShowAbandonModal(false);
+                  setAbandonReason('');
+                  setAbandonNotes('');
+                  setCallLaterDate('');
+                }}
+                className="flex-1 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAbandonInterview}
+                disabled={!abandonReason || (abandonReason === 'call_later' && !callLaterDate) || isLoading}
+                className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isLoading ? 'Submitting...' : 'Submit'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CAPI Abandon Confirmation Modal */}
+      {showAbandonConfirm && !isCatiMode && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Abandon Interview?</h3>

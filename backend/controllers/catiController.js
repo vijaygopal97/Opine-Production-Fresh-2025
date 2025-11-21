@@ -2,6 +2,7 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const CatiCall = require('../models/CatiCall');
+const CatiRespondentQueue = require('../models/CatiRespondentQueue');
 
 // DeepCall API Configuration
 const DEEPCALL_API_BASE_URL = 'https://s-ct3.sarv.com/v2/clickToCall/para';
@@ -484,10 +485,26 @@ const receiveWebhook = async (req, res) => {
         return typeStr.charAt(0).toUpperCase() + typeStr.slice(1).toLowerCase();
       };
       
+      // Try to find queue entry for this call (by matching phone numbers)
+      let queueEntry = null;
+      if (fromNum && toNum) {
+        // Search for queue entry with matching respondent phone number
+        queueEntry = await CatiRespondentQueue.findOne({
+          'respondentContact.phone': { $regex: toNum.slice(-10) },
+          status: { $in: ['assigned', 'calling'] }
+        }).sort({ assignedAt: -1 });
+        
+        if (queueEntry) {
+          console.log(`🔗 Found queue entry for this call: ${queueEntry._id}`);
+        }
+      }
+      
       callRecord = new CatiCall({
         callId: callId,
+        survey: queueEntry?.survey || null,
+        queueEntry: queueEntry?._id || null,
         company: companyId, // Will be null - can be updated later
-        createdBy: createdById, // Will be null - can be updated later
+        createdBy: createdById || queueEntry?.assignedTo || null, // Try to get from queue entry
         fromNumber: fromNum,
         toNumber: toNum,
         fromType: normalizeType(webhookData?.api_para?.fromType),
@@ -974,6 +991,44 @@ const receiveWebhook = async (req, res) => {
       console.log(`🕐 Webhook received at: ${savedCall.webhookReceivedAt}`);
       console.log(`🏢 Company: ${savedCall.company || 'null (webhook-created)'}`);
       
+      // Update queue entry if this call is linked to a queue entry
+      if (savedCall.queueEntry) {
+        try {
+          const queueEntry = await CatiRespondentQueue.findById(savedCall.queueEntry);
+          if (queueEntry) {
+            // Update queue entry with call record and status
+            queueEntry.callRecord = savedCall._id;
+            
+            // Map call status to queue status
+            const statusMap = {
+              'answered': 'calling',
+              'completed': 'interview_success',
+              'no-answer': 'no_answer',
+              'busy': 'busy',
+              'failed': 'call_failed',
+              'cancelled': 'rejected'
+            };
+            
+            if (statusMap[savedCall.callStatus]) {
+              queueEntry.status = statusMap[savedCall.callStatus];
+            }
+            
+            // Update last attempt
+            if (queueEntry.callAttempts.length > 0) {
+              const lastAttempt = queueEntry.callAttempts[queueEntry.callAttempts.length - 1];
+              lastAttempt.status = savedCall.callStatus;
+              lastAttempt.callId = savedCall.callId;
+            }
+            
+            await queueEntry.save();
+            console.log(`✅ Queue entry updated for call ${savedCall.callId}`);
+          }
+        } catch (queueError) {
+          console.error('❌ Error updating queue entry:', queueError);
+          // Don't fail the webhook processing if queue update fails
+        }
+      }
+      
     } catch (updateError) {
       console.error('❌ Error saving call record after webhook response:', updateError);
       console.error('❌ Error details:', updateError.message);
@@ -1080,7 +1135,7 @@ const getCalls = async (req, res) => {
   }
 };
 
-// @desc    Get single CATI call by ID
+// @desc    Get single CATI call by ID (MongoDB _id) or callId (DeepCall callId)
 // @route   GET /api/cati/calls/:id
 // @access  Private (Company Admin only)
 const getCallById = async (req, res) => {
@@ -1088,15 +1143,38 @@ const getCallById = async (req, res) => {
     const { id } = req.params;
     const companyId = req.user.company;
 
-    // Allow webhook-created calls (company: null) or calls belonging to user's company
-    const call = await CatiCall.findOne({
-      _id: id,
-      $or: [
-        { company: companyId },
-        { company: null } // Webhook-created calls
-      ]
-    })
-      .populate('createdBy', 'name email');
+    // Check if id is a valid MongoDB ObjectId (24 hex characters)
+    const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(id);
+    let call = null;
+
+    // Try to find by MongoDB _id first only if it's a valid ObjectId
+    if (isValidObjectId) {
+      try {
+        call = await CatiCall.findOne({
+          _id: id,
+          $or: [
+            { company: companyId },
+            { company: null } // Webhook-created calls
+          ]
+        })
+          .populate('createdBy', 'name email');
+      } catch (objectIdError) {
+        // If ObjectId conversion fails, continue to try by callId
+        console.log('⚠️ Not a valid ObjectId, trying by callId:', objectIdError.message);
+      }
+    }
+
+    // If not found by _id, try by callId (DeepCall callId)
+    if (!call) {
+      call = await CatiCall.findOne({
+        callId: id,
+        $or: [
+          { company: companyId },
+          { company: null } // Webhook-created calls
+        ]
+      })
+        .populate('createdBy', 'name email');
+    }
 
     if (!call) {
       return res.status(404).json({

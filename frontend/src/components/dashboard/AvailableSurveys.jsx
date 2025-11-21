@@ -190,13 +190,20 @@ const AvailableSurveys = () => {
 
   const handleStartInterview = (survey) => {
     // Check survey mode and route accordingly
-    if (survey.mode === 'capi') {
-      // CAPI mode - show mobile app message
+    const isCAPI = survey.mode === 'capi' || survey.assignedMode === 'capi';
+    const isCATI = survey.mode === 'cati' || survey.assignedMode === 'cati';
+    const isMultiMode = survey.mode === 'multi_mode';
+    
+    if (isCAPI && !isMultiMode) {
+      // Single CAPI mode - show mobile app message
       showError('CAPI interviews must be conducted using the Opine Interviewer mobile app. Please download and use the mobile app to start CAPI interviews.');
-    } else if (survey.mode === 'cati') {
-      // CATI mode - show telephonic interview modal
-      setCatiSurvey(survey);
-      setShowCatiModal(true);
+    } else if (isCATI || (isMultiMode && survey.assignedMode === 'cati')) {
+      // CATI mode - start CATI interview interface
+      setInterviewSurvey(survey);
+      setShowInterviewInterface(true);
+    } else if (isMultiMode && survey.assignedMode === 'capi') {
+      // Multi-mode with CAPI assignment - show mobile app message
+      showError('CAPI interviews must be conducted using the Opine Interviewer mobile app. Please download and use the mobile app to start CAPI interviews.');
     } else {
       // Other modes - show coming soon message
       showError(`${getModeLabel(survey.mode)} interviews are coming soon!`);
@@ -223,10 +230,17 @@ const AvailableSurveys = () => {
     setCatiSurvey(null);
   };
 
-  const handleCatiStartInterview = () => {
-    // Show feature coming soon message
-    showError('CATI (Telephonic) interviews are coming soon! This feature is currently under development.');
-    handleCloseCatiModal();
+  const handleCatiStartInterview = async () => {
+    if (!catiSurvey) return;
+    
+    try {
+      // Start CATI interview - this will open the CATI interview interface
+      setInterviewSurvey(catiSurvey);
+      setShowCatiModal(false);
+      setShowInterviewInterface(true);
+    } catch (error) {
+      showError('Failed to start CATI interview', error.message || 'An error occurred');
+    }
   };
 
   const confirmRejectInterview = async () => {
@@ -563,16 +577,14 @@ const AvailableSurveys = () => {
                             </div>
                           )}
                           
-                          {survey.assignedMode === 'cati' && (
-                            <div className="px-4 py-3 bg-orange-50 border border-orange-200 rounded-lg">
-                              <div className="flex items-center space-x-2 text-orange-800">
-                                <AlertCircle className="w-4 h-4" />
-                                <span className="text-sm font-medium">Coming Soon</span>
-                              </div>
-                              <p className="text-xs text-orange-600 mt-1">
-                                CATI (Telephonic) interviews are coming soon!
-                              </p>
-                            </div>
+                          {(survey.assignedMode === 'cati' || (survey.mode === 'cati')) && (
+                            <button
+                              onClick={() => handleStartInterview(survey)}
+                              className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                            >
+                              <Play className="w-4 h-4" />
+                              <span>Start CATI Interview</span>
+                            </button>
                           )}
                           
                           <button
@@ -630,21 +642,38 @@ const AvailableSurveys = () => {
                   {survey.assignmentStatus === 'accepted' && (
                     <>
                       {survey.mode === 'multi_mode' ? (
-                        // Multi-mode survey - show appropriate message based on assigned mode
-                        <div className="px-4 py-3 bg-blue-50 border border-blue-200 rounded-lg">
-                          <div className="flex items-center space-x-2 text-blue-800">
-                            <AlertCircle className="w-4 h-4" />
-                            <span className="text-sm font-medium">
-                              {survey.assignedMode === 'capi' ? 'Mobile App Required' : 'Coming Soon'}
-                            </span>
+                        // Multi-mode survey - show appropriate button based on assigned mode
+                        survey.assignedMode === 'cati' || survey.assignedMode === 'capi' ? (
+                          survey.assignedMode === 'cati' ? (
+                            <button
+                              onClick={() => handleStartInterview(survey)}
+                              className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                            >
+                              <Play className="w-4 h-4" />
+                              <span>Start CATI Interview</span>
+                            </button>
+                          ) : (
+                            <div className="px-4 py-3 bg-blue-50 border border-blue-200 rounded-lg">
+                              <div className="flex items-center space-x-2 text-blue-800">
+                                <AlertCircle className="w-4 h-4" />
+                                <span className="text-sm font-medium">Mobile App Required</span>
+                              </div>
+                              <p className="text-xs text-blue-600 mt-1">
+                                Open Opine Interviewer App to Start CAPI Interviews
+                              </p>
+                            </div>
+                          )
+                        ) : (
+                          <div className="px-4 py-3 bg-blue-50 border border-blue-200 rounded-lg">
+                            <div className="flex items-center space-x-2 text-blue-800">
+                              <AlertCircle className="w-4 h-4" />
+                              <span className="text-sm font-medium">Coming Soon</span>
+                            </div>
+                            <p className="text-xs text-blue-600 mt-1">
+                              CATI (Telephonic) interviews are coming soon!
+                            </p>
                           </div>
-                          <p className="text-xs text-blue-600 mt-1">
-                            {survey.assignedMode === 'capi' 
-                              ? 'Open Opine Interviewer App to Start CAPI Interviews'
-                              : 'CATI (Telephonic) interviews are coming soon!'
-                            }
-                          </p>
-                        </div>
+                        )
                       ) : (survey.mode === 'capi' || survey.assignedMode === 'capi') ? (
                         <div className="px-4 py-3 bg-blue-50 border border-blue-200 rounded-lg">
                           <div className="flex items-center space-x-2 text-blue-800">

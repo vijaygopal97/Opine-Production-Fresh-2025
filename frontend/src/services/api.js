@@ -454,6 +454,16 @@ export const surveyAPI = {
     }
   },
 
+  // Get CATI performance stats for a survey
+  getCatiStats: async (surveyId) => {
+    try {
+      const response = await api.get(`/api/surveys/${surveyId}/cati-stats`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
   // Get available surveys for interviewer
   getAvailableSurveys: async (params = {}) => {
     try {
@@ -1045,6 +1055,68 @@ export const catiAPI = {
       const response = await api.get('/api/cati/stats');
       return response.data;
     } catch (error) {
+      throw error;
+    }
+  }
+};
+
+// CATI Interview API
+export const catiInterviewAPI = {
+  // Start CATI interview session
+  startCatiInterview: async (surveyId) => {
+    try {
+      const response = await api.post(`/api/cati-interview/start/${surveyId}`);
+      return response.data;
+    } catch (error) {
+      // Return the error response data if available, otherwise throw
+      if (error.response && error.response.data) {
+        return error.response.data;
+      }
+      throw error;
+    }
+  },
+
+  // Make call to respondent
+  makeCallToRespondent: async (queueId) => {
+    try {
+      const response = await api.post(`/api/cati-interview/make-call/${queueId}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Abandon interview
+  abandonInterview: async (queueId, reason, notes, callLaterDate) => {
+    try {
+      const response = await api.post(`/api/cati-interview/abandon/${queueId}`, {
+        reason,
+        notes,
+        callLaterDate
+      });
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Complete CATI interview
+  completeCatiInterview: async (queueId, sessionId, responses, selectedAC, totalTimeSpent, startTime, endTime) => {
+    try {
+      const response = await api.post(`/api/cati-interview/complete/${queueId}`, {
+        sessionId,
+        responses,
+        selectedAC,
+        totalTimeSpent,
+        startTime,
+        endTime
+      });
+      return response.data;
+    } catch (error) {
+      // Return error response if available
+      if (error.response && error.response.data) {
+        return error.response.data;
+      }
       throw error;
     }
   }

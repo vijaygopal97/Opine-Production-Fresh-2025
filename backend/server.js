@@ -16,6 +16,7 @@ const interviewerProfileRoutes = require('./routes/interviewerProfileRoutes');
 const performanceRoutes = require('./routes/performanceRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const catiRoutes = require('./routes/catiRoutes');
+const catiInterviewRoutes = require('./routes/catiInterviewRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -81,11 +82,12 @@ app.get('/', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/contacts', contactRoutes);
 app.use('/api/surveys', surveyRoutes);
-app.use('/api/survey-responses', surveyResponseRoutes);
 app.use('/api/interviewer-profile', interviewerProfileRoutes);
 app.use('/api/performance', performanceRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/cati-interview', catiInterviewRoutes);
 app.use('/api/cati', catiRoutes);
+app.use('/api/survey-responses', surveyResponseRoutes);
 
 // Note: Opines API routes removed - using Contact API instead
 

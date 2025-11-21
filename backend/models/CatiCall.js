@@ -9,6 +9,21 @@ const catiCallSchema = new mongoose.Schema({
     index: true
   },
   
+  // Survey reference (for CATI interviews)
+  survey: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Survey',
+    required: false,
+    index: true
+  },
+  
+  // Queue entry reference
+  queueEntry: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CatiRespondentQueue',
+    required: false
+  },
+  
   // Company/User Information
   // Made optional to allow webhook-created records without company/user context
   company: {

@@ -10,6 +10,7 @@ const {
   assignInterviewers,
   assignQualityAgents,
   getSurveyStats,
+  getCatiStats,
   getAvailableSurveys,
   rejectInterview,
   debugSurveyResponses,
@@ -55,6 +56,10 @@ router.route('/:id/reject-interview')
 // Debug route
 router.route('/:surveyId/debug-responses')
   .get(protect, authorize('company_admin', 'project_manager'), debugSurveyResponses);
+
+// CATI stats route (must come before /:id route)
+router.route('/:id/cati-stats')
+  .get(protect, authorize('company_admin', 'project_manager'), getCatiStats);
 
 router.route('/:id')
   .get(protect, authorize('company_admin', 'project_manager', 'interviewer'), getSurvey)
