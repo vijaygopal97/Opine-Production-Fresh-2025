@@ -28,9 +28,26 @@ app.use(cors({
   origin: CORS_ORIGIN,
   credentials: true
 }));
+
 // Increase body size limit for large Excel file uploads (800MB)
-app.use(express.json({ limit: '800mb' }));
-app.use(express.urlencoded({ extended: true, limit: '800mb' }));
+// Use verify function to capture raw body for webhook endpoint
+app.use(express.json({ 
+  limit: '800mb',
+  verify: (req, res, buf, encoding) => {
+    if (req.path === '/api/cati/webhook' && req.method === 'POST') {
+      req.rawBody = buf.toString(encoding || 'utf8');
+    }
+  }
+}));
+app.use(express.urlencoded({ 
+  extended: true, 
+  limit: '800mb',
+  verify: (req, res, buf, encoding) => {
+    if (req.path === '/api/cati/webhook' && req.method === 'POST') {
+      req.rawBody = buf.toString(encoding || 'utf8');
+    }
+  }
+}));
 app.use(cookieParser());
 
 // Serve static files (audio recordings)

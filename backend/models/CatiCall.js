@@ -10,15 +10,16 @@ const catiCallSchema = new mongoose.Schema({
   },
   
   // Company/User Information
+  // Made optional to allow webhook-created records without company/user context
   company: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Company',
-    required: true
+    required: false  // Optional - webhook-created records may not have company
   },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: false  // Optional - webhook-created records may not have user
   },
   
   // Call Details from API Request
@@ -73,6 +74,14 @@ const catiCallSchema = new mongoose.Schema({
     type: String,
     enum: ['initiated', 'ringing', 'answered', 'completed', 'busy', 'no-answer', 'failed', 'cancelled'],
     default: 'initiated'
+  },
+  // Original status code from DeepCall webhook
+  originalStatusCode: {
+    type: Number
+  },
+  // Human-readable status description from DeepCall
+  statusDescription: {
+    type: String
   },
   
   // Call Duration and Timing
@@ -179,6 +188,12 @@ const catiCallSchema = new mongoose.Schema({
   },
   voiceMail: {
     type: String
+  },
+  
+  // Number Details (from nHDetail array in webhook)
+  numberDetails: {
+    type: [mongoose.Schema.Types.Mixed],
+    default: []
   },
   
   // Cost Information (if available)

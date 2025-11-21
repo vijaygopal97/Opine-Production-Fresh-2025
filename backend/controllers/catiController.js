@@ -139,51 +139,22 @@ const makeCall = async (req, res) => {
     
     console.log(`✅ Extracted Call ID from API: ${callId}`);
 
-    // Determine API status based on response
-    let apiStatus = 'initiated';
-    if (apiResponse?.status === 'success' || apiResponse?.success === true || apiResponse?.code === '200') {
-      apiStatus = 'success';
-      console.log(`✅ DeepCall API returned success. Call ID: ${callId}`);
-    } else if (apiResponse?.status === 'error' || apiResponse?.error || apiResponse?.code !== '200') {
-      apiStatus = 'failed';
-      console.log(`⚠️  DeepCall API returned error or non-success code`);
-    }
-
-    // Create call record in database
-    const callRecord = new CatiCall({
-      callId: callId,
-      company: companyId,
-      createdBy: userId,
-      fromNumber: fromNumber.replace(/[^0-9]/g, ''),
-      toNumber: toNumber.replace(/[^0-9]/g, ''),
-      fromType: fromType || 'Number',
-      toType: toType || 'Number',
-      apiResponse: apiResponse,
-      apiStatus: apiStatus,
-      callStatus: 'initiated',
-      metadata: {
-        fromRingTime: fromRingTime || 30,
-        toRingTime: toRingTime || 30,
-        timeLimit: timeLimit || null,
-        webhookUrl: webhookUrl
-      }
-    });
-    await callRecord.save();
-
-    console.log(`✅ Call record created. Call ID: ${callId}`);
-    console.log(`📝 Database record ID: ${callRecord._id}`);
+    // IMPORTANT: Do NOT create call record here
+    // Call records will ONLY be created when webhook arrives
+    // This ensures call history only shows calls with complete webhook data
+    console.log(`📞 Call initiated. Call ID: ${callId}. Waiting for webhook to create call record...`);
 
     res.json({
       success: true,
-      message: 'Call initiated successfully. The call should connect shortly.',
+      message: 'Call initiated successfully. Call details will appear in history once the webhook is received.',
       callId: callId,
       data: {
         callId: callId,
         fromNumber: fromNumber,
         toNumber: toNumber,
-        status: 'initiated',
         apiResponse: apiResponse,
-        webhookUrl: webhookUrl
+        webhookUrl: webhookUrl,
+        note: 'Call record will be created when webhook is received'
       }
     });
 
@@ -201,74 +172,163 @@ const makeCall = async (req, res) => {
 // @route   POST /api/cati/webhook
 // @access  Public (Webhook endpoint)
 const receiveWebhook = async (req, res) => {
+  // CRITICAL: Respond IMMEDIATELY with 200 OK and "GODBLESSYOU" to DeepCall
+  // DeepCall requires this response BEFORE any processing
+  // If we don't respond quickly enough, DeepCall may mark the webhook as failed
+  // and send empty data in subsequent requests
+  res.status(200).send('GODBLESSYOU');
+  
+  // Now process the webhook data asynchronously (after response is sent)
+  // This ensures DeepCall gets an immediate response
+  
   const logDir = path.join(__dirname, '../logs');
   const logFile = path.join(logDir, 'webhook-requests.log');
   const timestamp = new Date().toISOString();
   
-  try {
-    // Ensure log directory exists
-    if (!fs.existsSync(logDir)) {
-      fs.mkdirSync(logDir, { recursive: true });
-    }
+  // Process asynchronously to avoid blocking
+  setImmediate(async () => {
+    try {
+      // Ensure log directory exists
+      if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true });
+      }
 
-    // Prepare log entry
-    const logEntry = {
-      timestamp: timestamp,
-      ip: req.ip || req.headers['x-real-ip'] || req.headers['x-forwarded-for'] || 'unknown',
-      userAgent: req.headers['user-agent'] || 'unknown',
-      contentType: req.headers['content-type'] || 'unknown',
-      headers: req.headers,
-      body: req.body,
-      query: req.query,
-      method: req.method,
-      url: req.url
-    };
+      // Prepare log entry
+      const logEntry = {
+        timestamp: timestamp,
+        ip: req.ip || req.headers['x-real-ip'] || req.headers['x-forwarded-for'] || 'unknown',
+        userAgent: req.headers['user-agent'] || 'unknown',
+        contentType: req.headers['content-type'] || 'unknown',
+        headers: req.headers,
+        body: req.body,
+        query: req.query,
+        method: req.method,
+        url: req.url
+      };
 
-    // Write to log file (append mode)
-    const logLine = `\n${'='.repeat(80)}\n[${timestamp}] WEBHOOK REQUEST RECEIVED\n${'='.repeat(80)}\n${JSON.stringify(logEntry, null, 2)}\n${'='.repeat(80)}\n`;
-    fs.appendFileSync(logFile, logLine, 'utf8');
+      // Write to log file (append mode)
+      const logLine = `\n${'='.repeat(80)}\n[${timestamp}] WEBHOOK REQUEST RECEIVED\n${'='.repeat(80)}\n${JSON.stringify(logEntry, null, 2)}\n${'='.repeat(80)}\n`;
+      fs.appendFileSync(logFile, logLine, 'utf8');
 
-    // Log raw request for debugging (console)
-    console.log('📥 ========== WEBHOOK RECEIVED ==========');
-    console.log('📥 Timestamp:', timestamp);
-    console.log('📥 IP:', logEntry.ip);
-    console.log('📥 User-Agent:', logEntry.userAgent);
-    console.log('📥 Content-Type:', logEntry.contentType);
-    console.log('📥 Headers:', JSON.stringify(req.headers, null, 2));
-    console.log('📥 Body:', JSON.stringify(req.body, null, 2));
-    console.log('📥 Query:', JSON.stringify(req.query, null, 2));
-    console.log('📥 ======================================');
+      // Log raw request for debugging (console)
+      console.log('📥 ========== WEBHOOK RECEIVED ==========');
+      console.log('📥 Timestamp:', timestamp);
+      console.log('📥 IP:', logEntry.ip);
+      console.log('📥 User-Agent:', logEntry.userAgent);
+      console.log('📥 Content-Type:', logEntry.contentType);
+      console.log('📥 Headers:', JSON.stringify(req.headers, null, 2));
+      console.log('📥 Body:', JSON.stringify(req.body, null, 2));
+      console.log('📥 Query:', JSON.stringify(req.query, null, 2));
+      console.log('📥 ======================================');
 
-    // DeepCall may send data in body, query, or both
-    // Handle URL-encoded form data (DeepCall sends as application/x-www-form-urlencoded)
-    let webhookData = req.body || req.query || {};
+    // According to DeepCall docs: https://deepcall.com/api/push-report-webhook
+    // The webhook sends data in JSON format directly in the request body
+    // We need to handle both JSON and form-encoded formats
     
-    // If body contains push_report (DeepCall format), parse it
-    if (webhookData.push_report && typeof webhookData.push_report === 'string') {
+    let webhookData = {};
+    
+    // First, try to use raw body if available (captured via verify function)
+    if (req.rawBody) {
+      console.log('📋 ========== RAW BODY CAPTURED ==========');
+      console.log('📋 Raw body length:', req.rawBody.length, 'bytes');
+      console.log('📋 Raw body content:', req.rawBody);
+      console.log('📋 =======================================');
+      
+      // Try to parse as JSON first (DeepCall docs say it sends JSON)
       try {
-        const parsedReport = JSON.parse(webhookData.push_report);
-        
-        // Check if push_report is empty
-        if (Object.keys(parsedReport).length === 0) {
-          console.warn('⚠️  WARNING: push_report is EMPTY! This usually means:');
-          console.warn('   1. Webhook template in DeepCall dashboard is not configured correctly');
-          console.warn('   2. The call has not completed yet (webhook sent before call ends)');
-          console.warn('   3. The template variables are not being populated');
-          console.warn('   Please check your DeepCall webhook template configuration.');
-          console.warn('   Raw push_report value:', webhookData.push_report);
-        } else {
-          console.log('📋 Parsed push_report from DeepCall:', JSON.stringify(parsedReport, null, 2));
-        }
-        
-        webhookData = { ...webhookData, ...parsedReport };
+        webhookData = JSON.parse(req.rawBody);
+        console.log('✅ Successfully parsed raw body as JSON');
+        console.log('📋 Parsed data keys:', Object.keys(webhookData));
+        console.log('📋 Parsed data:', JSON.stringify(webhookData, null, 2));
       } catch (e) {
-        console.log('⚠️  Could not parse push_report:', e.message);
-        console.log('   Raw push_report value:', webhookData.push_report);
+        // If not JSON, try form-encoded
+        console.log('⚠️  Raw body is not JSON, trying form-encoded format');
+        console.log('   Error:', e.message);
+        const querystring = require('querystring');
+        const parsed = querystring.parse(req.rawBody);
+        console.log('📋 Parsed form-encoded keys:', Object.keys(parsed));
+        console.log('📋 Parsed form-encoded data:', JSON.stringify(parsed, null, 2));
+        
+        // Check for push_report field
+        if (parsed.push_report) {
+          console.log('📋 Found push_report in form-encoded data');
+          console.log('📋 push_report value:', parsed.push_report);
+          console.log('📋 push_report type:', typeof parsed.push_report);
+          console.log('📋 push_report length:', parsed.push_report.length);
+          
+          // Check if push_report is empty
+          if (parsed.push_report === '{}' || parsed.push_report.trim() === '{}') {
+            console.error('❌ CRITICAL: push_report is EMPTY "{}"');
+            console.error('   This means the webhook template in DeepCall dashboard is sending empty data.');
+            console.error('   The template needs to be configured with actual field values.');
+            console.error('   According to DeepCall docs, the webhook should receive JSON with all call data.');
+            console.error('   Please check the webhook template configuration in DeepCall dashboard.');
+            console.error('   The template should include fields like: callId, callStatus, recordings, etc.');
+          }
+          
+          try {
+            webhookData = JSON.parse(parsed.push_report);
+            console.log('✅ Successfully parsed push_report as JSON');
+            console.log('📋 Parsed push_report keys:', Object.keys(webhookData));
+            console.log('📋 Parsed push_report data:', JSON.stringify(webhookData, null, 2));
+          } catch (e2) {
+            console.error('❌ Error parsing push_report as JSON:', e2.message);
+            console.error('   push_report value that failed:', parsed.push_report);
+            webhookData = parsed;
+          }
+        } else {
+          console.log('⚠️  No push_report field found in form-encoded data');
+          webhookData = parsed;
+        }
       }
     } else {
-      console.warn('⚠️  No push_report field found in webhook data');
-      console.warn('   Available fields in body:', Object.keys(req.body || {}));
-      console.warn('   Available fields in query:', Object.keys(req.query || {}));
+      // Fallback to parsed body (if raw body not available)
+      console.log('📋 Using parsed body (raw body not available)');
+      const contentType = req.headers['content-type'] || '';
+      
+      if (contentType.includes('application/json')) {
+        webhookData = req.body || {};
+        console.log('📋 Received as JSON format');
+      } else if (contentType.includes('application/x-www-form-urlencoded')) {
+        console.log('📋 Received as form-encoded format');
+        if (req.body && req.body.push_report) {
+          const pushReport = req.body.push_report;
+          if (typeof pushReport === 'string') {
+            try {
+              webhookData = JSON.parse(pushReport);
+              console.log('✅ Parsed push_report from form-encoded body');
+            } catch (e) {
+              console.error('❌ Error parsing push_report:', e.message);
+              webhookData = req.body;
+            }
+          } else {
+            webhookData = pushReport;
+          }
+        } else {
+          webhookData = req.body || {};
+        }
+      } else {
+        webhookData = req.body || {};
+      }
+    }
+    
+    // Log the final webhook data
+    console.log('📋 Final webhookData keys:', Object.keys(webhookData));
+    console.log('📋 Final webhookData (first 1000 chars):', JSON.stringify(webhookData, null, 2).substring(0, 1000));
+    
+    // Check if we have meaningful data
+    if (Object.keys(webhookData).length === 0) {
+      console.error('❌ CRITICAL: Webhook received but contains NO call data!');
+      console.error('   This indicates the webhook template in DeepCall is not configured properly.');
+      console.error('   According to DeepCall docs, the webhook should receive JSON data directly.');
+      console.error('   Please verify the webhook template configuration in DeepCall dashboard.');
+    } else if (webhookData.push_report === '{}' && Object.keys(webhookData).length === 1) {
+      console.error('❌ CRITICAL: push_report is EMPTY JSON object "{}"');
+      console.error('   This means the webhook template in DeepCall dashboard is not configured correctly.');
+      console.error('   The template should include all the required fields from the DeepCall documentation.');
+      console.error('   Please configure the webhook template in DeepCall dashboard with the actual data fields.');
+    } else {
+      console.log('✅ Webhook data received successfully with', Object.keys(webhookData).length, 'fields');
     }
     
     // Check if we have any meaningful data after parsing
@@ -292,62 +352,166 @@ const receiveWebhook = async (req, res) => {
                    webhookData?.data?.id;
 
     console.log(`🔍 Extracted Call ID: ${callId}`);
+    console.log(`🔍 Webhook data keys:`, Object.keys(webhookData));
+    console.log(`🔍 api_para:`, webhookData?.api_para ? JSON.stringify(webhookData.api_para) : 'Not found');
+    console.log(`🔍 From (api_para):`, webhookData?.api_para?.from);
+    console.log(`🔍 To (api_para):`, webhookData?.api_para?.to);
+    console.log(`🔍 cNumber:`, webhookData?.cNumber);
+    console.log(`🔍 masterNumCTC:`, webhookData?.masterNumCTC);
 
     // Find the call record by callId first
     let callRecord = null;
     if (callId) {
-      callRecord = await CatiCall.findOne({ callId: callId });
-      console.log(`🔍 Found by callId: ${callRecord ? 'Yes' : 'No'}`);
-    }
-
-    // If not found, try to find by from/to numbers and recent timestamp (last 2 hours)
-    if (!callRecord) {
-      const fromNum = (webhookData?.from || webhookData?.fromNumber || webhookData?.call?.from)?.toString().replace(/[^0-9]/g, '');
-      const toNum = (webhookData?.to || webhookData?.toNumber || webhookData?.call?.to)?.toString().replace(/[^0-9]/g, '');
+      // Try exact match
+      callRecord = await CatiCall.findOne({ callId: callId.trim() });
+      console.log(`🔍 Found by callId (exact): ${callRecord ? 'Yes' : 'No'}`);
       
-      if (fromNum && toNum) {
-        console.log(`🔍 Searching by numbers: ${fromNum} -> ${toNum}`);
-        callRecord = await CatiCall.findOne({
-          fromNumber: fromNum,
-          toNumber: toNum,
-          createdAt: { $gte: new Date(Date.now() - 2 * 60 * 60 * 1000) } // Last 2 hours
-        }).sort({ createdAt: -1 });
-        console.log(`🔍 Found by numbers: ${callRecord ? 'Yes' : 'No'}`);
+      // If not found, try without any trimming or case sensitivity
+      if (!callRecord) {
+        callRecord = await CatiCall.findOne({ 
+          callId: { $regex: new RegExp(`^${callId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+        });
+        console.log(`🔍 Found by callId (regex): ${callRecord ? 'Yes' : 'No'}`);
+      }
+      
+      if (callRecord) {
+        console.log(`🔍 Matched call record - DB ID: ${callRecord._id}, Call ID: ${callRecord.callId}, From: ${callRecord.fromNumber}, To: ${callRecord.toNumber}`);
       }
     }
 
-    // If still not found, try to find by callId stored in our database (exact match)
+    // CRITICAL: Only search by phone numbers if we don't have a callId
+    // If we have a callId, we should ONLY match by callId to avoid updating wrong calls
+    // Multiple calls can have the same phone numbers, so phone number matching is unreliable
+    
+    // If we have a callId, ONLY search by callId (no phone number matching)
+    // This ensures each call gets its own record
     if (!callRecord && callId) {
       console.log(`🔍 Searching for callId in database: ${callId}`);
       // Try exact match first
-      callRecord = await CatiCall.findOne({ callId: callId });
+      callRecord = await CatiCall.findOne({ callId: callId.trim() });
       if (!callRecord) {
-        // Try partial match (in case DeepCall sends a different format)
+        // Try case-insensitive match
         callRecord = await CatiCall.findOne({ 
-          callId: { $regex: callId.substring(0, 10) } 
-        }).sort({ createdAt: -1 });
+          callId: { $regex: new RegExp(`^${callId.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+        });
       }
       console.log(`🔍 Found by callId search: ${callRecord ? 'Yes' : 'No'}`);
+      if (callRecord) {
+        console.log(`🔍 Matched call record - DB ID: ${callRecord._id}, Call ID: ${callRecord.callId}`);
+      }
+    }
+    
+    // Only if we DON'T have a callId, try searching by phone numbers (last resort)
+    // This should rarely happen as DeepCall always provides callId
+    if (!callRecord && !callId) {
+      console.log(`⚠️  No callId in webhook data, trying phone number match (last resort)`);
+      const fromNum = (webhookData?.api_para?.from || 
+                       webhookData?.from || 
+                       webhookData?.fromNumber || 
+                       webhookData?.call?.from ||
+                       webhookData?.masterNumCTC)?.toString().replace(/[^0-9]/g, '');
+      const toNum = (webhookData?.api_para?.to || 
+                     webhookData?.cNumber ||
+                     webhookData?.to || 
+                     webhookData?.toNumber || 
+                     webhookData?.call?.to)?.toString().replace(/[^0-9]/g, '');
+      
+      if (fromNum && toNum) {
+        console.log(`🔍 Searching by numbers (no callId available): ${fromNum} -> ${toNum}`);
+        // Only search in very recent calls (last 30 minutes) to avoid false matches
+        callRecord = await CatiCall.findOne({
+          fromNumber: fromNum,
+          toNumber: toNum,
+          createdAt: { $gte: new Date(Date.now() - 30 * 60 * 1000) }, // Last 30 minutes only
+          webhookReceived: { $ne: true } // Only match calls that haven't received webhook yet
+        }).sort({ createdAt: -1 });
+        
+        if (callRecord) {
+          console.log(`🔍 Found by numbers (no callId): ${callRecord._id}, Call ID: ${callRecord.callId}`);
+        } else {
+          console.log(`🔍 No call found by numbers (no callId available)`);
+        }
+      }
     }
 
-    // If still not found, try to find the most recent call without webhook data (last 2 hours)
+    // If call record doesn't exist, CREATE it from webhook data
+    // This is the ONLY place where call records are created
+    // All call history comes from webhook data only
     if (!callRecord) {
-      console.log(`🔍 Searching for most recent call without webhook`);
-      callRecord = await CatiCall.findOne({
-        webhookReceived: { $ne: true },
-        createdAt: { $gte: new Date(Date.now() - 2 * 60 * 60 * 1000) } // Last 2 hours
-      }).sort({ createdAt: -1 });
-      console.log(`🔍 Found recent call: ${callRecord ? 'Yes' : 'No'}`);
+      console.log(`📝 Call record not found. Creating new record from webhook data...`);
+      console.log(`📝 Webhook callId: ${callId}`);
+      
+      // Extract phone numbers from webhook
+      const fromNum = (webhookData?.api_para?.from || 
+                       webhookData?.from || 
+                       webhookData?.fromNumber || 
+                       webhookData?.masterNumCTC)?.toString().replace(/[^0-9]/g, '');
+      const toNum = (webhookData?.api_para?.to || 
+                     webhookData?.cNumber ||
+                     webhookData?.to || 
+                     webhookData?.toNumber)?.toString().replace(/[^0-9]/g, '');
+      
+      if (!callId) {
+        console.error(`❌ Cannot create call record: No callId in webhook data`);
+      return;
     }
 
-    if (!callRecord) {
-      console.error(`⚠️  Call record not found. Webhook data:`, JSON.stringify(webhookData, null, 2));
-      // Still acknowledge the webhook immediately (DeepCall expects quick response)
-      // Return "GODBLESSYOU" as required by DeepCall
-      return res.status(200).send('GODBLESSYOU');
+      if (!fromNum || !toNum) {
+        console.error(`❌ Cannot create call record: Missing phone numbers. From: ${fromNum}, To: ${toNum}`);
+        return;
+      }
+      
+      // Try to find company/user by DeepCall userId
+      // The webhook has userId which is DeepCall's userId
+      // We'll try to find a user with matching deepCallUserId or create without company
+      const webhookUserId = webhookData?.userId;
+      let companyId = null;
+      let createdById = null;
+      
+      // Try to find user by deepCallUserId if we have that field
+      // For now, we'll create without company/user association
+      // This can be improved later by storing DeepCall userId mapping
+      console.log(`📝 Creating call record without company/user context (webhook userId: ${webhookUserId})`);
+      console.log(`📝 Note: Company/user association can be added later if needed`);
+      
+      // Create the call record with webhook data
+      // We'll set company and createdBy to null for now
+      // This ensures the record is created and can be viewed
+      // Normalize fromType and toType - capitalize first letter to match enum
+      const normalizeType = (type) => {
+        if (!type) return 'Number';
+        const typeStr = type.toString();
+        return typeStr.charAt(0).toUpperCase() + typeStr.slice(1).toLowerCase();
+      };
+      
+      callRecord = new CatiCall({
+        callId: callId,
+        company: companyId, // Will be null - can be updated later
+        createdBy: createdById, // Will be null - can be updated later
+        fromNumber: fromNum,
+        toNumber: toNum,
+        fromType: normalizeType(webhookData?.api_para?.fromType),
+        toType: normalizeType(webhookData?.api_para?.toType),
+        webhookReceived: true, // Mark as received immediately since we're creating from webhook
+        webhookReceivedAt: new Date(),
+        metadata: {
+          deepCallUserId: webhookUserId,
+          note: 'Created from webhook - company/user association may be added later'
+        }
+      });
+      
+      // We'll populate all fields from webhook in the updateData below
+      console.log(`📝 Created new call record structure. Will populate with webhook data...`);
     }
 
-    console.log(`✅ Found call record: ${callRecord._id}, Call ID: ${callRecord.callId}`);
+    const isNewRecord = !callRecord._id;
+    console.log(`✅ ${isNewRecord ? 'Creating new' : 'Updating existing'} call record`);
+    if (!isNewRecord) {
+      console.log(`✅ Database Call ID: ${callRecord.callId}`);
+      console.log(`✅ From: ${callRecord.fromNumber}, To: ${callRecord.toNumber}`);
+      console.log(`✅ Current status in DB: ${callRecord.callStatus}`);
+    }
+    console.log(`✅ Webhook Call ID: ${callId}`);
 
     // Update call record with webhook data
     const updateData = {
@@ -357,16 +521,68 @@ const receiveWebhook = async (req, res) => {
       updatedAt: new Date()
     };
 
-    // Extract and update call status - DeepCall uses "callStatus"
+    // Extract and update call status - DeepCall uses "callStatus" (numeric codes)
     const statusValue = webhookData?.callStatus || 
                        webhookData?.status || 
                        webhookData?.call?.status ||
                        webhookData?.state ||
                        webhookData?.call?.state;
     
-    if (statusValue) {
+    if (statusValue !== null && statusValue !== undefined) {
+      // Handle numeric status codes from DeepCall
+      // Map according to DeepCall documentation for CTC (Click to Call) calls
+      const statusNum = parseInt(statusValue);
+      if (!isNaN(statusNum)) {
+        // Store original status code and description
+        updateData.originalStatusCode = statusNum;
+        
+        // Map numeric status codes according to DeepCall documentation
+        // For CTC calls: From = first number, To = second number
+        const statusMap = {
+          3: { status: 'completed', description: 'Both Answered' },
+          4: { status: 'answered', description: 'To Ans. - From Unans.' },
+          5: { status: 'answered', description: 'To Ans' },
+          6: { status: 'answered', description: 'To Unans - From Ans.' },
+          7: { status: 'no-answer', description: 'From Unanswered' },
+          8: { status: 'no-answer', description: 'To Unans.' },
+          9: { status: 'no-answer', description: 'Both Unanswered' },
+          10: { status: 'answered', description: 'From Ans.' },
+          11: { status: 'cancelled', description: 'Rejected Call' },
+          12: { status: 'cancelled', description: 'Skipped' },
+          13: { status: 'failed', description: 'From Failed' },
+          14: { status: 'failed', description: 'To Failed - From Ans.' },
+          15: { status: 'failed', description: 'To Failed' },
+          16: { status: 'failed', description: 'To Ans - From Failed' },
+          17: { status: 'busy', description: 'From Busy' },
+          18: { status: 'failed', description: 'To Ans. - From Not Found' },
+          19: { status: 'busy', description: 'To Unans. - From Busy' },
+          20: { status: 'cancelled', description: 'To Hangup in Queue' },
+          21: { status: 'cancelled', description: 'To Hangup' }
+        };
+        
+        if (statusMap[statusNum]) {
+          updateData.callStatus = statusMap[statusNum].status;
+          updateData.statusDescription = statusMap[statusNum].description;
+          console.log(`📊 Status ${statusNum} mapped to: ${updateData.callStatus} (${updateData.statusDescription})`);
+        } else if (statusNum === 1 || statusNum === 2) {
+          // Status 1-2 are typically ringing/initiating
+          updateData.callStatus = 'ringing';
+          updateData.statusDescription = 'Ringing';
+        } else {
+          // Unknown status code - try to infer from nHDetail
+          if (webhookData?.nHDetail && Array.isArray(webhookData.nHDetail)) {
+            const hasAnswered = webhookData.nHDetail.some(n => n.status === 'answered');
+            updateData.callStatus = hasAnswered ? 'answered' : 'no-answer';
+            updateData.statusDescription = hasAnswered ? 'Answered' : 'No Answer';
+          } else {
+            updateData.callStatus = 'completed';
+            updateData.statusDescription = 'Completed';
+          }
+          console.log(`⚠️  Unknown status code ${statusNum}, inferred: ${updateData.callStatus}`);
+        }
+      } else {
+        // Handle string status values
       const statusLower = statusValue.toString().toLowerCase();
-      // Map DeepCall status values
       if (statusLower.includes('complete') || statusLower.includes('completed') || statusLower === 'success') {
         updateData.callStatus = 'completed';
       } else if (statusLower.includes('answer') || statusLower.includes('answered')) {
@@ -379,18 +595,40 @@ const receiveWebhook = async (req, res) => {
         updateData.callStatus = 'failed';
       } else if (statusLower.includes('cancel')) {
         updateData.callStatus = 'cancelled';
-      } else if (statusLower.includes('no-answer') || statusLower.includes('no_answer')) {
+        } else if (statusLower.includes('no-answer') || statusLower.includes('no_answer') || statusLower.includes('missed')) {
         updateData.callStatus = 'no-answer';
+        } else {
+          // Final fallback: check nHDetail for actual status
+          if (webhookData?.nHDetail && Array.isArray(webhookData.nHDetail)) {
+            const hasAnswered = webhookData.nHDetail.some(n => n.status === 'answered');
+            updateData.callStatus = hasAnswered ? 'answered' : 'no-answer';
       } else {
         updateData.callStatus = statusLower;
       }
-      console.log(`📊 Call status updated to: ${updateData.callStatus}`);
+        }
+      }
+      console.log(`📊 Call status updated to: ${updateData.callStatus} (from value: ${statusValue})`);
     }
 
     // Extract call timing information - DeepCall format
-    // DeepCall uses: firstAnswerTime, lastHangupTime, ivrSTime, ivrETime
-    const startTime = webhookData?.firstAnswerTime || 
-                      webhookData?.ivrSTime ||
+    // DeepCall uses: firstAnswerTime, lastHangupTime, ivrSTime, ivrETime (format: "2025-11-20 23:55:27")
+    const parseDeepCallDate = (dateStr) => {
+      if (!dateStr) return null;
+      // Handle DeepCall date format: "2025-11-20 23:55:27" (assume IST timezone)
+      if (typeof dateStr === 'string' && dateStr.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)) {
+        // Parse as IST (UTC+5:30)
+        return new Date(dateStr + '+05:30');
+      }
+      // Handle Unix timestamp (seconds or milliseconds)
+      if (dateStr.toString().length === 10 || dateStr.toString().length === 13) {
+        return new Date(parseInt(dateStr) * (dateStr.toString().length === 10 ? 1000 : 1));
+      }
+      // Try standard Date parsing
+      return new Date(dateStr);
+    };
+
+    const startTime = webhookData?.ivrSTime || 
+                      webhookData?.firstAnswerTime || 
                       webhookData?.custAnswerSTime ||
                       webhookData?.startTime || 
                       webhookData?.callStartTime || 
@@ -398,15 +636,12 @@ const receiveWebhook = async (req, res) => {
                       webhookData?.call?.startTime ||
                       webhookData?.timestamp;
     if (startTime) {
-      // Handle Unix timestamp (seconds) or ISO string
-      updateData.callStartTime = startTime.toString().length === 10 || startTime.toString().length === 13
-        ? new Date(parseInt(startTime) * (startTime.toString().length === 10 ? 1000 : 1))
-        : new Date(startTime);
+      updateData.callStartTime = parseDeepCallDate(startTime);
       console.log(`⏰ Call start time: ${updateData.callStartTime}`);
     }
 
-    const endTime = webhookData?.lastHangupTime ||
-                    webhookData?.ivrETime ||
+    const endTime = webhookData?.ivrETime ||
+                    webhookData?.lastHangupTime ||
                     webhookData?.custAnswerETime ||
                     webhookData?.endTime || 
                     webhookData?.callEndTime || 
@@ -414,24 +649,26 @@ const receiveWebhook = async (req, res) => {
                     webhookData?.call?.endTime ||
                     webhookData?.completedAt;
     if (endTime) {
-      // Handle Unix timestamp (seconds) or ISO string
-      updateData.callEndTime = endTime.toString().length === 10 || endTime.toString().length === 13
-        ? new Date(parseInt(endTime) * (endTime.toString().length === 10 ? 1000 : 1))
-        : new Date(endTime);
+      updateData.callEndTime = parseDeepCallDate(endTime);
       console.log(`⏰ Call end time: ${updateData.callEndTime}`);
     }
 
-    // Calculate duration if we have start and end times
-    if (updateData.callStartTime && updateData.callEndTime) {
+    // Calculate duration - prioritize lastFirstDuration (actual call duration)
+    // DeepCall uses: lastFirstDuration (actual call duration), talkDuration, custAnswerDuration, ivrDuration
+    const lastFirstDuration = webhookData?.lastFirstDuration;
+    if (lastFirstDuration !== null && lastFirstDuration !== undefined) {
+      updateData.callDuration = parseInt(lastFirstDuration) || 0;
+      console.log(`⏱️  Call duration (lastFirstDuration): ${updateData.callDuration}s`);
+    } else if (updateData.callStartTime && updateData.callEndTime) {
+      // Calculate from start and end times
       const durationMs = updateData.callEndTime - updateData.callStartTime;
       updateData.callDuration = Math.floor(durationMs / 1000);
-      console.log(`⏱️  Calculated duration: ${updateData.callDuration}s`);
+      console.log(`⏱️  Calculated duration from times: ${updateData.callDuration}s`);
     } else {
-      // Try to get duration from webhook data - DeepCall uses: talkDuration, custAnswerDuration, ivrDuration
+      // Try to get duration from webhook data
       const duration = webhookData?.talkDuration ||
                        webhookData?.custAnswerDuration ||
                        webhookData?.ivrDuration ||
-                       webhookData?.lastFirstDuration ||
                        webhookData?.duration || 
                        webhookData?.callDuration || 
                        webhookData?.call_duration ||
@@ -468,31 +705,67 @@ const receiveWebhook = async (req, res) => {
       updateData.agentOnCallDuration = parseInt(agentOnCallDuration) || 0;
     }
 
-    // Extract recording information - DeepCall uses "recordings" field
-    // DeepCall may send recordings as a string URL or JSON string
-    let recordingUrl = webhookData?.recordings || 
-                      webhookData?.recordingUrl || 
-                      webhookData?.recording_url ||
-                      webhookData?.recording?.url ||
-                      webhookData?.call?.recordingUrl ||
-                      webhookData?.audioUrl ||
-                      webhookData?.audio_url;
+    // Extract recording information - DeepCall stores full URL in nHDetail[].recordingUrl
+    // Priority: nHDetail recordingUrl (full URL) > recordings array > other fields
+    let recordingUrl = null;
     
-    // If recordings is a JSON string, try to parse it
-    if (recordingUrl && typeof recordingUrl === 'string' && recordingUrl.startsWith('[')) {
-      try {
-        const recordingsArray = JSON.parse(recordingUrl);
-        if (Array.isArray(recordingsArray) && recordingsArray.length > 0) {
-          recordingUrl = recordingsArray[0].url || recordingsArray[0] || recordingUrl;
+    // First, try to get from nHDetail array (has full URL with recordingUrl property)
+    if (webhookData?.nHDetail && Array.isArray(webhookData.nHDetail)) {
+      for (const detail of webhookData.nHDetail) {
+        if (detail.recordingUrl && typeof detail.recordingUrl === 'string' && detail.recordingUrl.startsWith('http')) {
+          recordingUrl = detail.recordingUrl;
+          console.log(`🎵 Found recording URL in nHDetail: ${recordingUrl}`);
+          break;
         }
-      } catch (e) {
-        // If parsing fails, use as is
       }
     }
     
-    if (recordingUrl && recordingUrl !== 'null' && recordingUrl !== '') {
+    // If not found in nHDetail, try recordings array
+    if (!recordingUrl) {
+      let recordingsData = webhookData?.recordings || 
+                           webhookData?.recordingUrl || 
+                           webhookData?.recording_url ||
+                           webhookData?.recording?.url ||
+                           webhookData?.call?.recordingUrl ||
+                           webhookData?.audioUrl ||
+                           webhookData?.audio_url;
+      
+      // Handle recordings as array (DeepCall format)
+      if (Array.isArray(recordingsData)) {
+        if (recordingsData.length > 0) {
+          const firstRecording = recordingsData[0];
+          if (typeof firstRecording === 'object' && firstRecording !== null) {
+            // If it has a 'file' property, it's a relative path - construct full URL
+            if (firstRecording.file && firstRecording.file.startsWith('/')) {
+              // Construct full URL from relative path
+              recordingUrl = `https://s-ct3.sarv.com/v2/recording/direct/${webhookData?.userId || DEEPCALL_USER_ID}${firstRecording.file}`;
+              console.log(`🎵 Constructed recording URL from file path: ${recordingUrl}`);
+            } else {
+              recordingUrl = firstRecording.url || firstRecording.file || firstRecording;
+            }
+          } else {
+            recordingUrl = firstRecording;
+          }
+        }
+      } else if (recordingsData && typeof recordingsData === 'string') {
+        // If it's a string, check if it's a relative path or full URL
+        if (recordingsData.startsWith('/')) {
+          // Relative path - construct full URL
+          recordingUrl = `https://s-ct3.sarv.com/v2/recording/direct/${webhookData?.userId || DEEPCALL_USER_ID}${recordingsData}`;
+          console.log(`🎵 Constructed recording URL from relative path: ${recordingUrl}`);
+        } else if (recordingsData.startsWith('http')) {
+          // Already a full URL
+          recordingUrl = recordingsData;
+        }
+      }
+    }
+    
+    // Only set if we have a valid string URL
+    if (recordingUrl && typeof recordingUrl === 'string' && recordingUrl !== 'null' && recordingUrl !== '' && recordingUrl !== '[]' && recordingUrl.startsWith('http')) {
       updateData.recordingUrl = recordingUrl;
-      console.log(`🎵 Recording URL: ${recordingUrl}`);
+      console.log(`🎵 Final recording URL: ${recordingUrl}`);
+    } else {
+      console.log(`⚠️  No valid recording URL found in webhook data`);
     }
 
     const recordingDuration = webhookData?.recordingDuration || 
@@ -515,14 +788,75 @@ const receiveWebhook = async (req, res) => {
       console.log(`🎵 Recording file size: ${updateData.recordingFileSize} bytes`);
     }
 
-    // Extract phone numbers - DeepCall uses: masterNumCTC (from), cNumber (to)
-    if (webhookData?.masterNumCTC) {
+    // Extract phone numbers - DeepCall uses: api_para.from, api_para.to, masterNumCTC (from), cNumber (to)
+    if (webhookData?.api_para?.from) {
+      updateData.fromNumber = webhookData.api_para.from.toString().replace(/[^0-9]/g, '');
+      console.log(`📞 From number (api_para): ${updateData.fromNumber}`);
+    } else if (webhookData?.masterNumCTC) {
       updateData.fromNumber = webhookData.masterNumCTC.toString().replace(/[^0-9]/g, '');
-      console.log(`📞 From number: ${updateData.fromNumber}`);
+      console.log(`📞 From number (masterNumCTC): ${updateData.fromNumber}`);
     }
-    if (webhookData?.cNumber || webhookData?.cNumber10) {
+    
+    if (webhookData?.api_para?.to) {
+      updateData.toNumber = webhookData.api_para.to.toString().replace(/[^0-9]/g, '');
+      console.log(`📞 To number (api_para): ${updateData.toNumber}`);
+    } else if (webhookData?.cNumber || webhookData?.cNumber10) {
       updateData.toNumber = (webhookData.cNumber || webhookData.cNumber10).toString().replace(/[^0-9]/g, '');
-      console.log(`📞 To number: ${updateData.toNumber}`);
+      console.log(`📞 To number (cNumber): ${updateData.toNumber}`);
+    }
+    
+    // Normalize fromType and toType - capitalize first letter to match enum (Number, Agent, Group)
+    const normalizeType = (type) => {
+      if (!type) return null;
+      const typeStr = type.toString();
+      return typeStr.charAt(0).toUpperCase() + typeStr.slice(1).toLowerCase();
+    };
+    
+    if (webhookData?.api_para?.fromType) {
+      updateData.fromType = normalizeType(webhookData.api_para.fromType);
+    }
+    if (webhookData?.api_para?.toType) {
+      updateData.toType = normalizeType(webhookData.api_para.toType);
+    }
+    
+    // Extract detailed information from nHDetail array (number history details)
+    if (webhookData?.nHDetail && Array.isArray(webhookData.nHDetail) && webhookData.nHDetail.length > 0) {
+      updateData.numberDetails = webhookData.nHDetail;
+      
+      // Extract ring duration from nHDetail (sum of all ring durations)
+      const totalRingDuration = webhookData.nHDetail.reduce((sum, n) => {
+        return sum + (parseInt(n.totalRingDuration) || 0);
+      }, 0);
+      if (totalRingDuration > 0) {
+        updateData.ringDuration = totalRingDuration;
+        console.log(`📞 Total ring duration: ${totalRingDuration}s`);
+      }
+      
+      // Extract talk duration from nHDetail (sum of all talk durations)
+      const totalTalkDuration = webhookData.nHDetail.reduce((sum, n) => {
+        return sum + (parseInt(n.talkDuration) || 0);
+      }, 0);
+      if (totalTalkDuration > 0 && !updateData.talkDuration) {
+        updateData.talkDuration = totalTalkDuration;
+        console.log(`💬 Total talk duration from nHDetail: ${totalTalkDuration}s`);
+      }
+      
+      // Find the first answered number to get answer time
+      const answeredNumber = webhookData.nHDetail.find(n => n.status === 'answered');
+      if (answeredNumber) {
+        if (answeredNumber.answerSTime && !updateData.callStartTime) {
+          updateData.callStartTime = new Date(answeredNumber.answerSTime);
+          console.log(`⏰ Answer start time from nHDetail: ${updateData.callStartTime}`);
+        }
+        if (answeredNumber.answerETime && !updateData.callEndTime) {
+          updateData.callEndTime = new Date(answeredNumber.answerETime);
+          console.log(`⏰ Answer end time from nHDetail: ${updateData.callEndTime}`);
+        }
+        if (answeredNumber.answerDuration && !updateData.callDuration) {
+          updateData.callDuration = parseInt(answeredNumber.answerDuration) || 0;
+          console.log(`⏱️  Answer duration from nHDetail: ${updateData.callDuration}s`);
+        }
+      }
     }
 
     // Extract hangup information - DeepCall uses: exitCode, HangupBySourceDetected
@@ -584,11 +918,28 @@ const receiveWebhook = async (req, res) => {
     if (webhookData?.contactId) {
       updateData.contactId = webhookData.contactId;
     }
+    // Handle DTMF - can be array or string
     if (webhookData?.DTMF) {
+      if (Array.isArray(webhookData.DTMF)) {
+        // Convert array to string or skip if empty
+        if (webhookData.DTMF.length > 0) {
+          updateData.dtmf = JSON.stringify(webhookData.DTMF);
+        }
+      } else if (typeof webhookData.DTMF === 'string' && webhookData.DTMF !== '[]') {
       updateData.dtmf = webhookData.DTMF;
     }
+    }
+    
+    // Handle voiceMail - can be array or string
     if (webhookData?.voiceMail) {
+      if (Array.isArray(webhookData.voiceMail)) {
+        // Convert array to string or skip if empty
+        if (webhookData.voiceMail.length > 0) {
+          updateData.voiceMail = JSON.stringify(webhookData.voiceMail);
+        }
+      } else if (typeof webhookData.voiceMail === 'string' && webhookData.voiceMail !== '[]') {
       updateData.voiceMail = webhookData.voiceMail;
+      }
     }
 
     // Extract error information
@@ -599,31 +950,52 @@ const receiveWebhook = async (req, res) => {
       updateData.errorMessage = webhookData.errorMessage;
     }
 
-    // Send response immediately to DeepCall (before database update)
-    // DeepCall expects a quick 200 OK response with "GODBLESSYOU"
-    res.status(200).send('GODBLESSYOU');
+    // Response already sent at the beginning of the function
+    // Now save/update the call record - use await to ensure it completes
+    // isNewRecord was already declared above
+    console.log(`🔄 ${isNewRecord ? 'Creating new' : 'Updating existing'} call record...`);
+    console.log(`🔄 Call ID from webhook: ${callId}`);
+    console.log(`🔄 Update data keys:`, Object.keys(updateData));
+    console.log(`🔄 Call status to update: ${updateData.callStatus}`);
+    
+    try {
+      // Merge all updateData into the callRecord
+      Object.assign(callRecord, updateData);
+      
+      // Save the record (works for both new and existing records)
+      const savedCall = await callRecord.save();
+      
+      console.log(`✅ Call record ${isNewRecord ? 'created' : 'updated'} successfully!`);
+      console.log(`✅ Call ID: ${savedCall.callId}`);
+      console.log(`📊 Call status: ${savedCall.callStatus}`);
+      console.log(`⏱️  Call duration: ${savedCall.callDuration}s`);
+      console.log(`📞 From: ${savedCall.fromNumber}, To: ${savedCall.toNumber}`);
+      console.log(`🕐 Webhook received: ${savedCall.webhookReceived}`);
+      console.log(`🕐 Webhook received at: ${savedCall.webhookReceivedAt}`);
+      console.log(`🏢 Company: ${savedCall.company || 'null (webhook-created)'}`);
+      
+    } catch (updateError) {
+      console.error('❌ Error saving call record after webhook response:', updateError);
+      console.error('❌ Error details:', updateError.message);
+      console.error('❌ Error stack:', updateError.stack);
+      if (callRecord._id) {
+        console.error('❌ Call record ID:', callRecord._id);
+      }
+      console.error('❌ Call record data:', JSON.stringify({
+        callId: callRecord.callId,
+        fromNumber: callRecord.fromNumber,
+        toNumber: callRecord.toNumber,
+        isNew: isNewRecord
+      }, null, 2));
+      console.error('❌ Update data (first 500 chars):', JSON.stringify(updateData, null, 2).substring(0, 500));
+    }
 
-    // Update the call record asynchronously (after sending response)
-    // This ensures DeepCall gets a quick response
-    CatiCall.findByIdAndUpdate(
-      callRecord._id, 
-      updateData,
-      { new: true }
-    ).then(updatedCall => {
-      console.log(`✅ Webhook processed successfully for call ID: ${callId || callRecord.callId}`);
-      console.log(`📊 Updated call status: ${updatedCall.callStatus}`);
-      console.log(`⏱️  Updated call duration: ${updatedCall.callDuration}s`);
-      console.log(`🎵 Recording URL: ${updatedCall.recordingUrl || 'Not available'}`);
-    }).catch(err => {
-      console.error('Error updating call record after webhook response:', err);
-    });
-
-  } catch (error) {
-    console.error('Error processing webhook:', error);
-    // Always return 200 OK with "GODBLESSYOU" to DeepCall to prevent retries
-    // DeepCall expects this specific response
-    res.status(200).send('GODBLESSYOU');
-  }
+    } catch (error) {
+      console.error('❌ Error processing webhook:', error);
+      console.error('❌ Error stack:', error.stack);
+      // Response already sent, just log the error
+    }
+  });
 };
 
 // @desc    Get all CATI calls for a company
@@ -635,26 +1007,53 @@ const getCalls = async (req, res) => {
     const companyId = req.user.company;
     const { page = 1, limit = 20, status, search } = req.query;
 
-    // Build query
-    const query = { company: companyId };
+    // Build query - IMPORTANT: Only show calls that have received webhook data
+    // Call history should ONLY show calls with complete webhook information
+    // Show ALL calls with webhook data (regardless of company, since webhooks are public)
+    const query = { 
+      webhookReceived: true  // CRITICAL: Only show calls with webhook data
+    };
     
+    // Company filter: show calls that belong to this company OR webhook-created calls (company: null)
+    if (companyId) {
+      query.$or = [
+        { company: companyId },
+        { company: null } // Webhook-created calls without company association
+      ];
+    }
+    
+    // Status filter
     if (status && status !== 'all') {
       query.callStatus = status;
     }
     
+    // Search filter - combine with existing conditions using $and if we have $or
     if (search) {
-      query.$or = [
+      const searchConditions = {
+        $or: [
         { fromNumber: { $regex: search, $options: 'i' } },
         { toNumber: { $regex: search, $options: 'i' } },
         { callId: { $regex: search, $options: 'i' } }
-      ];
+        ]
+      };
+      
+      // If we already have $or (from company filter), use $and to combine
+      if (query.$or) {
+        query.$and = [
+          { $or: query.$or },
+          searchConditions
+        ];
+        delete query.$or;
+      } else {
+        query.$or = searchConditions.$or;
+      }
     }
 
     // Get calls with pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const calls = await CatiCall.find(query)
       .populate('createdBy', 'name email')
-      .sort({ createdAt: -1 })
+      .sort({ webhookReceivedAt: -1, createdAt: -1 }) // Sort by webhook received time (most recent first)
       .skip(skip)
       .limit(parseInt(limit));
 
@@ -689,7 +1088,14 @@ const getCallById = async (req, res) => {
     const { id } = req.params;
     const companyId = req.user.company;
 
-    const call = await CatiCall.findOne({ _id: id, company: companyId })
+    // Allow webhook-created calls (company: null) or calls belonging to user's company
+    const call = await CatiCall.findOne({
+      _id: id,
+      $or: [
+        { company: companyId },
+        { company: null } // Webhook-created calls
+      ]
+    })
       .populate('createdBy', 'name email');
 
     if (!call) {
@@ -769,8 +1175,15 @@ const getCallStats = async (req, res) => {
   try {
     const companyId = req.user.company;
 
+    // IMPORTANT: Only count calls that have received webhook data
+    // Statistics should only reflect calls with complete webhook information
+    const baseMatch = { 
+      company: companyId,
+      webhookReceived: true  // CRITICAL: Only count calls with webhook data
+    };
+
     const stats = await CatiCall.aggregate([
-      { $match: { company: companyId } },
+      { $match: baseMatch },
       {
         $group: {
           _id: '$callStatus',
@@ -781,21 +1194,17 @@ const getCallStats = async (req, res) => {
       }
     ]);
 
-    const totalCalls = await CatiCall.countDocuments({ company: companyId });
+    const totalCalls = await CatiCall.countDocuments(baseMatch);
     const successfulCalls = await CatiCall.countDocuments({ 
-      company: companyId, 
-      callStatus: 'completed' 
+      ...baseMatch,
+      callStatus: { $in: ['answered', 'completed'] }
     });
     const failedCalls = await CatiCall.countDocuments({ 
-      company: companyId, 
-      callStatus: 'failed' 
-    });
-    const initiatedCalls = await CatiCall.countDocuments({ 
-      company: companyId, 
-      callStatus: 'initiated' 
+      ...baseMatch,
+      callStatus: { $in: ['failed', 'no-answer', 'busy', 'cancelled'] }
     });
     const totalDuration = await CatiCall.aggregate([
-      { $match: { company: companyId } },
+      { $match: baseMatch },
       { $group: { _id: null, total: { $sum: '$callDuration' } } }
     ]);
 
@@ -804,18 +1213,151 @@ const getCallStats = async (req, res) => {
       data: {
         totalCalls,
         successfulCalls,
-        failedCalls: failedCalls, // Only count actual failures, not initiated
-        initiatedCalls: initiatedCalls,
+        failedCalls,
         totalDuration: totalDuration[0]?.total || 0,
         statusBreakdown: stats
       }
     });
 
   } catch (error) {
-    console.error('Error fetching CATI call stats:', error);
+    console.error('Error fetching CATI call statistics:', error);
     res.status(500).json({
       success: false,
       message: 'Error fetching call statistics',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Proxy recording download (with authentication)
+// @route   GET /api/cati/recording/:callId
+// @access  Private (Company Admin only)
+const getRecording = async (req, res) => {
+  try {
+    const { callId } = req.params;
+    const userId = req.user._id;
+    const companyId = req.user.company;
+
+    // Find the call record
+    const call = await CatiCall.findOne({ 
+      _id: callId,
+      $or: [{ company: companyId }, { company: null }]
+    });
+
+    if (!call) {
+      return res.status(404).json({
+        success: false,
+        message: 'Call record not found'
+      });
+    }
+
+    if (!call.recordingUrl) {
+      return res.status(404).json({
+        success: false,
+        message: 'No recording available for this call'
+      });
+    }
+
+    // Fetch the recording from DeepCall
+    // Try multiple authentication methods as DeepCall might use different auth mechanisms
+    let recordingResponse = null;
+    let lastError = null;
+
+    // Method 1: Try with token as query parameter (common for DeepCall)
+    try {
+      const urlWithToken = new URL(call.recordingUrl);
+      urlWithToken.searchParams.set('token', DEEPCALL_TOKEN);
+      urlWithToken.searchParams.set('user_id', DEEPCALL_USER_ID);
+      
+      recordingResponse = await axios.get(urlWithToken.toString(), {
+        headers: {
+          'User-Agent': 'SarvCT/1.0',
+          'Accept': 'audio/mpeg, audio/*, */*'
+        },
+        responseType: 'stream',
+        timeout: 30000,
+        maxRedirects: 5
+      });
+      console.log('✅ Successfully fetched recording with token query params');
+    } catch (error1) {
+      console.log('⚠️  Method 1 (token query) failed:', error1.message);
+      lastError = error1;
+      
+      // Method 2: Try with Bearer token in header
+      try {
+        recordingResponse = await axios.get(call.recordingUrl, {
+          headers: {
+            'Authorization': `Bearer ${DEEPCALL_TOKEN}`,
+            'User-Agent': 'SarvCT/1.0',
+            'Accept': 'audio/mpeg, audio/*, */*'
+          },
+          responseType: 'stream',
+          timeout: 30000,
+          maxRedirects: 5
+        });
+        console.log('✅ Successfully fetched recording with Bearer token');
+      } catch (error2) {
+        console.log('⚠️  Method 2 (Bearer token) failed:', error2.message);
+        lastError = error2;
+        
+        // Method 3: Try without authentication (URL might be public)
+        try {
+          recordingResponse = await axios.get(call.recordingUrl, {
+            headers: {
+              'User-Agent': 'SarvCT/1.0',
+              'Accept': 'audio/mpeg, audio/*, */*'
+            },
+            responseType: 'stream',
+            timeout: 30000,
+            maxRedirects: 5
+          });
+          console.log('✅ Successfully fetched recording without auth');
+        } catch (error3) {
+          console.error('❌ All methods failed. Last error:', error3.message);
+          console.error('   Response status:', error3.response?.status);
+          console.error('   Response headers:', error3.response?.headers);
+          return res.status(500).json({
+            success: false,
+            message: 'Failed to fetch recording from DeepCall',
+            error: error3.message,
+            details: error3.response?.status ? `HTTP ${error3.response.status}` : 'Network error'
+          });
+        }
+      }
+    }
+
+    if (recordingResponse) {
+      // Set appropriate headers for audio file
+      const contentType = recordingResponse.headers['content-type'] || 'audio/mpeg';
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="recording_${callId}.mp3"`);
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      
+      // Handle content-length if available
+      if (recordingResponse.headers['content-length']) {
+        res.setHeader('Content-Length', recordingResponse.headers['content-length']);
+      }
+
+      // Stream the audio file to the client
+      recordingResponse.data.pipe(res);
+      
+      // Handle stream errors
+      recordingResponse.data.on('error', (streamError) => {
+        console.error('❌ Stream error:', streamError.message);
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            message: 'Error streaming recording',
+            error: streamError.message
+          });
+        }
+      });
+    }
+  } catch (error) {
+    console.error('❌ Error in getRecording:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while fetching recording',
       error: error.message
     });
   }
@@ -827,6 +1369,7 @@ module.exports = {
   getCalls,
   getCallById,
   getCallStats,
-  checkCallStatus
+  checkCallStatus,
+  getRecording
 };
 

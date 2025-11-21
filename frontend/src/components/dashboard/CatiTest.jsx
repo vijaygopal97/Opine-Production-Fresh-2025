@@ -18,7 +18,7 @@ import {
   FileAudio,
   Info
 } from 'lucide-react';
-import { catiAPI } from '../../services/api';
+import api, { catiAPI } from '../../services/api';
 
 const CatiTest = () => {
   const { showSuccess, showError } = useToast();
@@ -38,6 +38,7 @@ const CatiTest = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [recordingBlobUrls, setRecordingBlobUrls] = useState({});
 
   // Fetch calls on component mount and when filters change
   useEffect(() => {
@@ -50,6 +51,15 @@ const CatiTest = () => {
     }, 10000);
     return () => clearInterval(interval);
   }, [page, search, statusFilter]);
+
+  // Cleanup blob URLs when component unmounts
+  useEffect(() => {
+    return () => {
+      Object.values(recordingBlobUrls).forEach(url => {
+        if (url) URL.revokeObjectURL(url);
+      });
+    };
+  }, []);
 
   const fetchCalls = async () => {
     try {
@@ -182,7 +192,11 @@ const CatiTest = () => {
     });
   };
 
-  const getStatusBadge = (status) => {
+  const getStatusBadge = (call) => {
+    // Use statusDescription if available (from webhook), otherwise use default labels
+    const status = typeof call === 'object' ? call.callStatus : call;
+    const description = typeof call === 'object' && call.statusDescription ? call.statusDescription : null;
+    
     const statusConfig = {
       'initiated': { color: 'bg-blue-100 text-blue-800', icon: Loader, label: 'Initiated' },
       'ringing': { color: 'bg-yellow-100 text-yellow-800', icon: Phone, label: 'Ringing' },
@@ -196,11 +210,12 @@ const CatiTest = () => {
 
     const config = statusConfig[status] || statusConfig['initiated'];
     const Icon = config.icon;
+    const displayLabel = description || config.label;
 
     return (
-      <span className={`inline-flex items-center space-x-1 px-3 py-1 rounded-full text-xs font-semibold ${config.color}`}>
+      <span className={`inline-flex items-center space-x-1 px-3 py-1 rounded-full text-xs font-semibold ${config.color}`} title={description ? `Status Code: ${typeof call === 'object' ? call.originalStatusCode : 'N/A'}` : ''}>
         <Icon className="w-3 h-3" />
-        <span>{config.label}</span>
+        <span>{displayLabel}</span>
       </span>
     );
   };
@@ -211,6 +226,27 @@ const CatiTest = () => {
       const response = await catiAPI.getCallById(call._id);
       if (response.success) {
         setSelectedCall(response.data);
+        
+        // If there's a recording, fetch it with credentials and create blob URL
+        if (response.data.recordingUrl) {
+          try {
+            const recordingResponse = await api.get(`/api/cati/recording/${call._id}`, {
+              responseType: 'blob' // Important: axios needs responseType: 'blob' for binary data
+            });
+            
+            if (recordingResponse.data) {
+              const blob = new Blob([recordingResponse.data], { type: 'audio/mpeg' });
+              const blobUrl = URL.createObjectURL(blob);
+              setRecordingBlobUrls(prev => ({
+                ...prev,
+                [call._id]: blobUrl
+              }));
+            }
+          } catch (recordingError) {
+            console.error('Error fetching recording:', recordingError);
+            // Don't show error to user, just log it - audio element will try direct URL as fallback
+          }
+        }
       }
     } catch (error) {
       showError(
@@ -512,7 +548,7 @@ const CatiTest = () => {
                       </div>
                     </td>
                     <td className="py-3 px-4">
-                      {getStatusBadge(call.callStatus)}
+                      {getStatusBadge(call)}
                     </td>
                     <td className="py-3 px-4">
                       <div className="flex items-center space-x-1 text-gray-600">
@@ -609,7 +645,13 @@ const CatiTest = () => {
                   </div>
                   <div>
                     <p className="text-sm text-gray-600">Status</p>
-                    <div className="mt-1">{getStatusBadge(selectedCall.callStatus)}</div>
+                    <div className="mt-1">{getStatusBadge(selectedCall)}</div>
+                    {selectedCall.statusDescription && (
+                      <p className="text-xs text-gray-500 mt-1">{selectedCall.statusDescription}</p>
+                    )}
+                    {selectedCall.originalStatusCode && (
+                      <p className="text-xs text-gray-400 mt-1">Status Code: {selectedCall.originalStatusCode}</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -634,8 +676,91 @@ const CatiTest = () => {
                     <p className="text-sm text-gray-600">Talk Duration</p>
                     <p className="text-base font-medium text-gray-900">{formatDuration(selectedCall.talkDuration)}</p>
                   </div>
+                  {selectedCall.ringDuration > 0 && (
+                    <div>
+                      <p className="text-sm text-gray-600">Ring Duration</p>
+                      <p className="text-base font-medium text-gray-900">{formatDuration(selectedCall.ringDuration)}</p>
+                    </div>
+                  )}
+                  {selectedCall.ivrDuration > 0 && (
+                    <div>
+                      <p className="text-sm text-gray-600">IVR Duration</p>
+                      <p className="text-base font-medium text-gray-900">{formatDuration(selectedCall.ivrDuration)}</p>
+                    </div>
+                  )}
                 </div>
               </div>
+
+              {/* Number Details */}
+              {selectedCall.numberDetails && Array.isArray(selectedCall.numberDetails) && selectedCall.numberDetails.length > 0 && (
+                <div>
+                  <h4 className="text-lg font-semibold text-gray-900 mb-4">Number Details</h4>
+                  <div className="space-y-4">
+                    {selectedCall.numberDetails.map((detail, index) => (
+                      <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center space-x-2">
+                            <Phone className="w-4 h-4 text-gray-500" />
+                            <span className="font-semibold text-gray-900">{detail.number || 'N/A'}</span>
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              detail.status === 'answered' 
+                                ? 'bg-green-100 text-green-800' 
+                                : detail.status === 'missed'
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {detail.status || 'unknown'}
+                            </span>
+                            {detail.CTC && (
+                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                {detail.CTC}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                          {detail.totalRingDuration > 0 && (
+                            <div>
+                              <p className="text-gray-600">Ring Duration</p>
+                              <p className="font-medium text-gray-900">{formatDuration(detail.totalRingDuration)}</p>
+                            </div>
+                          )}
+                          {detail.talkDuration > 0 && (
+                            <div>
+                              <p className="text-gray-600">Talk Duration</p>
+                              <p className="font-medium text-gray-900">{formatDuration(detail.talkDuration)}</p>
+                            </div>
+                          )}
+                          {detail.answerSTime && (
+                            <div>
+                              <p className="text-gray-600">Answer Start</p>
+                              <p className="font-medium text-gray-900">{formatDate(detail.answerSTime)}</p>
+                            </div>
+                          )}
+                          {detail.answerETime && (
+                            <div>
+                              <p className="text-gray-600">Answer End</p>
+                              <p className="font-medium text-gray-900">{formatDate(detail.answerETime)}</p>
+                            </div>
+                          )}
+                          {detail.answerDuration > 0 && (
+                            <div>
+                              <p className="text-gray-600">Answer Duration</p>
+                              <p className="font-medium text-gray-900">{formatDuration(detail.answerDuration)}</p>
+                            </div>
+                          )}
+                          {detail.cli && (
+                            <div>
+                              <p className="text-gray-600">CLI</p>
+                              <p className="font-medium text-gray-900">{detail.cli}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Recording */}
               {selectedCall.recordingUrl && (
@@ -646,7 +771,10 @@ const CatiTest = () => {
                   </h4>
                   <div className="bg-gray-50 rounded-lg p-4">
                     <audio controls className="w-full mb-2">
-                      <source src={selectedCall.recordingUrl} type="audio/mpeg" />
+                      <source 
+                        src={recordingBlobUrls[selectedCall._id] || `/api/cati/recording/${selectedCall._id}`} 
+                        type="audio/mpeg" 
+                      />
                       Your browser does not support the audio element.
                     </audio>
                     <div className="flex items-center justify-between mt-2">
@@ -655,8 +783,8 @@ const CatiTest = () => {
                         {selectedCall.recordingFileSize && ` • Size: ${(selectedCall.recordingFileSize / 1024 / 1024).toFixed(2)} MB`}
                       </span>
                       <a
-                        href={selectedCall.recordingUrl}
-                        download
+                        href={recordingBlobUrls[selectedCall._id] || `/api/cati/recording/${selectedCall._id}`}
+                        download={`recording_${selectedCall._id}.mp3`}
                         className="flex items-center space-x-2 px-3 py-1 text-sm font-medium text-green-600 bg-green-50 rounded-lg hover:bg-green-100 transition-colors duration-200"
                       >
                         <Download className="w-4 h-4" />
