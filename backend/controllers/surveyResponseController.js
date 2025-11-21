@@ -1521,10 +1521,15 @@ const getNextReviewAssignment = async (req, res) => {
     const companyObjectId = mongoose.Types.ObjectId.isValid(companyId) 
       ? new mongoose.Types.ObjectId(companyId) 
       : companyId;
-
+    
+    // Define now and userIdObjectId early
+    const now = new Date();
+    const userIdObjectId = mongoose.Types.ObjectId.isValid(userId) 
+      ? new mongoose.Types.ObjectId(userId) 
+      : userId;
+    
     // Build base query - only get responses with status 'Pending_Approval' that are NOT assigned
     // Check for responses that either don't have reviewAssignment, or have expired assignments
-    const now = new Date();
     let query = { 
       status: 'Pending_Approval',
       $or: [
@@ -1538,9 +1543,6 @@ const getNextReviewAssignment = async (req, res) => {
     let assignedSurveyIds = null;
     let surveyAssignmentsMap = {};
     if (userType === 'quality_agent') {
-      const userIdObjectId = mongoose.Types.ObjectId.isValid(userId) 
-        ? new mongoose.Types.ObjectId(userId) 
-        : userId;
       
       const assignedSurveys = await Survey.find({
         company: companyObjectId,
@@ -1599,6 +1601,161 @@ const getNextReviewAssignment = async (req, res) => {
       }
       
       query.survey = { $in: companySurveyIds };
+    }
+
+    // First, check if user has any active assignments (assigned to them and not expired)
+    // This allows users to continue their review if they refresh or close the browser
+    const activeAssignmentQuery = {
+      status: 'Pending_Approval',
+      'reviewAssignment.assignedTo': userIdObjectId,
+      'reviewAssignment.expiresAt': { $gt: now } // Not expired
+    };
+    
+    // Add survey filter if applicable
+    if (userType === 'quality_agent' && assignedSurveyIds && assignedSurveyIds.length > 0) {
+      activeAssignmentQuery.survey = { $in: assignedSurveyIds };
+    } else if (userType === 'company_admin') {
+      const companySurveys = await Survey.find({ company: companyObjectId })
+        .select('_id')
+        .lean();
+      const companySurveyIds = companySurveys.map(s => s._id);
+      if (companySurveyIds.length > 0) {
+        activeAssignmentQuery.survey = { $in: companySurveyIds };
+      }
+    }
+    
+    const activeAssignment = await SurveyResponse.findOne(activeAssignmentQuery)
+      .populate({
+        path: 'survey',
+        select: 'surveyName description category sections company assignedQualityAgents',
+        populate: {
+          path: 'assignedQualityAgents.qualityAgent',
+          select: 'firstName lastName email _id'
+        }
+      })
+      .populate('interviewer', 'firstName lastName email')
+      .sort({ 'reviewAssignment.assignedAt': 1 }) // Oldest assignment first
+      .lean();
+
+    // If user has an active assignment, verify it matches filters and return it
+    if (activeAssignment) {
+      // Verify it matches quality agent filters if applicable
+      let shouldReturn = true;
+      if (userType === 'quality_agent') {
+        const survey = activeAssignment.survey;
+        if (survey && survey._id) {
+          const surveyId = survey._id.toString();
+          const assignment = surveyAssignmentsMap[surveyId];
+          
+          if (assignment) {
+            const assignedACs = assignment.assignedACs || [];
+            const hasAssignedACs = Array.isArray(assignedACs) && assignedACs.length > 0;
+            
+            if (hasAssignedACs && (!activeAssignment.selectedAC || !assignedACs.includes(activeAssignment.selectedAC))) {
+              shouldReturn = false;
+            }
+          } else {
+            // Survey not in assigned surveys map, don't return
+            shouldReturn = false;
+          }
+        } else {
+          shouldReturn = false;
+        }
+      }
+      
+      if (shouldReturn) {
+        // Calculate effective questions using the same logic as below
+        function findQuestionByTextForActive(questionText, survey) {
+          if (survey?.sections) {
+            for (const section of survey.sections) {
+              if (section.questions) {
+                for (const question of section.questions) {
+                  if (question.text === questionText) {
+                    return question;
+                  }
+                }
+              }
+            }
+          }
+          return null;
+        }
+
+        function evaluateConditionForActive(condition, responses) {
+          if (!condition.questionId || !condition.operator || condition.value === undefined || condition.value === '__NOVALUE__') {
+            return false;
+          }
+          const targetResponse = responses.find(response => {
+            return response.questionId === condition.questionId || 
+                   response.questionText === condition.questionText;
+          });
+          if (!targetResponse || !targetResponse.response) {
+            return false;
+          }
+          let responseValue = targetResponse.response;
+          const conditionValue = condition.value;
+          const isArrayResponse = Array.isArray(responseValue);
+          if (isArrayResponse) {
+            switch (condition.operator) {
+              case 'equals': return responseValue.includes(conditionValue);
+              case 'not_equals': return !responseValue.includes(conditionValue);
+              case 'contains': return responseValue.some(val => val.toString().toLowerCase().includes(conditionValue.toString().toLowerCase()));
+              case 'not_contains': return !responseValue.some(val => val.toString().toLowerCase().includes(conditionValue.toString().toLowerCase()));
+              case 'is_selected': return responseValue.includes(conditionValue);
+              case 'is_not_selected': return !responseValue.includes(conditionValue);
+              case 'is_empty': return responseValue.length === 0;
+              case 'is_not_empty': return responseValue.length > 0;
+              default: if (responseValue.length === 0) return false; responseValue = responseValue[0];
+            }
+          }
+          switch (condition.operator) {
+            case 'equals': return responseValue === conditionValue;
+            case 'not_equals': return responseValue !== conditionValue;
+            case 'contains': return responseValue.toString().toLowerCase().includes(conditionValue.toString().toLowerCase());
+            case 'not_contains': return !responseValue.toString().toLowerCase().includes(conditionValue.toString().toLowerCase());
+            case 'greater_than': return parseFloat(responseValue) > parseFloat(conditionValue);
+            case 'less_than': return parseFloat(responseValue) < parseFloat(conditionValue);
+            case 'is_empty': return !responseValue || responseValue.toString().trim() === '';
+            case 'is_not_empty': return responseValue && responseValue.toString().trim() !== '';
+            case 'is_selected': return responseValue === conditionValue;
+            case 'is_not_selected': return responseValue !== conditionValue;
+            default: return false;
+          }
+        }
+
+        function areConditionsMetForActive(conditions, responses) {
+          if (!conditions || conditions.length === 0) return true;
+          return conditions.every(condition => evaluateConditionForActive(condition, responses));
+        }
+
+        const effectiveQuestions = activeAssignment.responses?.filter(r => {
+          if (!r.isSkipped) return true;
+          const surveyQuestion = findQuestionByTextForActive(r.questionText, activeAssignment.survey);
+          const hasConditions = surveyQuestion?.conditions && surveyQuestion.conditions.length > 0;
+          if (!hasConditions) return false;
+          return areConditionsMetForActive(surveyQuestion.conditions, activeAssignment.responses);
+        }).length || 0;
+        
+        const answeredQuestions = activeAssignment.responses?.filter(r => !r.isSkipped).length || 0;
+        const completionPercentage = effectiveQuestions > 0 ? Math.round((answeredQuestions / effectiveQuestions) * 100) : 0;
+
+        const transformedResponse = {
+          ...activeAssignment,
+          totalQuestions: effectiveQuestions,
+          answeredQuestions,
+          completionPercentage
+        };
+
+        console.log('🔍 getNextReviewAssignment - Active assignment call_id:', transformedResponse.call_id);
+        console.log('🔍 getNextReviewAssignment - Active assignment interviewMode:', transformedResponse.interviewMode);
+
+        return res.status(200).json({
+          success: true,
+          data: {
+            interview: transformedResponse,
+            expiresAt: activeAssignment.reviewAssignment.expiresAt
+          }
+        });
+      }
     }
 
     // Find the next available response (oldest first)
@@ -1851,6 +2008,9 @@ const getNextReviewAssignment = async (req, res) => {
       answeredQuestions,
       completionPercentage
     };
+
+    console.log('🔍 getNextReviewAssignment - New assignment call_id:', transformedResponse.call_id);
+    console.log('🔍 getNextReviewAssignment - New assignment interviewMode:', transformedResponse.interviewMode);
 
     res.status(200).json({
       success: true,

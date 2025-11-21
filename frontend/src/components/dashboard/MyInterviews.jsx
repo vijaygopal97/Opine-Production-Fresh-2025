@@ -25,9 +25,11 @@ import {
   Award,
   Zap,
   TrendingUp,
-  MapPin
+  MapPin,
+  PhoneCall
 } from 'lucide-react';
-import { surveyResponseAPI } from '../../services/api';
+import { surveyResponseAPI, catiAPI } from '../../services/api';
+import api from '../../services/api';
 
 const MyInterviews = () => {
   const [interviews, setInterviews] = useState([]);
@@ -42,6 +44,8 @@ const MyInterviews = () => {
   const [showResponseDetails, setShowResponseDetails] = useState(false);
   const [audioPlaying, setAudioPlaying] = useState(null);
   const [audioElement, setAudioElement] = useState(null);
+  const [catiCallDetails, setCatiCallDetails] = useState(null);
+  const [catiRecordingBlobUrl, setCatiRecordingBlobUrl] = useState(null);
   const { showSuccess, showError } = useToast();
 
   // Fetch interviews for the logged-in interviewer
@@ -134,10 +138,51 @@ const MyInterviews = () => {
     });
   };
 
-  const handleViewResponse = (interview) => {
+  const handleViewResponse = async (interview) => {
     setSelectedInterview(interview);
     setShowResponseDetails(true);
+    setCatiCallDetails(null);
+    setCatiRecordingBlobUrl(null);
+    
+    // If CATI interview, fetch call details
+    if (interview.interviewMode === 'cati') {
+      const callId = interview.call_id;
+      if (callId) {
+        try {
+          const callResponse = await catiAPI.getCallById(callId);
+          if (callResponse.success && callResponse.data) {
+            setCatiCallDetails(callResponse.data);
+            
+            // Fetch recording if available
+            if (callResponse.data.recordingUrl) {
+              try {
+                const recordingResponse = await api.get(
+                  `/api/cati/recording/${callResponse.data._id}`,
+                  { responseType: 'blob' }
+                );
+                const blob = new Blob([recordingResponse.data], { type: 'audio/mpeg' });
+                const blobUrl = URL.createObjectURL(blob);
+                setCatiRecordingBlobUrl(blobUrl);
+              } catch (recordingError) {
+                console.error('Error fetching CATI recording:', recordingError);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching CATI call details:', error);
+        }
+      }
+    }
   };
+  
+  // Cleanup blob URL on unmount or modal close
+  useEffect(() => {
+    return () => {
+      if (catiRecordingBlobUrl) {
+        URL.revokeObjectURL(catiRecordingBlobUrl);
+      }
+    };
+  }, [catiRecordingBlobUrl]);
 
   const handlePlayAudio = async (audioUrl, interviewId) => {
     if (audioPlaying === interviewId) {
@@ -764,6 +809,9 @@ const MyInterviews = () => {
                     Duration
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Type
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Status
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -850,6 +898,21 @@ const MyInterviews = () => {
                           <Clock className="w-4 h-4 mr-1 text-gray-400" />
                           {formatDuration(interview.totalTimeSpent || 0)}
                         </div>
+                      </td>
+                      
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          interview.interviewMode === 'cati' 
+                            ? 'bg-purple-100 text-purple-800' 
+                            : 'bg-blue-100 text-blue-800'
+                        }`}>
+                          {interview.interviewMode === 'cati' ? (
+                            <PhoneCall className="w-3 h-3 mr-1" />
+                          ) : (
+                            <MapPin className="w-3 h-3 mr-1" />
+                          )}
+                          <span className="ml-1">{interview.interviewMode === 'cati' ? 'CATI' : 'CAPI'}</span>
+                        </span>
                       </td>
                       
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -972,8 +1035,121 @@ const MyInterviews = () => {
                 </div>
               </div>
 
-              {/* Location Information */}
-              {selectedInterview.location && (
+              {/* Call Information - Only for CATI interviews */}
+              {selectedInterview.interviewMode === 'cati' && catiCallDetails && (
+                <div className="mt-6 bg-white border border-gray-200 rounded-lg p-6">
+                  <h4 className="font-semibold text-gray-900 mb-4 flex items-center text-lg">
+                    <PhoneCall className="w-5 h-5 mr-2 text-blue-600" />
+                    Call Information
+                  </h4>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-600 font-medium">Call Status:</span>
+                      <div className="mt-1">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                          catiCallDetails.callStatus === 'completed' || catiCallDetails.callStatus === 'answered' 
+                            ? 'bg-green-100 text-green-800' 
+                            : catiCallDetails.callStatus === 'failed' || catiCallDetails.callStatus === 'busy'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {catiCallDetails.callStatusDescription || catiCallDetails.statusDescription || catiCallDetails.callStatus}
+                        </span>
+                      </div>
+                    </div>
+                    {(catiCallDetails.callStatusCode || catiCallDetails.originalStatusCode) && (
+                      <div>
+                        <span className="text-gray-600 font-medium">Status Code:</span>
+                        <span className="ml-2 font-medium">{catiCallDetails.callStatusCode || catiCallDetails.originalStatusCode}</span>
+                      </div>
+                    )}
+                    {catiCallDetails.callId && (
+                      <div className="col-span-2">
+                        <span className="text-gray-600 font-medium">Call ID:</span>
+                        <span className="ml-2 font-medium text-xs font-mono break-all">{catiCallDetails.callId}</span>
+                      </div>
+                    )}
+                    <div>
+                      <span className="text-gray-600 font-medium">From Number:</span>
+                      <span className="ml-2 font-medium">{catiCallDetails.fromNumber || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600 font-medium">To Number:</span>
+                      <span className="ml-2 font-medium">{catiCallDetails.toNumber || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600 font-medium">Call Duration:</span>
+                      <span className="ml-2 font-medium">
+                        {catiCallDetails.callDuration ? formatDuration(catiCallDetails.callDuration) : 'N/A'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600 font-medium">Talk Duration:</span>
+                      <span className="ml-2 font-medium">
+                        {catiCallDetails.talkDuration ? formatDuration(catiCallDetails.talkDuration) : 'N/A'}
+                      </span>
+                    </div>
+                    {(catiCallDetails.startTime || catiCallDetails.callStartTime) && (
+                      <div>
+                        <span className="text-gray-600 font-medium">Call Start Time:</span>
+                        <span className="ml-2 font-medium">
+                          {new Date(catiCallDetails.startTime || catiCallDetails.callStartTime).toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+                    {(catiCallDetails.endTime || catiCallDetails.callEndTime) && (
+                      <div>
+                        <span className="text-gray-600 font-medium">Call End Time:</span>
+                        <span className="ml-2 font-medium">
+                          {new Date(catiCallDetails.endTime || catiCallDetails.callEndTime).toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+                    {catiCallDetails.ringDuration && catiCallDetails.ringDuration > 0 && (
+                      <div>
+                        <span className="text-gray-600 font-medium">Ring Duration:</span>
+                        <span className="ml-2 font-medium">
+                          {formatDuration(catiCallDetails.ringDuration)}
+                        </span>
+                      </div>
+                    )}
+                    {catiCallDetails.hangupCause && (
+                      <div>
+                        <span className="text-gray-600 font-medium">Hangup Cause:</span>
+                        <span className="ml-2 font-medium">{catiCallDetails.hangupCause}</span>
+                      </div>
+                    )}
+                    {catiCallDetails.hangupBySource && (
+                      <div>
+                        <span className="text-gray-600 font-medium">Hangup By:</span>
+                        <span className="ml-2 font-medium">{catiCallDetails.hangupBySource}</span>
+                      </div>
+                    )}
+                    {catiCallDetails.recordingUrl && (
+                      <div className="col-span-2">
+                        <span className="text-gray-600 font-medium">Recording Available:</span>
+                        <span className="ml-2 font-medium text-green-600">Yes</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              {selectedInterview.interviewMode === 'cati' && !catiCallDetails && (
+                <div className="mt-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <div className="flex items-center">
+                    <AlertCircle className="w-5 h-5 mr-2 text-yellow-600" />
+                    <div>
+                      <h4 className="font-medium text-yellow-900">Call Information Not Available</h4>
+                      <p className="text-sm text-yellow-700 mt-1">
+                        Call details could not be loaded. This may be because the call record was not found or the interview was completed before the call was made.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Location Information - Only for CAPI interviews */}
+              {selectedInterview.location && selectedInterview.interviewMode !== 'cati' && (
                 <div className="mt-6">
                   <h4 className="font-medium text-gray-900 mb-3">Interview Location</h4>
                   <div className="bg-white border border-gray-200 rounded-lg p-4">
@@ -1088,9 +1264,46 @@ const MyInterviews = () => {
               </div>
             </div>
 
-            {/* Audio Player */}
+            {/* Audio Player / Call Recording */}
             <div className="space-y-6">
-              {selectedInterview.audioRecording?.hasAudio ? (
+              {selectedInterview.interviewMode === 'cati' && catiCallDetails?.recordingUrl ? (
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-gray-900 mb-3 flex items-center">
+                    <Headphones className="w-5 h-5 mr-2" />
+                    Call Recording
+                  </h4>
+                  <div className="space-y-3">
+                    <div className="text-sm text-gray-600">
+                      <div>Call Duration: {catiCallDetails?.callDuration ? formatDuration(catiCallDetails.callDuration) : 'N/A'}</div>
+                      <div>Talk Duration: {catiCallDetails?.talkDuration ? formatDuration(catiCallDetails.talkDuration) : 'N/A'}</div>
+                      <div>Format: MP3</div>
+                      <div>Status: {catiCallDetails?.callStatusDescription || catiCallDetails?.callStatus || 'N/A'}</div>
+                    </div>
+                    {catiRecordingBlobUrl ? (
+                      <>
+                        <audio
+                          src={catiRecordingBlobUrl}
+                          onEnded={() => setAudioPlaying(null)}
+                          onPause={() => setAudioPlaying(null)}
+                          onPlay={() => setAudioPlaying(selectedInterview._id)}
+                          className="w-full"
+                          controls
+                        />
+                        <a
+                          href={catiRecordingBlobUrl}
+                          download={`cati_recording_${catiCallDetails?.callId || catiCallDetails?._id || 'recording'}.mp3`}
+                          className="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                        >
+                          <Download className="w-4 h-4 mr-2" />
+                          Download Recording
+                        </a>
+                      </>
+                    ) : (
+                      <div className="text-sm text-gray-500">Loading recording...</div>
+                    )}
+                  </div>
+                </div>
+              ) : selectedInterview.audioRecording?.hasAudio ? (
                 <div className="bg-gray-50 p-4 rounded-lg">
                   <h4 className="font-medium text-gray-900 mb-3 flex items-center">
                     <Headphones className="w-5 h-5 mr-2" />

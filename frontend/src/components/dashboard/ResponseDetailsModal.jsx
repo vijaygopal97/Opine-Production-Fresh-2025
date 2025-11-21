@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { X, User, Calendar, MapPin, Clock, CheckCircle, AlertCircle, SkipForward, Eye, EyeOff, ThumbsDown, ThumbsUp, Zap, Play, Pause, Headphones } from 'lucide-react';
-import { surveyResponseAPI } from '../../services/api';
+import React, { useState, useEffect } from 'react';
+import { X, User, Calendar, MapPin, Clock, CheckCircle, AlertCircle, SkipForward, Eye, EyeOff, ThumbsDown, ThumbsUp, Zap, Play, Pause, Headphones, PhoneCall, Download } from 'lucide-react';
+import { surveyResponseAPI, catiAPI } from '../../services/api';
+import api from '../../services/api';
 import { useToast } from '../../contexts/ToastContext';
 import assemblyConstituencies from '../../data/assemblyConstituencies.json';
 
@@ -9,7 +10,67 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
   const [rejectReason, setRejectReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [audioPlaying, setAudioPlaying] = useState(false);
+  const [catiCallDetails, setCatiCallDetails] = useState(null);
+  const [catiRecordingBlobUrl, setCatiRecordingBlobUrl] = useState(null);
   const { showSuccess, showError } = useToast();
+
+  // Fetch CATI call details when modal opens for CATI responses
+  useEffect(() => {
+    if (response?.interviewMode === 'cati') {
+      const callId = response.call_id;
+      if (callId) {
+        const fetchCallDetails = async () => {
+          try {
+            const callResponse = await catiAPI.getCallById(callId);
+            if (callResponse.success && callResponse.data) {
+              setCatiCallDetails(callResponse.data);
+              
+              // Fetch recording if available
+              if (callResponse.data.recordingUrl) {
+                try {
+                  const recordingResponse = await api.get(
+                    `/api/cati/recording/${callResponse.data._id}`,
+                    { responseType: 'blob' }
+                  );
+                  const blob = new Blob([recordingResponse.data], { type: 'audio/mpeg' });
+                  const blobUrl = URL.createObjectURL(blob);
+                  setCatiRecordingBlobUrl(blobUrl);
+                } catch (recordingError) {
+                  console.error('Error fetching CATI recording:', recordingError);
+                }
+              }
+            }
+          } catch (error) {
+            console.error('Error fetching CATI call details:', error);
+          }
+        };
+        fetchCallDetails();
+      }
+    }
+    
+    // Cleanup blob URL on unmount
+    return () => {
+      if (catiRecordingBlobUrl) {
+        URL.revokeObjectURL(catiRecordingBlobUrl);
+      }
+    };
+  }, [response?.interviewMode, response?.call_id]);
+
+  // Helper function to format duration
+  const formatDuration = (seconds) => {
+    if (!seconds) return 'N/A';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m ${secs}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${secs}s`;
+    } else {
+      return `${secs}s`;
+    }
+  };
 
   // Helper function to get district from AC using assemblyConstituencies.json
   const getDistrictFromAC = (acName) => {
@@ -229,8 +290,14 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
 
   // Helper function to find question by ID in survey data
   const findQuestionById = (questionId, survey) => {
-    if (survey?.sections) {
-      for (const section of survey.sections) {
+    if (!survey || !questionId) return null;
+    
+    // Handle nested survey structure
+    const actualSurvey = survey.survey || survey;
+    
+    // Search in sections
+    if (actualSurvey?.sections) {
+      for (const section of actualSurvey.sections) {
         if (section.questions) {
           for (const question of section.questions) {
             if (question.id === questionId) {
@@ -240,6 +307,16 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
         }
       }
     }
+    
+    // Search in direct questions
+    if (actualSurvey?.questions) {
+      for (const question of actualSurvey.questions) {
+        if (question.id === questionId) {
+          return question;
+        }
+      }
+    }
+    
     return null;
   };
 
@@ -299,11 +376,14 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
   const formatConditionalLogic = (conditions, survey) => {
     if (!conditions || conditions.length === 0) return null;
     
+    // Handle nested survey structure
+    const actualSurvey = survey?.survey || survey;
+    
     const formattedConditions = conditions
       .filter(condition => condition.questionId && condition.operator && condition.value !== undefined && condition.value !== '__NOVALUE__')
       .map((condition, index) => {
-        const targetQuestion = findQuestionById(condition.questionId, survey);
-        const targetQuestionText = targetQuestion ? targetQuestion.text : `Question ${condition.questionId}`;
+        const targetQuestion = findQuestionById(condition.questionId, actualSurvey);
+        const targetQuestionText = targetQuestion ? (targetQuestion.text || targetQuestion.questionText) : `Question ${condition.questionId}`;
         const operator = getOperatorDescription(condition.operator);
         const value = condition.value;
         
@@ -567,8 +647,121 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
               </div>
             </div>
 
-            {/* GPS Location Map */}
-            {response.location && (
+            {/* Call Information - Only for CATI interviews */}
+            {response.interviewMode === 'cati' && catiCallDetails && (
+              <div className="mt-6 bg-white border border-gray-200 rounded-lg p-6 mb-6">
+                <h4 className="font-semibold text-gray-900 mb-4 flex items-center text-lg">
+                  <PhoneCall className="w-5 h-5 mr-2 text-blue-600" />
+                  Call Information
+                </h4>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-600 font-medium">Call Status:</span>
+                    <div className="mt-1">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        catiCallDetails.callStatus === 'completed' || catiCallDetails.callStatus === 'answered' 
+                          ? 'bg-green-100 text-green-800' 
+                          : catiCallDetails.callStatus === 'failed' || catiCallDetails.callStatus === 'busy'
+                          ? 'bg-red-100 text-red-800'
+                          : 'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {catiCallDetails.callStatusDescription || catiCallDetails.statusDescription || catiCallDetails.callStatus}
+                      </span>
+                    </div>
+                  </div>
+                  {(catiCallDetails.callStatusCode || catiCallDetails.originalStatusCode) && (
+                    <div>
+                      <span className="text-gray-600 font-medium">Status Code:</span>
+                      <span className="ml-2 font-medium">{catiCallDetails.callStatusCode || catiCallDetails.originalStatusCode}</span>
+                    </div>
+                  )}
+                  {catiCallDetails.callId && (
+                    <div className="col-span-2">
+                      <span className="text-gray-600 font-medium">Call ID:</span>
+                      <span className="ml-2 font-medium text-xs font-mono break-all">{catiCallDetails.callId}</span>
+                    </div>
+                  )}
+                  <div>
+                    <span className="text-gray-600 font-medium">From Number:</span>
+                    <span className="ml-2 font-medium">{catiCallDetails.fromNumber || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 font-medium">To Number:</span>
+                    <span className="ml-2 font-medium">{catiCallDetails.toNumber || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 font-medium">Call Duration:</span>
+                    <span className="ml-2 font-medium">
+                      {catiCallDetails.callDuration ? formatDuration(catiCallDetails.callDuration) : 'N/A'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 font-medium">Talk Duration:</span>
+                    <span className="ml-2 font-medium">
+                      {catiCallDetails.talkDuration ? formatDuration(catiCallDetails.talkDuration) : 'N/A'}
+                    </span>
+                  </div>
+                  {(catiCallDetails.startTime || catiCallDetails.callStartTime) && (
+                    <div>
+                      <span className="text-gray-600 font-medium">Call Start Time:</span>
+                      <span className="ml-2 font-medium">
+                        {new Date(catiCallDetails.startTime || catiCallDetails.callStartTime).toLocaleString()}
+                      </span>
+                    </div>
+                  )}
+                  {(catiCallDetails.endTime || catiCallDetails.callEndTime) && (
+                    <div>
+                      <span className="text-gray-600 font-medium">Call End Time:</span>
+                      <span className="ml-2 font-medium">
+                        {new Date(catiCallDetails.endTime || catiCallDetails.callEndTime).toLocaleString()}
+                      </span>
+                    </div>
+                  )}
+                  {catiCallDetails.ringDuration && catiCallDetails.ringDuration > 0 && (
+                    <div>
+                      <span className="text-gray-600 font-medium">Ring Duration:</span>
+                      <span className="ml-2 font-medium">
+                        {formatDuration(catiCallDetails.ringDuration)}
+                      </span>
+                    </div>
+                  )}
+                  {catiCallDetails.hangupCause && (
+                    <div>
+                      <span className="text-gray-600 font-medium">Hangup Cause:</span>
+                      <span className="ml-2 font-medium">{catiCallDetails.hangupCause}</span>
+                    </div>
+                  )}
+                  {catiCallDetails.hangupBySource && (
+                    <div>
+                      <span className="text-gray-600 font-medium">Hangup By:</span>
+                      <span className="ml-2 font-medium">{catiCallDetails.hangupBySource}</span>
+                    </div>
+                  )}
+                  {catiCallDetails.recordingUrl && (
+                    <div className="col-span-2">
+                      <span className="text-gray-600 font-medium">Recording Available:</span>
+                      <span className="ml-2 font-medium text-green-600">Yes</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            {response.interviewMode === 'cati' && !catiCallDetails && (
+              <div className="mt-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+                <div className="flex items-center">
+                  <AlertCircle className="w-5 h-5 mr-2 text-yellow-600" />
+                  <div>
+                    <h4 className="font-medium text-yellow-900">Call Information Not Available</h4>
+                    <p className="text-sm text-yellow-700 mt-1">
+                      Call details could not be loaded. This may be because the call record was not found or the interview was completed before the call was made.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* GPS Location Map - Only for CAPI interviews */}
+            {response.location && response.interviewMode !== 'cati' && (
               <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Interview Location</h3>
                 <div className="mb-3">
@@ -603,8 +796,45 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
               </div>
             )}
 
-            {/* Audio Recording */}
-            {response.audioRecording?.audioUrl ? (
+            {/* Audio Recording / Call Recording */}
+            {response.interviewMode === 'cati' && catiCallDetails?.recordingUrl ? (
+              <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                  <Headphones className="w-5 h-5 mr-2" />
+                  Call Recording
+                </h3>
+                <div className="space-y-3">
+                  <div className="text-sm text-gray-600">
+                    <div>Call Duration: {catiCallDetails?.callDuration ? formatDuration(catiCallDetails.callDuration) : 'N/A'}</div>
+                    <div>Talk Duration: {catiCallDetails?.talkDuration ? formatDuration(catiCallDetails.talkDuration) : 'N/A'}</div>
+                    <div>Format: MP3</div>
+                    <div>Status: {catiCallDetails?.callStatusDescription || catiCallDetails?.callStatus || 'N/A'}</div>
+                  </div>
+                  {catiRecordingBlobUrl ? (
+                    <>
+                      <audio
+                        src={catiRecordingBlobUrl}
+                        onEnded={() => setAudioPlaying(false)}
+                        onPause={() => setAudioPlaying(false)}
+                        onPlay={() => setAudioPlaying(true)}
+                        className="w-full"
+                        controls
+                      />
+                      <a
+                        href={catiRecordingBlobUrl}
+                        download={`cati_recording_${catiCallDetails?.callId || catiCallDetails?._id || 'recording'}.mp3`}
+                        className="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                      >
+                        <Download className="w-4 h-4 mr-2" />
+                        Download Recording
+                      </a>
+                    </>
+                  ) : (
+                    <div className="text-sm text-gray-500">Loading recording...</div>
+                  )}
+                </div>
+              </div>
+            ) : response.audioRecording?.audioUrl ? (
               <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Audio Recording</h3>
                 <div className="space-y-3">
@@ -761,8 +991,8 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                             </div>
                             <p className={`text-sm leading-relaxed ${conditionsMet ? 'text-green-700' : 'text-red-700'}`}>
                               {conditionsMet 
-                                ? `This question appeared because: ${formatConditionalLogic(surveyQuestion.conditions, survey)}`
-                                : `This question was skipped because: ${formatConditionalLogic(surveyQuestion.conditions, survey)} (condition not met)`
+                                ? `This question appeared because: ${formatConditionalLogic(surveyQuestion.conditions, actualSurvey)}`
+                                : `This question was skipped because: ${formatConditionalLogic(surveyQuestion.conditions, actualSurvey)} (condition not met)`
                               }
                             </p>
                           </div>

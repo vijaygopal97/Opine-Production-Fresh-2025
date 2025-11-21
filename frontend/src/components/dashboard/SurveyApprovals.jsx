@@ -233,10 +233,124 @@ const SurveyApprovals = () => {
       setCurrentAssignment(response.data.interview);
       setAssignmentExpiresAt(response.data.expiresAt);
       setSelectedInterview(response.data.interview);
+      setCatiCallDetails(null);
+      setCatiRecordingBlobUrl(null);
       setShowResponseDetails(true);
       
       // Fetch full survey data
       await fetchFullSurveyData(response.data.interview.survey._id, response.data.interview.survey);
+      
+      // If CATI interview, fetch call details using call_id (same as Company Admin flow)
+      if (response.data.interview.interviewMode === 'cati') {
+        console.log('🔍 CATI interview detected in handleStartQualityCheck');
+        console.log('🔍 call_id value:', response.data.interview.call_id);
+        const callId = response.data.interview.call_id;
+        if (callId) {
+          console.log('🔍 Fetching call details for callId:', callId);
+          try {
+            // Use getCallById which now supports both _id and callId
+            const callResponse = await catiAPI.getCallById(callId);
+            console.log('🔍 Call response:', callResponse);
+            if (callResponse.success && callResponse.data) {
+              console.log('✅ Call details fetched successfully:', callResponse.data);
+              setCatiCallDetails(callResponse.data);
+              // Fetch recording if available
+              if (callResponse.data.recordingUrl) {
+                try {
+                  const recordingResponse = await api.get(`/api/cati/recording/${callResponse.data._id}`, {
+                    responseType: 'blob'
+                  });
+                  if (recordingResponse.data) {
+                    const blob = new Blob([recordingResponse.data], { type: 'audio/mpeg' });
+                    const blobUrl = URL.createObjectURL(blob);
+                    setCatiRecordingBlobUrl(blobUrl);
+                  }
+                } catch (recordingError) {
+                  console.error('Error fetching CATI recording:', recordingError);
+                  // Don't show error for recording - it's optional
+                }
+              }
+            } else {
+              console.warn('⚠️ Call response not successful or no data:', callResponse);
+              // Try fallback: search by survey and respondent phone (for older records)
+              if (response.data.interview.survey?._id && response.data.interview.respondentPhone) {
+                try {
+                  console.log('🔍 Trying fallback: searching by survey and respondent phone');
+                  const callsResponse = await catiAPI.getCalls(1, 10, response.data.interview.survey._id);
+                  if (callsResponse.success && callsResponse.data?.calls) {
+                    const respondentPhoneLast10 = response.data.interview.respondentPhone.slice(-10);
+                    const matchingCall = callsResponse.data.calls.find(call => 
+                      call.toNumber && call.toNumber.slice(-10) === respondentPhoneLast10
+                    );
+                    if (matchingCall) {
+                      console.log('✅ Found call via fallback method:', matchingCall);
+                      setCatiCallDetails(matchingCall);
+                      if (matchingCall.recordingUrl) {
+                        try {
+                          const recordingResponse = await api.get(`/api/cati/recording/${matchingCall._id}`, {
+                            responseType: 'blob'
+                          });
+                          if (recordingResponse.data) {
+                            const blob = new Blob([recordingResponse.data], { type: 'audio/mpeg' });
+                            const blobUrl = URL.createObjectURL(blob);
+                            setCatiRecordingBlobUrl(blobUrl);
+                          }
+                        } catch (recordingError) {
+                          console.error('Error fetching CATI recording via fallback:', recordingError);
+                        }
+                      }
+                    }
+                  }
+                } catch (fallbackError) {
+                  console.error('Error in fallback call search:', fallbackError);
+                }
+              }
+            }
+          } catch (error) {
+            console.error('❌ Error fetching CATI call details:', error);
+            console.error('❌ Error details:', error.response?.data || error.message);
+            // Only show error if it's not a 403/404 (might be expected for some cases)
+            if (error.response?.status !== 403 && error.response?.status !== 404) {
+              showError('Failed to fetch call details. Please try again.');
+            }
+          }
+        } else {
+          console.warn('⚠️ No call_id found in SurveyResponse for CATI interview');
+          // Try fallback: search by survey and respondent phone (for older records)
+          if (response.data.interview.survey?._id && response.data.interview.respondentPhone) {
+            try {
+              console.log('🔍 Trying fallback: searching by survey and respondent phone');
+              const callsResponse = await catiAPI.getCalls(1, 10, response.data.interview.survey._id);
+              if (callsResponse.success && callsResponse.data?.calls) {
+                const respondentPhoneLast10 = response.data.interview.respondentPhone.slice(-10);
+                const matchingCall = callsResponse.data.calls.find(call => 
+                  call.toNumber && call.toNumber.slice(-10) === respondentPhoneLast10
+                );
+                if (matchingCall) {
+                  console.log('✅ Found call via fallback method:', matchingCall);
+                  setCatiCallDetails(matchingCall);
+                  if (matchingCall.recordingUrl) {
+                    try {
+                      const recordingResponse = await api.get(`/api/cati/recording/${matchingCall._id}`, {
+                        responseType: 'blob'
+                      });
+                      if (recordingResponse.data) {
+                        const blob = new Blob([recordingResponse.data], { type: 'audio/mpeg' });
+                        const blobUrl = URL.createObjectURL(blob);
+                        setCatiRecordingBlobUrl(blobUrl);
+                      }
+                    } catch (recordingError) {
+                      console.error('Error fetching CATI recording via fallback:', recordingError);
+                    }
+                  }
+                }
+              }
+            } catch (fallbackError) {
+              console.error('Error in fallback call search:', fallbackError);
+            }
+          }
+        }
+      }
       
       showSuccess('Response assigned. You have 30 minutes to complete the review.');
     } catch (error) {
@@ -249,7 +363,7 @@ const SurveyApprovals = () => {
 
   // Release assignment (when user closes modal without submitting)
   const handleReleaseAssignment = async () => {
-    if (!currentAssignment) return;
+    if (!currentAssignment || !currentAssignment.responseId) return;
 
     try {
       await surveyResponseAPI.releaseReviewAssignment(currentAssignment.responseId);
@@ -259,8 +373,12 @@ const SurveyApprovals = () => {
       setShowResponseDetails(false);
       resetVerificationForm();
     } catch (error) {
+      // Silently ignore 403/404 errors (assignment might already be expired/released or doesn't exist)
+      if (error.response?.status === 403 || error.response?.status === 404) {
+        console.log('Assignment release skipped (already released or expired)');
+      } else {
       console.error('Error releasing assignment:', error);
-      // Don't show error if assignment already expired or doesn't exist
+      }
     }
   };
 
@@ -350,8 +468,14 @@ const SurveyApprovals = () => {
     }
     
     // Release assignment if one exists (user is closing without submitting)
-    if (currentAssignment) {
+    // Only try to release if we have a valid assignment
+    if (currentAssignment && currentAssignment.responseId) {
+      try {
       await handleReleaseAssignment();
+      } catch (error) {
+        // Silently ignore errors when releasing assignment (assignment might already be expired/released)
+        console.log('Assignment release skipped (may already be released):', error.message);
+      }
     }
     
     setShowResponseDetails(false);
@@ -1467,7 +1591,11 @@ const SurveyApprovals = () => {
                               }
                               // If CATI interview, fetch call details using call_id
                               if (interview.interviewMode === 'cati') {
-                                console.log('🔍 CATI interview detected, call_id:', interview.call_id);
+                                console.log('🔍 CATI interview detected');
+                                console.log('🔍 Interview object keys:', Object.keys(interview));
+                                console.log('🔍 call_id value:', interview.call_id);
+                                console.log('🔍 Full interview object:', JSON.stringify(interview, null, 2));
+                                
                                 const callId = interview.call_id;
                                 if (callId) {
                                   console.log('🔍 Fetching call details for callId:', callId);
@@ -1491,17 +1619,89 @@ const SurveyApprovals = () => {
                                           }
                                         } catch (recordingError) {
                                           console.error('Error fetching CATI recording:', recordingError);
+                                          // Don't show error for recording - it's optional
                                         }
                                       }
                                     } else {
                                       console.warn('⚠️ Call response not successful or no data:', callResponse);
+                                      // Try fallback: search by survey and respondent phone (for older records)
+                                      if (interview.survey?._id && interview.respondentPhone) {
+                                        try {
+                                          console.log('🔍 Trying fallback: searching by survey and respondent phone');
+                                          const callsResponse = await catiAPI.getCalls(1, 10, interview.survey._id);
+                                          if (callsResponse.success && callsResponse.data?.calls) {
+                                            const respondentPhoneLast10 = interview.respondentPhone.slice(-10);
+                                            const matchingCall = callsResponse.data.calls.find(call => 
+                                              call.toNumber && call.toNumber.slice(-10) === respondentPhoneLast10
+                                            );
+                                            if (matchingCall) {
+                                              console.log('✅ Found call via fallback method:', matchingCall);
+                                              setCatiCallDetails(matchingCall);
+                                              if (matchingCall.recordingUrl) {
+                                                try {
+                                                  const recordingResponse = await api.get(`/api/cati/recording/${matchingCall._id}`, {
+                                                    responseType: 'blob'
+                                                  });
+                                                  if (recordingResponse.data) {
+                                                    const blob = new Blob([recordingResponse.data], { type: 'audio/mpeg' });
+                                                    const blobUrl = URL.createObjectURL(blob);
+                                                    setCatiRecordingBlobUrl(blobUrl);
+                                                  }
+                                                } catch (recordingError) {
+                                                  console.error('Error fetching CATI recording via fallback:', recordingError);
+                                                }
+                                              }
+                                            }
+                                          }
+                                        } catch (fallbackError) {
+                                          console.error('Error in fallback call search:', fallbackError);
+                                        }
+                                      }
                                     }
                                   } catch (error) {
                                     console.error('❌ Error fetching CATI call details:', error);
-                                    showError('Failed to fetch call details. Please try again.');
+                                    console.error('❌ Error details:', error.response?.data || error.message);
+                                    // Only show error if it's not a 403/404 (might be expected for some cases)
+                                    if (error.response?.status !== 403 && error.response?.status !== 404) {
+                                      showError('Failed to fetch call details. Please try again.');
+                                    }
                                   }
                                 } else {
                                   console.warn('⚠️ No call_id found in SurveyResponse for CATI interview');
+                                  console.warn('⚠️ Interview object:', interview);
+                                  // Try fallback: search by survey and respondent phone (for older records)
+                                  if (interview.survey?._id && interview.respondentPhone) {
+                                    try {
+                                      console.log('🔍 Trying fallback: searching by survey and respondent phone');
+                                      const callsResponse = await catiAPI.getCalls(1, 10, interview.survey._id);
+                                      if (callsResponse.success && callsResponse.data?.calls) {
+                                        const respondentPhoneLast10 = interview.respondentPhone.slice(-10);
+                                        const matchingCall = callsResponse.data.calls.find(call => 
+                                          call.toNumber && call.toNumber.slice(-10) === respondentPhoneLast10
+                                        );
+                                        if (matchingCall) {
+                                          console.log('✅ Found call via fallback method:', matchingCall);
+                                          setCatiCallDetails(matchingCall);
+                                          if (matchingCall.recordingUrl) {
+                                            try {
+                                              const recordingResponse = await api.get(`/api/cati/recording/${matchingCall._id}`, {
+                                                responseType: 'blob'
+                                              });
+                                              if (recordingResponse.data) {
+                                                const blob = new Blob([recordingResponse.data], { type: 'audio/mpeg' });
+                                                const blobUrl = URL.createObjectURL(blob);
+                                                setCatiRecordingBlobUrl(blobUrl);
+                                              }
+                                            } catch (recordingError) {
+                                              console.error('Error fetching CATI recording via fallback:', recordingError);
+                                            }
+                                          }
+                                        }
+                                      }
+                                    } catch (fallbackError) {
+                                      console.error('Error in fallback call search:', fallbackError);
+                                    }
+                                  }
                                 }
                               }
                             }}

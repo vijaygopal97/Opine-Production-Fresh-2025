@@ -48,22 +48,19 @@ router.post('/webhook', receiveWebhook);
 // All other routes require authentication
 router.use(protect);
 
-// All routes require company_admin role
-router.use(authorize('company_admin'));
+// Make a call (company_admin only)
+router.post('/make-call', authorize('company_admin'), makeCall);
 
-// Make a call
-router.post('/make-call', makeCall);
+// Get all calls (company_admin only)
+router.get('/calls', authorize('company_admin'), getCalls);
 
-// Get all calls
-router.get('/calls', getCalls);
+// Get call statistics (company_admin only)
+router.get('/stats', authorize('company_admin'), getCallStats);
 
-// Get call statistics
-router.get('/stats', getCallStats);
-
-// Get single call by ID
+// Get single call by ID (company_admin, quality_agent, or interviewer - with ownership check in controller)
 router.get('/calls/:id', getCallById);
 
-// Get recording (proxy with authentication)
+// Get recording (proxy with authentication) - company_admin, quality_agent, or interviewer (with ownership check)
 router.get('/recording/:callId', getRecording);
 
 // Manually check call status

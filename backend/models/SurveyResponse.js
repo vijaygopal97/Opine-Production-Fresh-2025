@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { v4: uuidv4 } = require('uuid');
 
 const surveyResponseSchema = new mongoose.Schema({
   // Unique Numerical ID for easy reference
@@ -349,24 +350,11 @@ surveyResponseSchema.pre('save', function(next) {
   next();
 });
 
-// Function to generate unique 6-7 digit numerical ID
+// Function to generate unique UUID response ID (same format as CATI)
 const generateUniqueResponseId = async function(SurveyResponseModel) {
-  let responseId;
-  let isUnique = false;
-  
-  while (!isUnique) {
-    // Generate a 6-7 digit number (100000 to 9999999)
-    responseId = Math.floor(Math.random() * (9999999 - 100000 + 1)) + 100000;
-    responseId = responseId.toString();
-    
-    // Check if this ID already exists
-    const existingResponse = await SurveyResponseModel.findOne({ responseId });
-    if (!existingResponse) {
-      isUnique = true;
-    }
-  }
-  
-  return responseId;
+  // Use UUID format (same as CATI responses) for consistency
+  // UUIDs are globally unique, so no need to check for duplicates
+  return uuidv4();
 };
 
 // Static method to create a complete survey response

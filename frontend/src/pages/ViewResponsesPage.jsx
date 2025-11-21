@@ -59,7 +59,7 @@ const ViewResponsesPage = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedResponse, setSelectedResponse] = useState(null);
   const [showResponseDetails, setShowResponseDetails] = useState(false);
-  const { showError } = useToast();
+  const { showError, showSuccess } = useToast();
 
   // Load assembly constituencies data
   const [assemblyConstituencies, setAssemblyConstituencies] = useState({});
@@ -552,6 +552,31 @@ const ViewResponsesPage = () => {
     });
   }, [originalResponses, filters]);
 
+  // Helper function to get all questions from survey (handles both sections and direct questions)
+  const getAllSurveyQuestions = (survey) => {
+    const actualSurvey = survey?.survey || survey;
+    let allQuestions = [];
+    
+    // Get questions from sections
+    if (actualSurvey?.sections && Array.isArray(actualSurvey.sections)) {
+      actualSurvey.sections.forEach(section => {
+        if (section.questions && Array.isArray(section.questions)) {
+          allQuestions.push(...section.questions);
+        }
+      });
+    }
+    
+    // Get direct questions if they exist
+    if (actualSurvey?.questions && Array.isArray(actualSurvey.questions)) {
+      allQuestions.push(...actualSurvey.questions);
+    }
+    
+    // Sort by order if available
+    allQuestions.sort((a, b) => (a.order || 0) - (b.order || 0));
+    
+    return allQuestions;
+  };
+
   // Handle CSV download with raw survey question-answer data
   const handleCSVDownload = () => {
     if (filteredResponses.length === 0) {
@@ -559,74 +584,115 @@ const ViewResponsesPage = () => {
       return;
     }
 
-    // Extract all unique questions from the first response to create headers
-    const firstResponse = filteredResponses[0];
-    if (!firstResponse || !firstResponse.responses || firstResponse.responses.length === 0) {
-      showError('No survey data available to download');
+    if (!survey) {
+      showError('Survey data not available');
+      return;
+    }
+
+    // Get ALL questions from the survey itself (not from responses)
+    // This ensures we have a complete template that works for both CAPI and CATI
+    const allSurveyQuestions = getAllSurveyQuestions(survey);
+    
+    if (allSurveyQuestions.length === 0) {
+      showError('No survey questions found');
       return;
     }
 
     // Create headers from survey questions with question numbers
-    const questionHeaders = firstResponse.responses.map((response, index) => 
-      `Q${index + 1}: ${response.questionText}`
+    const questionHeaders = allSurveyQuestions.map((question, index) => 
+      `Q${index + 1}: ${question.text || question.questionText || `Question ${index + 1}`}`
     );
     
-    // Add metadata headers
+    // Add metadata headers (common columns for both CAPI and CATI)
     const metadataHeaders = [
       'Response ID',
       'Interview Mode',
       'Interviewer Name',
       'Interviewer Email',
       'Response Date',
-      'GPS Coordinates'
+      'Status',
+      'GPS Coordinates',
+      'Call ID' // For CATI interviews
     ];
 
     const allHeaders = [...metadataHeaders, ...questionHeaders];
 
     // Create CSV data rows
     const csvData = filteredResponses.map(response => {
-      // Extract metadata
+      // Extract metadata (common columns)
       const metadata = [
         response.responseId || response._id?.slice(-8) || 'N/A',
         response.interviewMode?.toUpperCase() || 'N/A',
-        response.interviewer ? `${response.interviewer.firstName} ${response.interviewer.lastName}` : 'N/A',
-        response.interviewer ? response.interviewer.email : 'N/A',
-        new Date(response.createdAt).toLocaleDateString(),
-        response.location ? `(${response.location.latitude}, ${response.location.longitude})` : 'N/A'
+        response.interviewer ? `${response.interviewer.firstName || ''} ${response.interviewer.lastName || ''}`.trim() : 'N/A',
+        response.interviewer?.email || 'N/A',
+        new Date(response.createdAt || response.endTime || response.createdAt).toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit'
+        }),
+        response.status || 'N/A',
+        response.location ? `(${response.location.latitude?.toFixed(4)}, ${response.location.longitude?.toFixed(4)})` : 'N/A',
+        response.call_id || 'N/A' // CATI call ID
       ];
 
-      // Extract answers for each question in the same order as headers
-      const answers = firstResponse.responses.map(questionResponse => {
-        const matchingAnswer = response.responses.find(r => 
-          r.questionText === questionResponse.questionText
-        );
+      // Extract answers for each question in the survey
+      // Match by questionId first (most reliable), then by questionText
+      const answers = allSurveyQuestions.map(surveyQuestion => {
+        // Try to find matching answer by questionId first
+        let matchingAnswer = null;
+        
+        if (surveyQuestion.id) {
+          matchingAnswer = response.responses?.find(r => 
+            r.questionId === surveyQuestion.id
+          );
+        }
+        
+        // If not found by ID, try by questionText
+        if (!matchingAnswer && surveyQuestion.text) {
+          matchingAnswer = response.responses?.find(r => 
+            r.questionText === surveyQuestion.text || 
+            r.questionText === surveyQuestion.questionText
+          );
+        }
+        
         if (matchingAnswer) {
-          // Find the corresponding survey question to get options for formatting
-          const surveyQuestion = findQuestionByText(questionResponse.questionText, survey);
+          // Check if the question was actually skipped
+          if (matchingAnswer.isSkipped) {
+            return 'Skipped';
+          }
           
-          // Debug logging
-          console.log('Processing question:', questionResponse.questionText);
-          console.log('Response value:', matchingAnswer.response);
-          console.log('Found survey question:', surveyQuestion);
-          console.log('Question options:', surveyQuestion?.options);
+          // Check if response has content
+          const hasResponseContent = (responseValue) => {
+            if (!responseValue && responseValue !== 0) return false;
+            if (Array.isArray(responseValue)) return responseValue.length > 0;
+            if (typeof responseValue === 'object') return Object.keys(responseValue).length > 0;
+            return responseValue !== '' && responseValue !== null && responseValue !== undefined;
+          };
+          
+          if (!hasResponseContent(matchingAnswer.response)) {
+            return 'No response';
+          }
           
           // Format the response to show option text instead of values
           let formattedResponse;
-          if (surveyQuestion && surveyQuestion.options) {
+          if (surveyQuestion.options) {
             // Use survey question options if available
             formattedResponse = formatResponseDisplay(matchingAnswer.response, surveyQuestion);
           } else {
             // Use hardcoded mappings as fallback
-            formattedResponse = getHardcodedOptionMapping(questionResponse.questionText, matchingAnswer.response);
+            formattedResponse = getHardcodedOptionMapping(
+              surveyQuestion.text || surveyQuestion.questionText, 
+              matchingAnswer.response
+            );
           }
-          
-          console.log('Formatted response:', formattedResponse);
           
           return formattedResponse;
         } else {
-          // Check if this question was skipped due to conditional logic
-          // If the question exists in the survey but not in responses, it was likely skipped
-          return 'Skipped';
+          // Question not found in this response - could be due to conditional logic
+          // Return empty string instead of 'Skipped' to distinguish from actually skipped questions
+          return '';
         }
       });
 
@@ -634,18 +700,24 @@ const ViewResponsesPage = () => {
     });
 
     const csvContent = [allHeaders, ...csvData]
-      .map(row => row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(','))
+      .map(row => row.map(field => {
+        const fieldStr = String(field || '');
+        // Escape quotes and wrap in quotes
+        return `"${fieldStr.replace(/"/g, '""')}"`;
+      }).join(','))
       .join('\n');
 
-    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${survey?.title || 'survey'}_raw_responses.csv`;
+    link.download = `${survey?.surveyName || survey?.title || 'survey'}_responses_${new Date().toISOString().split('T')[0]}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     window.URL.revokeObjectURL(url);
+    
+    showSuccess('CSV downloaded successfully');
   };
 
   // Handle view response details

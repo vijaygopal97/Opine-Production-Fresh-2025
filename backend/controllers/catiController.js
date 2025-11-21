@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const CatiCall = require('../models/CatiCall');
 const CatiRespondentQueue = require('../models/CatiRespondentQueue');
+const SurveyResponse = require('../models/SurveyResponse');
 
 // DeepCall API Configuration
 const DEEPCALL_API_BASE_URL = 'https://s-ct3.sarv.com/v2/clickToCall/para';
@@ -368,8 +369,8 @@ const receiveWebhook = async (req, res) => {
       console.log(`🔍 Found by callId (exact): ${callRecord ? 'Yes' : 'No'}`);
       
       // If not found, try without any trimming or case sensitivity
-      if (!callRecord) {
-        callRecord = await CatiCall.findOne({ 
+    if (!callRecord) {
+        callRecord = await CatiCall.findOne({
           callId: { $regex: new RegExp(`^${callId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
         });
         console.log(`🔍 Found by callId (regex): ${callRecord ? 'Yes' : 'No'}`);
@@ -420,12 +421,12 @@ const receiveWebhook = async (req, res) => {
       if (fromNum && toNum) {
         console.log(`🔍 Searching by numbers (no callId available): ${fromNum} -> ${toNum}`);
         // Only search in very recent calls (last 30 minutes) to avoid false matches
-        callRecord = await CatiCall.findOne({
+      callRecord = await CatiCall.findOne({
           fromNumber: fromNum,
           toNumber: toNum,
           createdAt: { $gte: new Date(Date.now() - 30 * 60 * 1000) }, // Last 30 minutes only
           webhookReceived: { $ne: true } // Only match calls that haven't received webhook yet
-        }).sort({ createdAt: -1 });
+      }).sort({ createdAt: -1 });
         
         if (callRecord) {
           console.log(`🔍 Found by numbers (no callId): ${callRecord._id}, Call ID: ${callRecord.callId}`);
@@ -740,13 +741,13 @@ const receiveWebhook = async (req, res) => {
     // If not found in nHDetail, try recordings array
     if (!recordingUrl) {
       let recordingsData = webhookData?.recordings || 
-                           webhookData?.recordingUrl || 
-                           webhookData?.recording_url ||
-                           webhookData?.recording?.url ||
-                           webhookData?.call?.recordingUrl ||
-                           webhookData?.audioUrl ||
-                           webhookData?.audio_url;
-      
+                      webhookData?.recordingUrl || 
+                      webhookData?.recording_url ||
+                      webhookData?.recording?.url ||
+                      webhookData?.call?.recordingUrl ||
+                      webhookData?.audioUrl ||
+                      webhookData?.audio_url;
+    
       // Handle recordings as array (DeepCall format)
       if (Array.isArray(recordingsData)) {
         if (recordingsData.length > 0) {
@@ -1142,38 +1143,61 @@ const getCallById = async (req, res) => {
   try {
     const { id } = req.params;
     const companyId = req.user.company;
+    const userId = req.user._id;
+    const userRole = req.user.userType;
 
     // Check if id is a valid MongoDB ObjectId (24 hex characters)
     const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(id);
     let call = null;
 
-    // Try to find by MongoDB _id first only if it's a valid ObjectId
-    if (isValidObjectId) {
-      try {
+    // For quality agents, we need to check if the call is linked to a response they can review
+    // So we search more broadly first, then verify access
+    if (userRole === 'quality_agent') {
+      // Try to find by MongoDB _id first only if it's a valid ObjectId
+      if (isValidObjectId) {
+        try {
+          call = await CatiCall.findOne({ _id: id })
+      .populate('createdBy', 'name email');
+        } catch (objectIdError) {
+          console.log('⚠️ Not a valid ObjectId, trying by callId:', objectIdError.message);
+        }
+      }
+
+      // If not found by _id, try by callId (DeepCall callId)
+      if (!call) {
+        call = await CatiCall.findOne({ callId: id })
+          .populate('createdBy', 'name email');
+      }
+    } else {
+      // For company admins and interviewers, use company filter
+      // Try to find by MongoDB _id first only if it's a valid ObjectId
+      if (isValidObjectId) {
+        try {
+          call = await CatiCall.findOne({
+            _id: id,
+            $or: [
+              { company: companyId },
+              { company: null } // Webhook-created calls
+            ]
+          })
+          .populate('createdBy', 'name email');
+        } catch (objectIdError) {
+          // If ObjectId conversion fails, continue to try by callId
+          console.log('⚠️ Not a valid ObjectId, trying by callId:', objectIdError.message);
+        }
+      }
+
+      // If not found by _id, try by callId (DeepCall callId)
+      if (!call) {
         call = await CatiCall.findOne({
-          _id: id,
+          callId: id,
           $or: [
             { company: companyId },
             { company: null } // Webhook-created calls
           ]
         })
           .populate('createdBy', 'name email');
-      } catch (objectIdError) {
-        // If ObjectId conversion fails, continue to try by callId
-        console.log('⚠️ Not a valid ObjectId, trying by callId:', objectIdError.message);
       }
-    }
-
-    // If not found by _id, try by callId (DeepCall callId)
-    if (!call) {
-      call = await CatiCall.findOne({
-        callId: id,
-        $or: [
-          { company: companyId },
-          { company: null } // Webhook-created calls
-        ]
-      })
-        .populate('createdBy', 'name email');
     }
 
     if (!call) {
@@ -1181,6 +1205,66 @@ const getCallById = async (req, res) => {
         success: false,
         message: 'Call not found'
       });
+    }
+
+    // If user is an interviewer (not company_admin or quality_agent), verify they own a response linked to this call
+    if (userRole !== 'company_admin' && userRole !== 'quality_agent') {
+      // Check if this call is linked to one of the interviewer's survey responses
+      const callIdToCheck = call.callId || call._id.toString();
+      const responseWithCall = await SurveyResponse.findOne({
+        interviewer: userId,
+        call_id: callIdToCheck
+      });
+
+      if (!responseWithCall) {
+        // Also try to find by MongoDB _id if callId didn't match
+        const responseWithCallId = await SurveyResponse.findOne({
+          interviewer: userId,
+          call_id: call._id.toString()
+        });
+
+        if (!responseWithCallId) {
+          return res.status(403).json({
+            success: false,
+            message: 'Access denied. You can only view calls associated with your own interviews.'
+          });
+        }
+      }
+    } else if (userRole === 'quality_agent') {
+      // For quality agents, verify the call is linked to a response they can review
+      const callIdToCheck = call.callId || call._id.toString();
+      
+      console.log('🔍 Quality Agent - Checking call access. callIdToCheck:', callIdToCheck);
+      console.log('🔍 Quality Agent - Call details:', { callId: call.callId, _id: call._id, company: call.company });
+      
+      // First try to find by callId (DeepCall callId)
+      let responseWithCall = await SurveyResponse.findOne({
+        call_id: callIdToCheck
+      });
+
+      console.log('🔍 Quality Agent - Response found by callId:', responseWithCall ? 'Yes' : 'No');
+
+      // If not found, try by MongoDB _id
+      if (!responseWithCall) {
+        responseWithCall = await SurveyResponse.findOne({
+          call_id: call._id.toString()
+        });
+        console.log('🔍 Quality Agent - Response found by _id:', responseWithCall ? 'Yes' : 'No');
+      }
+
+      if (!responseWithCall) {
+        console.log('❌ Quality Agent - No response found for call. Denying access.');
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. You can only view calls associated with responses you can review.'
+        });
+      }
+
+      console.log('✅ Quality Agent - Response found. responseId:', responseWithCall.responseId);
+      console.log('✅ Quality Agent - Allowing access to call details.');
+      
+      // For quality agents, if the call is linked to a response, allow access
+      // The frontend ensures they can only see responses they're assigned to review
     }
 
     res.json({
@@ -1315,18 +1399,97 @@ const getRecording = async (req, res) => {
     const { callId } = req.params;
     const userId = req.user._id;
     const companyId = req.user.company;
+    const userRole = req.user.userType;
 
-    // Find the call record
-    const call = await CatiCall.findOne({ 
-      _id: callId,
-      $or: [{ company: companyId }, { company: null }]
-    });
+    // Find the call record - for quality agents, we need to check by callId as well
+    // Check if callId is a valid MongoDB ObjectId
+    const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(callId);
+    let call = null;
+    
+    // For quality agents, search more broadly first, then verify access
+    if (userRole === 'quality_agent') {
+      if (isValidObjectId) {
+        call = await CatiCall.findOne({ _id: callId });
+      }
+      if (!call) {
+        call = await CatiCall.findOne({ callId: callId });
+      }
+    } else {
+      // For company admins and interviewers, use company filter
+      if (isValidObjectId) {
+        call = await CatiCall.findOne({ 
+          _id: callId,
+          $or: [{ company: companyId }, { company: null }]
+        });
+      }
+      if (!call) {
+        call = await CatiCall.findOne({
+          callId: callId,
+          $or: [{ company: companyId }, { company: null }]
+        });
+      }
+    }
 
     if (!call) {
       return res.status(404).json({
         success: false,
         message: 'Call record not found'
       });
+    }
+
+    // If user is an interviewer (not company_admin or quality_agent), verify they own a response linked to this call
+    if (userRole !== 'company_admin' && userRole !== 'quality_agent') {
+      // Check if this call is linked to one of the interviewer's survey responses
+      const callIdToCheck = call.callId || call._id.toString();
+      const responseWithCall = await SurveyResponse.findOne({
+        interviewer: userId,
+        call_id: callIdToCheck
+      });
+
+      if (!responseWithCall) {
+        // Also try to find by MongoDB _id if callId didn't match
+        const responseWithCallId = await SurveyResponse.findOne({
+          interviewer: userId,
+          call_id: call._id.toString()
+        });
+
+        if (!responseWithCallId) {
+          return res.status(403).json({
+            success: false,
+            message: 'Access denied. You can only view recordings for calls associated with your own interviews.'
+          });
+        }
+      }
+    } else if (userRole === 'quality_agent') {
+      // For quality agents, verify the call is linked to a response they can review
+      const callIdToCheck = call.callId || call._id.toString();
+      
+      console.log('🔍 Quality Agent (Recording) - Checking call access. callIdToCheck:', callIdToCheck);
+      
+      // First try to find by callId (DeepCall callId)
+      let responseWithCall = await SurveyResponse.findOne({
+        call_id: callIdToCheck
+      });
+
+      // If not found, try by MongoDB _id
+      if (!responseWithCall) {
+        responseWithCall = await SurveyResponse.findOne({
+          call_id: call._id.toString()
+        });
+      }
+
+      if (!responseWithCall) {
+        console.log('❌ Quality Agent (Recording) - No response found for call. Denying access.');
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. You can only view recordings for calls associated with responses you can review.'
+        });
+      }
+
+      console.log('✅ Quality Agent (Recording) - Response found. Allowing access to recording.');
+      
+      // For quality agents, if the call is linked to a response, allow access
+      // The frontend ensures they can only see responses they're assigned to review
     }
 
     if (!call.recordingUrl) {
