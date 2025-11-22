@@ -51,10 +51,14 @@ const SurveyApprovals = () => {
   const [audioPlaying, setAudioPlaying] = useState(null);
   const [audioElement, setAudioElement] = useState(null);
   const [verificationForm, setVerificationForm] = useState({
-    audioQuality: '',
-    questionAccuracy: '',
-    dataAccuracy: '',
-    locationMatch: '',
+    audioStatus: '',
+    genderMatching: '',
+    upcomingElectionsMatching: '',
+    previousElectionsMatching: '',
+    previousLoksabhaElectionsMatching: '',
+    nameMatching: '',
+    ageMatching: '',
+    phoneNumberAsked: '',
     customFeedback: ''
   });
   const [isSubmittingVerification, setIsSubmittingVerification] = useState(false);
@@ -422,10 +426,14 @@ const SurveyApprovals = () => {
   // Reset verification form when modal opens/closes
   const resetVerificationForm = () => {
     setVerificationForm({
-      audioQuality: '',
-      questionAccuracy: '',
-      dataAccuracy: '',
-      locationMatch: '',
+      audioStatus: '',
+      genderMatching: '',
+      upcomingElectionsMatching: '',
+      previousElectionsMatching: '',
+      previousLoksabhaElectionsMatching: '',
+      nameMatching: '',
+      ageMatching: '',
+      phoneNumberAsked: '',
       customFeedback: ''
     });
   };
@@ -487,25 +495,56 @@ const SurveyApprovals = () => {
 
   // Check if form is complete and valid
   const isVerificationFormValid = () => {
-    return verificationForm.audioQuality !== '' &&
-           verificationForm.questionAccuracy !== '' &&
-           verificationForm.dataAccuracy !== '' &&
-           verificationForm.locationMatch !== '';
+    return verificationForm.audioStatus !== '' &&
+           verificationForm.genderMatching !== '' &&
+           verificationForm.upcomingElectionsMatching !== '' &&
+           verificationForm.previousElectionsMatching !== '' &&
+           verificationForm.previousLoksabhaElectionsMatching !== '' &&
+           verificationForm.nameMatching !== '' &&
+           verificationForm.ageMatching !== '' &&
+           verificationForm.phoneNumberAsked !== '';
   };
 
   // Determine approval status based on form responses
   const getApprovalStatus = () => {
-    // Audio quality below 3 = reject
-    if (parseInt(verificationForm.audioQuality) < 3) {
+    // Q1: Audio Status - Accept only if coded "1" (Survey Conversation can be heard) or "4" (Can hear the interviewer more than the respondent)
+    // Reject anything other than "1" and "4"
+    const audioStatus = verificationForm.audioStatus;
+    if (audioStatus !== '1' && audioStatus !== '4') {
       return 'rejected';
     }
     
-    // Any "No" answers = reject
-    if (verificationForm.questionAccuracy === 'No' ||
-        verificationForm.dataAccuracy === 'No' ||
-        verificationForm.locationMatch === 'No') {
+    // Q2: Gender Matching - Reject if coded "2" (Not Matched)
+    if (verificationForm.genderMatching === '2') {
       return 'rejected';
     }
+    
+    // Q3: Upcoming Elections Matching - Reject if coded "2" (Not Matched)
+    if (verificationForm.upcomingElectionsMatching === '2') {
+      return 'rejected';
+    }
+    
+    // Q4: Previous Elections Matching - Reject if coded "2" (Not Matched)
+    if (verificationForm.previousElectionsMatching === '2') {
+      return 'rejected';
+    }
+    
+    // Q5: Previous Loksabha Elections Matching - Reject if coded "2" (Not Matched)
+    if (verificationForm.previousLoksabhaElectionsMatching === '2') {
+      return 'rejected';
+    }
+    
+    // Q6: Name Matching - Reject if coded "2" (Not Matched)
+    if (verificationForm.nameMatching === '2') {
+      return 'rejected';
+    }
+    
+    // Q7: Age Matching - Reject if coded "2" (Not Matched)
+    if (verificationForm.ageMatching === '2') {
+      return 'rejected';
+    }
+    
+    // Q8: Phone Number Asked - No rejection logic (informational only)
     
     // All criteria met = approve
     return 'approved';
@@ -526,10 +565,14 @@ const SurveyApprovals = () => {
         responseId: selectedInterview.responseId,
         status: approvalStatus,
         verificationCriteria: {
-          audioQuality: parseInt(verificationForm.audioQuality),
-          questionAccuracy: verificationForm.questionAccuracy,
-          dataAccuracy: verificationForm.dataAccuracy,
-          locationMatch: verificationForm.locationMatch
+          audioStatus: verificationForm.audioStatus,
+          genderMatching: verificationForm.genderMatching,
+          upcomingElectionsMatching: verificationForm.upcomingElectionsMatching,
+          previousElectionsMatching: verificationForm.previousElectionsMatching,
+          previousLoksabhaElectionsMatching: verificationForm.previousLoksabhaElectionsMatching,
+          nameMatching: verificationForm.nameMatching,
+          ageMatching: verificationForm.ageMatching,
+          phoneNumberAsked: verificationForm.phoneNumberAsked
         },
         feedback: verificationForm.customFeedback || ''
       };
@@ -2639,125 +2682,434 @@ const SurveyApprovals = () => {
                 <h4 className="font-medium text-gray-900 mb-4">Survey Response Verification</h4>
                 <div className="space-y-6">
                   
-                  {/* Question 1: Audio Quality */}
+                  {/* Question 1: Audio Status */}
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-gray-700">
-                      1. On a scale of 1-5, how clearly audible and understandable is the entire conversation, with minimal background noise or distortion?
+                      1. Audio status (অডিও স্ট্যাটাস)
                       <span className="text-red-500 ml-1">*</span>
                     </label>
-                    <div className="flex space-x-4">
-                      {[1, 2, 3, 4, 5].map((rating) => (
-                        <label key={rating} className="flex items-center space-x-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="audioQuality"
-                            value={rating}
-                            checked={verificationForm.audioQuality === rating.toString()}
-                            onChange={(e) => handleVerificationFormChange('audioQuality', e.target.value)}
-                            className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-gray-700">{rating}</span>
-                        </label>
-                      ))}
-                    </div>
-                    <div className="flex justify-between text-xs text-gray-500">
-                      <span>Poor Quality</span>
-                      <span>Excellent Quality</span>
-                    </div>
-                  </div>
-
-                  {/* Question 2: Question Accuracy */}
-                  <div className="space-y-2">
-                    <label className="block text-sm font-medium text-gray-700">
-                      2. Did the interviewer ask all the survey questions exactly as written, without leading the respondent or adding unsolicited commentary?
-                      <span className="text-red-500 ml-1">*</span>
-                    </label>
-                    <div className="flex space-x-6">
+                    <div className="space-y-2">
                       <label className="flex items-center space-x-2 cursor-pointer">
                         <input
                           type="radio"
-                          name="questionAccuracy"
-                          value="Yes"
-                          checked={verificationForm.questionAccuracy === 'Yes'}
-                          onChange={(e) => handleVerificationFormChange('questionAccuracy', e.target.value)}
+                          name="audioStatus"
+                          value="1"
+                          checked={verificationForm.audioStatus === '1'}
+                          onChange={(e) => handleVerificationFormChange('audioStatus', e.target.value)}
                           className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                         />
-                        <span className="text-sm text-gray-700">Yes</span>
+                        <span className="text-sm text-gray-700">1 - Survey Conversation can be heard (জরিপের কথোপকথন শোনা যাচ্ছে)</span>
                       </label>
                       <label className="flex items-center space-x-2 cursor-pointer">
                         <input
                           type="radio"
-                          name="questionAccuracy"
-                          value="No"
-                          checked={verificationForm.questionAccuracy === 'No'}
-                          onChange={(e) => handleVerificationFormChange('questionAccuracy', e.target.value)}
+                          name="audioStatus"
+                          value="2"
+                          checked={verificationForm.audioStatus === '2'}
+                          onChange={(e) => handleVerificationFormChange('audioStatus', e.target.value)}
                           className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                         />
-                        <span className="text-sm text-gray-700">No</span>
-                      </label>
-                    </div>
-                  </div>
-
-                  {/* Question 3: Data Accuracy */}
-                  <div className="space-y-2">
-                    <label className="block text-sm font-medium text-gray-700">
-                      3. Does the transcribed data perfectly match the audio recording for all questions, with no missing answers?
-                      <span className="text-red-500 ml-1">*</span>
-                    </label>
-                    <div className="flex space-x-6">
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="dataAccuracy"
-                          value="Yes"
-                          checked={verificationForm.dataAccuracy === 'Yes'}
-                          onChange={(e) => handleVerificationFormChange('dataAccuracy', e.target.value)}
-                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-gray-700">Yes</span>
+                        <span className="text-sm text-gray-700">2 - No Conversation (কোনো কথোপকথন নেই)</span>
                       </label>
                       <label className="flex items-center space-x-2 cursor-pointer">
                         <input
                           type="radio"
-                          name="dataAccuracy"
-                          value="No"
-                          checked={verificationForm.dataAccuracy === 'No'}
-                          onChange={(e) => handleVerificationFormChange('dataAccuracy', e.target.value)}
+                          name="audioStatus"
+                          value="3"
+                          checked={verificationForm.audioStatus === '3'}
+                          onChange={(e) => handleVerificationFormChange('audioStatus', e.target.value)}
                           className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                         />
-                        <span className="text-sm text-gray-700">No</span>
+                        <span className="text-sm text-gray-700">3 - Irrelevant Conversation (অপ্রাসঙ্গিক কথোপকথন)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="audioStatus"
+                          value="4"
+                          checked={verificationForm.audioStatus === '4'}
+                          onChange={(e) => handleVerificationFormChange('audioStatus', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">4 - Can hear the interviewer more than the respondent (সাক্ষাৎকারগ্রহণকারীর কণ্ঠস্বর উত্তরদাতার তুলনায় বেশি শোনা যাচ্ছে)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="audioStatus"
+                          value="7"
+                          checked={verificationForm.audioStatus === '7'}
+                          onChange={(e) => handleVerificationFormChange('audioStatus', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">7 - Cannot hear the response clearly (উত্তর স্পষ্টভাবে শোনা যাচ্ছে না)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="audioStatus"
+                          value="8"
+                          checked={verificationForm.audioStatus === '8'}
+                          onChange={(e) => handleVerificationFormChange('audioStatus', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">8 - Duplicate Audio (ডুপ্লিকেট অডিও)</span>
                       </label>
                     </div>
                   </div>
 
-                  {/* Question 4: Location Match */}
+                  {/* Question 2: Gender Matching */}
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-gray-700">
-                      4. Does the Location of Interviewer Match the Assigned Area?
+                      2. Gender of the Respondent Matching? (উত্তরদাতার লিঙ্গ কি মেলানো হয়েছে?)
                       <span className="text-red-500 ml-1">*</span>
                     </label>
-                    <div className="flex space-x-6">
+                    <div className="space-y-2">
                       <label className="flex items-center space-x-2 cursor-pointer">
                         <input
                           type="radio"
-                          name="locationMatch"
-                          value="Yes"
-                          checked={verificationForm.locationMatch === 'Yes'}
-                          onChange={(e) => handleVerificationFormChange('locationMatch', e.target.value)}
+                          name="genderMatching"
+                          value="1"
+                          checked={verificationForm.genderMatching === '1'}
+                          onChange={(e) => handleVerificationFormChange('genderMatching', e.target.value)}
                           className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                         />
-                        <span className="text-sm text-gray-700">Yes</span>
+                        <span className="text-sm text-gray-700">1 - Matched (মিলে গেছে)</span>
                       </label>
                       <label className="flex items-center space-x-2 cursor-pointer">
                         <input
                           type="radio"
-                          name="locationMatch"
-                          value="No"
-                          checked={verificationForm.locationMatch === 'No'}
-                          onChange={(e) => handleVerificationFormChange('locationMatch', e.target.value)}
+                          name="genderMatching"
+                          value="2"
+                          checked={verificationForm.genderMatching === '2'}
+                          onChange={(e) => handleVerificationFormChange('genderMatching', e.target.value)}
                           className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                         />
-                        <span className="text-sm text-gray-700">No</span>
+                        <span className="text-sm text-gray-700">2 - Not Matched (মেলেনি)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="genderMatching"
+                          value="3"
+                          checked={verificationForm.genderMatching === '3'}
+                          onChange={(e) => handleVerificationFormChange('genderMatching', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">3 - Male answering on behalf of female (মহিলার পক্ষ থেকে পুরুষ উত্তর দিচ্ছেন।)</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Question 3: Upcoming Elections Matching */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      3. Is the Response Matching for the Upcoming Elections preference (Q8)? (উত্তরটি কি আসন্ন নির্বাচনের পছন্দ (প্রশ্ন ৮) এর সাথে মিলে যাচ্ছে?)
+                      <span className="text-red-500 ml-1">*</span>
+                    </label>
+                    <div className="space-y-2">
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="upcomingElectionsMatching"
+                          value="1"
+                          checked={verificationForm.upcomingElectionsMatching === '1'}
+                          onChange={(e) => handleVerificationFormChange('upcomingElectionsMatching', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">1 - Matched (মিলে গেছে)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="upcomingElectionsMatching"
+                          value="2"
+                          checked={verificationForm.upcomingElectionsMatching === '2'}
+                          onChange={(e) => handleVerificationFormChange('upcomingElectionsMatching', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">2 - Not Matched (মেলেনি)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="upcomingElectionsMatching"
+                          value="3"
+                          checked={verificationForm.upcomingElectionsMatching === '3'}
+                          onChange={(e) => handleVerificationFormChange('upcomingElectionsMatching', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">3 - Cannot hear the response clearly (উত্তর স্পষ্টভাবে শোনা যাচ্ছে না)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="upcomingElectionsMatching"
+                          value="4"
+                          checked={verificationForm.upcomingElectionsMatching === '4'}
+                          onChange={(e) => handleVerificationFormChange('upcomingElectionsMatching', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">4 - Did not ask (জিজ্ঞাসা করা হয়নি)</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Question 4: Previous Elections Matching */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      4. Is the Response Matching for the Previous 2021 Assembly Election (Q5)? (উত্তরটি কি ২০২১ সালের পূর্ববর্তী বিধানসভা নির্বাচনের (প্রশ্ন ৫) সাথে মিলে যাচ্ছে?)
+                      <span className="text-red-500 ml-1">*</span>
+                    </label>
+                    <div className="space-y-2">
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="previousElectionsMatching"
+                          value="1"
+                          checked={verificationForm.previousElectionsMatching === '1'}
+                          onChange={(e) => handleVerificationFormChange('previousElectionsMatching', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">1 - Matched (মিলে গেছে)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="previousElectionsMatching"
+                          value="2"
+                          checked={verificationForm.previousElectionsMatching === '2'}
+                          onChange={(e) => handleVerificationFormChange('previousElectionsMatching', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">2 - Not Matched (মেলেনি)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="previousElectionsMatching"
+                          value="3"
+                          checked={verificationForm.previousElectionsMatching === '3'}
+                          onChange={(e) => handleVerificationFormChange('previousElectionsMatching', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">3 - Cannot hear the response clearly (উত্তর স্পষ্টভাবে শোনা যাচ্ছে না)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="previousElectionsMatching"
+                          value="4"
+                          checked={verificationForm.previousElectionsMatching === '4'}
+                          onChange={(e) => handleVerificationFormChange('previousElectionsMatching', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">4 - Did not ask (জিজ্ঞাসা করা হয়নি)</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Question 5: Previous Loksabha Elections Matching */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      5. Is the Response Matching for the Previous 2024 Loksabha Election (Q6)? (উত্তরটি কি ২০২৪ সালের পূর্ববর্তী লোকসভা নির্বাচনের (প্রশ্ন ৬) সাথে মিলে যাচ্ছে?)
+                      <span className="text-red-500 ml-1">*</span>
+                    </label>
+                    <div className="space-y-2">
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="previousLoksabhaElectionsMatching"
+                          value="1"
+                          checked={verificationForm.previousLoksabhaElectionsMatching === '1'}
+                          onChange={(e) => handleVerificationFormChange('previousLoksabhaElectionsMatching', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">1 - Matched (মিলে গেছে)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="previousLoksabhaElectionsMatching"
+                          value="2"
+                          checked={verificationForm.previousLoksabhaElectionsMatching === '2'}
+                          onChange={(e) => handleVerificationFormChange('previousLoksabhaElectionsMatching', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">2 - Not Matched (মেলেনি)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="previousLoksabhaElectionsMatching"
+                          value="3"
+                          checked={verificationForm.previousLoksabhaElectionsMatching === '3'}
+                          onChange={(e) => handleVerificationFormChange('previousLoksabhaElectionsMatching', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">3 - Cannot hear the response clearly (উত্তর স্পষ্টভাবে শোনা যাচ্ছে না)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="previousLoksabhaElectionsMatching"
+                          value="4"
+                          checked={verificationForm.previousLoksabhaElectionsMatching === '4'}
+                          onChange={(e) => handleVerificationFormChange('previousLoksabhaElectionsMatching', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">4 - Did not ask (জিজ্ঞাসা করা হয়নি)</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Question 6: Name Matching */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      6. Name of the Respondent Matching? (উত্তরদাতার নাম কি মিলে গেছে?)
+                      <span className="text-red-500 ml-1">*</span>
+                    </label>
+                    <div className="space-y-2">
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="nameMatching"
+                          value="1"
+                          checked={verificationForm.nameMatching === '1'}
+                          onChange={(e) => handleVerificationFormChange('nameMatching', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">1 - Matched (মিলে গেছে)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="nameMatching"
+                          value="2"
+                          checked={verificationForm.nameMatching === '2'}
+                          onChange={(e) => handleVerificationFormChange('nameMatching', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">2 - Not Matched (মেলেনি)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="nameMatching"
+                          value="3"
+                          checked={verificationForm.nameMatching === '3'}
+                          onChange={(e) => handleVerificationFormChange('nameMatching', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">3 - Cannot hear the response clearly (উত্তর স্পষ্টভাবে শোনা যাচ্ছে না)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="nameMatching"
+                          value="4"
+                          checked={verificationForm.nameMatching === '4'}
+                          onChange={(e) => handleVerificationFormChange('nameMatching', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">4 - Did not ask (জিজ্ঞাসা করা হয়নি)</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Question 7: Age Matching */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      7. Is the Age matching? (বয়স কি মিলে গেছে?)
+                      <span className="text-red-500 ml-1">*</span>
+                    </label>
+                    <div className="space-y-2">
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="ageMatching"
+                          value="1"
+                          checked={verificationForm.ageMatching === '1'}
+                          onChange={(e) => handleVerificationFormChange('ageMatching', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">1 - Matched (মিলে গেছে)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="ageMatching"
+                          value="2"
+                          checked={verificationForm.ageMatching === '2'}
+                          onChange={(e) => handleVerificationFormChange('ageMatching', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">2 - Not Matched (মেলেনি)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="ageMatching"
+                          value="3"
+                          checked={verificationForm.ageMatching === '3'}
+                          onChange={(e) => handleVerificationFormChange('ageMatching', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">3 - Cannot hear the response clearly (উত্তর স্পষ্টভাবে শোনা যাচ্ছে না)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="ageMatching"
+                          value="4"
+                          checked={verificationForm.ageMatching === '4'}
+                          onChange={(e) => handleVerificationFormChange('ageMatching', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">4 - Did not ask (জিজ্ঞাসা করা হয়নি)</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Question 8: Phone Number Asked */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      8. Did the interviewer ask the phone number of the respondent? (সাক্ষাৎকারগ্রহণকারী কি উত্তরদাতার ফোন নম্বর জিজ্ঞাসা করেছিলেন?)
+                      <span className="text-red-500 ml-1">*</span>
+                    </label>
+                    <div className="space-y-2">
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="phoneNumberAsked"
+                          value="1"
+                          checked={verificationForm.phoneNumberAsked === '1'}
+                          onChange={(e) => handleVerificationFormChange('phoneNumberAsked', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">1 - Asked the number and noted in the questionnaire (নম্বরটি জিজ্ঞাসা করে প্রশ্নপত্রে নোট করা হয়েছে)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="phoneNumberAsked"
+                          value="2"
+                          checked={verificationForm.phoneNumberAsked === '2'}
+                          onChange={(e) => handleVerificationFormChange('phoneNumberAsked', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">2 - Asked the question but the respondent refused to share (প্রশ্নটি করা হয়েছে কিন্তু উত্তরদাতা শেয়ার করতে অস্বীকার করেছেন)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="phoneNumberAsked"
+                          value="3"
+                          checked={verificationForm.phoneNumberAsked === '3'}
+                          onChange={(e) => handleVerificationFormChange('phoneNumberAsked', e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">3 - Did not ask (জিজ্ঞাসা করা হয়নি)</span>
                       </label>
                     </div>
                   </div>

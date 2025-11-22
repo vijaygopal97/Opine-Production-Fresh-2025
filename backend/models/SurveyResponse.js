@@ -270,6 +270,40 @@ const surveyResponseSchema = new mongoose.Schema({
       type: Date
     },
     criteria: {
+      // New verification criteria fields
+      audioStatus: {
+        type: String,
+        enum: ['1', '2', '3', '4', '7', '8']
+      },
+      genderMatching: {
+        type: String,
+        enum: ['1', '2', '3']
+      },
+      upcomingElectionsMatching: {
+        type: String,
+        enum: ['1', '2', '3', '4']
+      },
+      previousElectionsMatching: {
+        type: String,
+        enum: ['1', '2', '3', '4']
+      },
+      previousLoksabhaElectionsMatching: {
+        type: String,
+        enum: ['1', '2', '3', '4']
+      },
+      nameMatching: {
+        type: String,
+        enum: ['1', '2', '3', '4']
+      },
+      ageMatching: {
+        type: String,
+        enum: ['1', '2', '3', '4']
+      },
+      phoneNumberAsked: {
+        type: String,
+        enum: ['1', '2', '3']
+      },
+      // Old fields (kept for backward compatibility)
       audioQuality: {
         type: Number,
         min: 1,
@@ -292,6 +326,40 @@ const surveyResponseSchema = new mongoose.Schema({
       type: String,
       default: ''
     },
+    // New verification criteria fields
+    audioStatus: {
+      type: String,
+      enum: ['1', '2', '3', '4', '7', '8']
+    },
+    genderMatching: {
+      type: String,
+      enum: ['1', '2', '3']
+    },
+    upcomingElectionsMatching: {
+      type: String,
+      enum: ['1', '2', '3', '4']
+    },
+    previousElectionsMatching: {
+      type: String,
+      enum: ['1', '2', '3', '4']
+    },
+    previousLoksabhaElectionsMatching: {
+      type: String,
+      enum: ['1', '2', '3', '4']
+    },
+    nameMatching: {
+      type: String,
+      enum: ['1', '2', '3', '4']
+    },
+    ageMatching: {
+      type: String,
+      enum: ['1', '2', '3', '4']
+    },
+    phoneNumberAsked: {
+      type: String,
+      enum: ['1', '2', '3']
+    },
+    // Old fields (kept for backward compatibility)
     audioQuality: {
       type: Number,
       min: 1,

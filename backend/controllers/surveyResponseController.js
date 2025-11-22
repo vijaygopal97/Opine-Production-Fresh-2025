@@ -2156,6 +2156,16 @@ const submitVerification = async (req, res) => {
         reviewedAt: new Date(),
         criteria: verificationCriteria,
         feedback: feedback || '',
+        // New verification criteria fields
+        audioStatus: verificationCriteria.audioStatus,
+        genderMatching: verificationCriteria.genderMatching,
+        upcomingElectionsMatching: verificationCriteria.upcomingElectionsMatching,
+        previousElectionsMatching: verificationCriteria.previousElectionsMatching,
+        previousLoksabhaElectionsMatching: verificationCriteria.previousLoksabhaElectionsMatching,
+        nameMatching: verificationCriteria.nameMatching,
+        ageMatching: verificationCriteria.ageMatching,
+        phoneNumberAsked: verificationCriteria.phoneNumberAsked,
+        // Keep old fields for backward compatibility (if present)
         audioQuality: verificationCriteria.audioQuality,
         questionAccuracy: verificationCriteria.questionAccuracy,
         dataAccuracy: verificationCriteria.dataAccuracy,
