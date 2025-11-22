@@ -1163,26 +1163,26 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
         // CAPI mode - use standard endpoint
         response = await surveyResponseAPI.startInterview(survey._id);
         
-        if (response.success) {
-          setSessionData(response.data);
-          setSessionId(response.data.sessionId);
-          setIsPaused(false);
-          setIsInterviewActive(true);
+      if (response.success) {
+        setSessionData(response.data);
+        setSessionId(response.data.sessionId);
+        setIsPaused(false);
+        setIsInterviewActive(true);
 
-          // Start audio recording if supported and in CAPI mode
-          if (survey.mode === 'capi' && audioSupported) {
-            try {
-              await startAudioRecording();
-            } catch (error) {
-              // Audio recording failed, but continue with interview
-              console.warn('Audio recording failed, continuing without audio:', error);
-              showError('Audio recording unavailable. Interview will continue without audio recording.');
-            }
-          } else if (survey.mode === 'capi' && !audioSupported) {
-            console.warn('Audio recording not supported in this browser/environment');
+        // Start audio recording if supported and in CAPI mode
+        if (survey.mode === 'capi' && audioSupported) {
+          try {
+            await startAudioRecording();
+          } catch (error) {
+            // Audio recording failed, but continue with interview
+            console.warn('Audio recording failed, continuing without audio:', error);
+            showError('Audio recording unavailable. Interview will continue without audio recording.');
           }
-        } else {
-          showError('Failed to start interview');
+        } else if (survey.mode === 'capi' && !audioSupported) {
+          console.warn('Audio recording not supported in this browser/environment');
+        }
+      } else {
+        showError('Failed to start interview');
         }
       }
     } catch (error) {
@@ -1192,7 +1192,7 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
       showError(errorMessage);
     } finally {
       setIsLoading(false);
-      setIsStarting(false);
+        setIsStarting(false);
     }
   }, [survey._id, survey.mode, isCatiMode, audioSupported, startAudioRecording, showError]);
 
@@ -1230,30 +1230,30 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
         // Auto-call is handled in startInterviewProcess after queueId is set
       } else {
         // CAPI mode - check for location and audio permissions first
-        setLocationPermission('checking');
-        setLocationError(null);
+      setLocationPermission('checking');
+      setLocationError(null);
+      
+      try {
+        // Get location
+        const locationData = await getCurrentLocation();
+        setGpsLocation(locationData);
+        setLocationPermission('granted');
+        console.log('Location obtained:', locationData);
         
-        try {
-          // Get location
-          const locationData = await getCurrentLocation();
-          setGpsLocation(locationData);
-          setLocationPermission('granted');
-          console.log('Location obtained:', locationData);
-          
-          // Location successful, now check audio
-          await checkAudioPermission();
-        } catch (locationErr) {
-          console.error('Location error:', locationErr);
-          setLocationError(locationErr.message);
-          setLocationPermission('denied');
-          
-          // Show modern permission modal with option to continue without location
-          setPermissionType('location');
-          setPermissionError(locationErr.message);
-          setShowPermissionModal(true);
-          setIsLoading(false);
-          setIsStarting(false);
-          return;
+        // Location successful, now check audio
+        await checkAudioPermission();
+      } catch (locationErr) {
+        console.error('Location error:', locationErr);
+        setLocationError(locationErr.message);
+        setLocationPermission('denied');
+        
+        // Show modern permission modal with option to continue without location
+        setPermissionType('location');
+        setPermissionError(locationErr.message);
+        setShowPermissionModal(true);
+        setIsLoading(false);
+        setIsStarting(false);
+        return;
         }
       }
     } catch (error) {
@@ -1538,6 +1538,10 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
       
       if (isCatiMode && catiQueueId) {
         // CATI mode - use CATI-specific completion endpoint
+        const totalQuestions = allQuestions.length;
+        const answeredQuestions = finalResponses.filter(r => hasResponseContent(r.response)).length;
+        const completionPercentage = Math.round((answeredQuestions / totalQuestions) * 100);
+        
         response = await catiInterviewAPI.completeCatiInterview(
           catiQueueId,
           sessionId,
@@ -1545,39 +1549,42 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
           selectedAC,
           totalTime,
           sessionData?.startTime || new Date(),
-          new Date()
+          new Date(),
+          totalQuestions,
+          answeredQuestions,
+          completionPercentage
         );
       } else {
         // CAPI mode - use standard completion endpoint
         response = await surveyResponseAPI.completeInterview(
-          sessionId, 
-          finalResponses, 
-          qualityMetrics, 
-          {
-            survey: survey._id,
-            interviewer: sessionData?.interviewer || 'current-user',
+        sessionId, 
+        finalResponses, 
+        qualityMetrics, 
+        {
+          survey: survey._id,
+          interviewer: sessionData?.interviewer || 'current-user',
             status: 'Pending_Approval',
-            sessionId: sessionId,
-            startTime: sessionData?.startTime || new Date(),
-            endTime: new Date(),
-            totalTimeSpent: totalTime,
-            interviewMode: survey.mode || 'capi',
-            deviceInfo: {
-              userAgent: navigator.userAgent,
-              platform: navigator.platform,
-              browser: 'Chrome',
-              screenResolution: `${screen.width}x${screen.height}`,
-              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
-            },
-            audioRecording: audioRecordingData,
+          sessionId: sessionId,
+          startTime: sessionData?.startTime || new Date(),
+          endTime: new Date(),
+          totalTimeSpent: totalTime,
+          interviewMode: survey.mode || 'capi',
+          deviceInfo: {
+            userAgent: navigator.userAgent,
+            platform: navigator.platform,
+            browser: 'Chrome',
+            screenResolution: `${screen.width}x${screen.height}`,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+          },
+          audioRecording: audioRecordingData,
             selectedAC: selectedAC,
             location: gpsLocation, // Include location data for CAPI
-            totalQuestions: allQuestions.length,
-            answeredQuestions: finalResponses.filter(r => hasResponseContent(r.response)).length,
-            skippedQuestions: finalResponses.filter(r => !hasResponseContent(r.response)).length,
-            completionPercentage: Math.round((finalResponses.filter(r => hasResponseContent(r.response)).length / allQuestions.length) * 100)
-          }
-        );
+          totalQuestions: allQuestions.length,
+          answeredQuestions: finalResponses.filter(r => hasResponseContent(r.response)).length,
+          skippedQuestions: finalResponses.filter(r => !hasResponseContent(r.response)).length,
+          completionPercentage: Math.round((finalResponses.filter(r => hasResponseContent(r.response)).length / allQuestions.length) * 100)
+        }
+      );
       }
       
       if (response.success) {
@@ -1610,15 +1617,15 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
       setShowAbandonModal(true);
     } else {
       // CAPI mode - standard abandonment
-      try {
-        if (sessionId) {
-          await surveyResponseAPI.abandonInterview(sessionId);
-        }
-        showSuccess('Interview abandoned');
-        onClose();
-      } catch (error) {
-        console.error('Error abandoning interview:', error);
-        showError('Failed to abandon interview');
+    try {
+      if (sessionId) {
+        await surveyResponseAPI.abandonInterview(sessionId);
+      }
+      showSuccess('Interview abandoned');
+      onClose();
+    } catch (error) {
+      console.error('Error abandoning interview:', error);
+      showError('Failed to abandon interview');
       }
     }
   };
@@ -1906,7 +1913,7 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                             if (noneOptionValue && currentAnswers.includes(noneOptionValue)) {
                               currentAnswers = currentAnswers.filter((a) => a !== noneOptionValue);
                             }
-                          } else {
+                      } else {
                             // If any other option is selected, remove "None" and "Others" if they exist
                             if (noneOptionValue && currentAnswers.includes(noneOptionValue)) {
                               currentAnswers = currentAnswers.filter((a) => a !== noneOptionValue);
@@ -1934,7 +1941,7 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                         // Single selection
                         if (isNoneOption) {
                           // "None" selected - just set it
-                          handleResponseChange(currentVisibleQuestion.id, optionValue);
+                        handleResponseChange(currentVisibleQuestion.id, optionValue);
                           // Clear "Others" text input if it exists
                           if (othersOptionValue && currentResponse === othersOptionValue) {
                             setOthersTextInputs(prev => {
@@ -2057,20 +2064,20 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                 const label = labels[rating - min] || '';
                 return (
                   <div key={rating} className="flex flex-col items-center space-y-1">
-                    <button
-                      onClick={() => handleResponseChange(currentVisibleQuestion.id, rating)}
+                <button
+                  onClick={() => handleResponseChange(currentVisibleQuestion.id, rating)}
                       className={`w-12 h-12 rounded-full border-2 transition-all duration-200 flex items-center justify-center font-semibold ${
-                        currentResponse === rating
-                          ? 'bg-yellow-400 border-yellow-500 text-yellow-900'
-                          : 'bg-white border-gray-300 text-gray-600 hover:border-yellow-400'
-                      }`}
-                    >
-                      {rating}
-                    </button>
+                    currentResponse === rating
+                      ? 'bg-yellow-400 border-yellow-500 text-yellow-900'
+                      : 'bg-white border-gray-300 text-gray-600 hover:border-yellow-400'
+                  }`}
+                >
+                  {rating}
+                </button>
                     {label && (
                       <span className="text-xs text-gray-600 text-center max-w-[60px]">{label}</span>
                     )}
-                  </div>
+            </div>
                 );
               })}
             </div>
@@ -2423,22 +2430,22 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
             
             {!isCatiMode && (
               <>
-                {isPaused ? (
-                  <button
-                    onClick={resumeInterview}
-                    className="px-3 py-1 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm flex items-center space-x-1"
-                  >
-                    <Play className="w-4 h-4" />
-                    <span>Resume</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={pauseInterview}
-                    className="px-3 py-1 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors text-sm flex items-center space-x-1"
-                  >
-                    <Pause className="w-4 h-4" />
-                    <span>Pause</span>
-                  </button>
+            {isPaused ? (
+              <button
+                onClick={resumeInterview}
+                className="px-3 py-1 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm flex items-center space-x-1"
+              >
+                <Play className="w-4 h-4" />
+                <span>Resume</span>
+              </button>
+            ) : (
+              <button
+                onClick={pauseInterview}
+                className="px-3 py-1 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors text-sm flex items-center space-x-1"
+              >
+                <Pause className="w-4 h-4" />
+                <span>Pause</span>
+              </button>
                 )}
               </>
             )}

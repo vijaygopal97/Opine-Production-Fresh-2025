@@ -587,7 +587,13 @@ const completeCatiInterview = async (req, res) => {
     }
 
     // Check if response already exists to avoid duplicate
-    let surveyResponse = await SurveyResponse.findOne({ sessionId: session.sessionId });
+    // Check by both sessionId and queueEntry to be thorough
+    let surveyResponse = await SurveyResponse.findOne({ 
+      $or: [
+        { sessionId: session.sessionId },
+        { 'metadata.respondentQueueId': queueEntry._id }
+      ]
+    });
     
     if (surveyResponse) {
       console.log('⚠️  SurveyResponse already exists for this session, updating instead of creating new');
@@ -614,6 +620,22 @@ const completeCatiInterview = async (req, res) => {
     } else {
       // Create new survey response (similar to CAPI flow)
       const responseId = uuidv4();
+      
+      console.log('🔍 Creating new SurveyResponse with:', {
+        responseId,
+        survey: queueEntry.survey._id,
+        interviewer: interviewerId,
+        sessionId: session.sessionId,
+        interviewMode: 'cati',
+        call_id: callId,
+        totalQuestions,
+        answeredQuestions,
+        completionPercentage,
+        startTime: finalStartTime,
+        endTime: finalEndTime,
+        totalTimeSpent: finalTotalTimeSpent
+      });
+      
       surveyResponse = new SurveyResponse({
         responseId,
         survey: queueEntry.survey._id,
@@ -628,10 +650,10 @@ const completeCatiInterview = async (req, res) => {
         endTime: finalEndTime, // Required field
         totalTimeSpent: finalTotalTimeSpent, // Required field
         status: 'Pending_Approval', // Valid enum value
-        totalQuestions: totalQuestions, // Required field
-        answeredQuestions: answeredQuestions, // Required field
-        skippedQuestions: totalQuestions - answeredQuestions, // Optional but good to have
-        completionPercentage: completionPercentage, // Required field
+        totalQuestions: totalQuestions || 0, // Required field - ensure it's not undefined
+        answeredQuestions: answeredQuestions || 0, // Required field - ensure it's not undefined
+        skippedQuestions: (totalQuestions || 0) - (answeredQuestions || 0), // Optional but good to have
+        completionPercentage: completionPercentage || 0, // Required field - ensure it's not undefined
         metadata: {
           respondentQueueId: queueEntry._id,
           respondentName: queueEntry.respondentContact?.name || queueEntry.respondentContact?.name,
@@ -640,7 +662,19 @@ const completeCatiInterview = async (req, res) => {
         }
       });
 
-      await surveyResponse.save();
+      try {
+        await surveyResponse.save();
+        console.log('✅ SurveyResponse saved successfully:', surveyResponse.responseId);
+      } catch (saveError) {
+        console.error('❌ Error saving SurveyResponse:', saveError);
+        console.error('❌ Save error details:', {
+          message: saveError.message,
+          name: saveError.name,
+          errors: saveError.errors,
+          stack: saveError.stack
+        });
+        throw saveError; // Re-throw to be caught by outer catch
+      }
     }
 
     // Update queue entry
@@ -675,11 +709,22 @@ const completeCatiInterview = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error completing CATI interview:', error);
+    console.error('❌ Error completing CATI interview:', error);
+    console.error('❌ Error stack:', error.stack);
+    console.error('❌ Error details:', {
+      message: error.message,
+      name: error.name,
+      errors: error.errors,
+      code: error.code
+    });
     res.status(500).json({
       success: false,
       message: 'Failed to complete interview',
-      error: error.message
+      error: error.message,
+      details: process.env.NODE_ENV === 'development' ? {
+        stack: error.stack,
+        errors: error.errors
+      } : undefined
     });
   }
 };

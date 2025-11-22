@@ -8,7 +8,9 @@ import {
   CheckCircle,
   AlertCircle,
   X,
-  Plus
+  Plus,
+  UserPlus,
+  FileText
 } from 'lucide-react';
 import { surveyAPI } from '../../services/api';
 import { useToast } from '../../contexts/ToastContext';
@@ -20,6 +22,19 @@ const RespondentUpload = ({ onUpdate, initialData }) => {
   const [uploadErrors, setUploadErrors] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [activeTab, setActiveTab] = useState('upload'); // 'upload' or 'manual'
+  const [manualForm, setManualForm] = useState({
+    name: '',
+    countryCode: '+91',
+    phone: '',
+    email: '',
+    address: '',
+    city: '',
+    ac: '',
+    pc: '',
+    ps: ''
+  });
+  const [formErrors, setFormErrors] = useState({});
 
   // Update parent when contacts change
   useEffect(() => {
@@ -152,18 +167,139 @@ const RespondentUpload = ({ onUpdate, initialData }) => {
     }
   };
 
+  // Validate manual form
+  const validateManualForm = () => {
+    const errors = {};
+    
+    if (!manualForm.name || manualForm.name.trim() === '') {
+      errors.name = 'Name is required';
+    }
+    
+    if (!manualForm.phone || manualForm.phone.trim() === '') {
+      errors.phone = 'Phone number is required';
+    } else if (!/^\d{10}$/.test(manualForm.phone.replace(/\D/g, ''))) {
+      errors.phone = 'Phone number must be 10 digits';
+    }
+    
+    if (manualForm.email && manualForm.email.trim() !== '') {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(manualForm.email)) {
+        errors.email = 'Please enter a valid email address';
+      }
+    }
+    
+    if (!manualForm.countryCode || manualForm.countryCode.trim() === '') {
+      errors.countryCode = 'Country code is required';
+    }
+    
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  // Handle manual form input change
+  const handleManualFormChange = (field, value) => {
+    setManualForm(prev => ({
+      ...prev,
+      [field]: value
+    }));
+    // Clear error for this field when user starts typing
+    if (formErrors[field]) {
+      setFormErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
+    }
+  };
+
+  // Add manual contact
+  const handleAddManualContact = () => {
+    if (!validateManualForm()) {
+      showError('Please fix the errors in the form');
+      return;
+    }
+
+    // Check for duplicate phone number
+    const phoneNumber = manualForm.phone.replace(/\D/g, '');
+    const existingPhones = contacts.map(c => c.phone?.replace(/\D/g, ''));
+    
+    if (existingPhones.includes(phoneNumber)) {
+      showError('A contact with this phone number already exists');
+      return;
+    }
+
+    const newContact = {
+      name: manualForm.name.trim(),
+      countryCode: manualForm.countryCode.trim(),
+      phone: phoneNumber,
+      email: manualForm.email.trim() || '',
+      address: manualForm.address.trim() || '',
+      city: manualForm.city.trim() || '',
+      ac: manualForm.ac.trim() || '',
+      pc: manualForm.pc.trim() || '',
+      ps: manualForm.ps.trim() || '',
+      addedAt: new Date()
+    };
+
+    setContacts(prev => [...prev, newContact]);
+    
+    // Reset form
+    setManualForm({
+      name: '',
+      countryCode: '+91',
+      phone: '',
+      email: '',
+      address: '',
+      city: '',
+      ac: '',
+      pc: '',
+      ps: ''
+    });
+    setFormErrors({});
+    
+    showSuccess('Contact added successfully');
+  };
+
   return (
     <div className="space-y-6 p-6">
       <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-6 border border-blue-200">
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex items-center gap-3 mb-6">
           <Users className="w-8 h-8 text-blue-600" />
           <div>
             <h3 className="text-xl font-bold text-gray-800">Upload Respondents</h3>
-            <p className="text-sm text-gray-600">Add contacts for CATI interviews by uploading an Excel file</p>
+            <p className="text-sm text-gray-600">Add contacts for CATI interviews by uploading an Excel file or adding manually</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Tab Navigation */}
+        <div className="flex gap-2 mb-6 border-b border-gray-200">
+          <button
+            onClick={() => setActiveTab('upload')}
+            className={`flex items-center gap-2 px-4 py-2 font-medium transition-colors ${
+              activeTab === 'upload'
+                ? 'text-blue-600 border-b-2 border-blue-600'
+                : 'text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            Upload Excel
+          </button>
+          <button
+            onClick={() => setActiveTab('manual')}
+            className={`flex items-center gap-2 px-4 py-2 font-medium transition-colors ${
+              activeTab === 'manual'
+                ? 'text-blue-600 border-b-2 border-blue-600'
+                : 'text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            <UserPlus className="w-4 h-4" />
+            Add Manually
+          </button>
+        </div>
+
+        {/* Upload Tab */}
+        {activeTab === 'upload' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Download Template */}
           <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
             <div className="flex items-center gap-3 mb-3">
@@ -224,20 +360,194 @@ const RespondentUpload = ({ onUpdate, initialData }) => {
               </button>
             </div>
           </div>
-        </div>
 
-        {/* Upload Errors */}
-        {uploadErrors.length > 0 && (
-          <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <AlertCircle className="w-5 h-5 text-yellow-600" />
-              <h4 className="font-semibold text-yellow-800">Upload Warnings</h4>
+          {/* Upload Errors */}
+          {uploadErrors.length > 0 && (
+            <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4 col-span-2">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertCircle className="w-5 h-5 text-yellow-600" />
+                <h4 className="font-semibold text-yellow-800">Upload Warnings</h4>
+              </div>
+              <ul className="list-disc list-inside text-sm text-yellow-700 space-y-1 max-h-32 overflow-y-auto">
+                {uploadErrors.map((error, index) => (
+                  <li key={index}>{error}</li>
+                ))}
+              </ul>
             </div>
-            <ul className="list-disc list-inside text-sm text-yellow-700 space-y-1 max-h-32 overflow-y-auto">
-              {uploadErrors.map((error, index) => (
-                <li key={index}>{error}</li>
-              ))}
-            </ul>
+          )}
+        </div>
+        )}
+
+        {/* Manual Add Tab */}
+        {activeTab === 'manual' && (
+          <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
+            <div className="flex items-center gap-3 mb-6">
+              <UserPlus className="w-6 h-6 text-blue-600" />
+              <h4 className="font-semibold text-gray-800">Add Contact Manually</h4>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Name */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={manualForm.name}
+                  onChange={(e) => handleManualFormChange('name', e.target.value)}
+                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    formErrors.name ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                  placeholder="Enter full name"
+                />
+                {formErrors.name && (
+                  <p className="mt-1 text-sm text-red-600">{formErrors.name}</p>
+                )}
+              </div>
+
+              {/* Country Code */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Country Code <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={manualForm.countryCode}
+                  onChange={(e) => handleManualFormChange('countryCode', e.target.value)}
+                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    formErrors.countryCode ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                  placeholder="+91"
+                />
+                {formErrors.countryCode && (
+                  <p className="mt-1 text-sm text-red-600">{formErrors.countryCode}</p>
+                )}
+              </div>
+
+              {/* Phone */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Phone Number <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={manualForm.phone}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/\D/g, '').slice(0, 10);
+                    handleManualFormChange('phone', value);
+                  }}
+                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    formErrors.phone ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                  placeholder="10 digit phone number"
+                  maxLength={10}
+                />
+                {formErrors.phone && (
+                  <p className="mt-1 text-sm text-red-600">{formErrors.phone}</p>
+                )}
+              </div>
+
+              {/* Email */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email <span className="text-gray-400 text-xs">(Optional)</span>
+                </label>
+                <input
+                  type="email"
+                  value={manualForm.email}
+                  onChange={(e) => handleManualFormChange('email', e.target.value)}
+                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    formErrors.email ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                  placeholder="email@example.com"
+                />
+                {formErrors.email && (
+                  <p className="mt-1 text-sm text-red-600">{formErrors.email}</p>
+                )}
+              </div>
+
+              {/* Address */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Address <span className="text-gray-400 text-xs">(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={manualForm.address}
+                  onChange={(e) => handleManualFormChange('address', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Street address"
+                />
+              </div>
+
+              {/* City */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  City <span className="text-gray-400 text-xs">(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={manualForm.city}
+                  onChange={(e) => handleManualFormChange('city', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="City name"
+                />
+              </div>
+
+              {/* AC (Assembly Constituency) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  AC (Assembly Constituency) <span className="text-gray-400 text-xs">(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={manualForm.ac}
+                  onChange={(e) => handleManualFormChange('ac', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Assembly Constituency"
+                />
+              </div>
+
+              {/* PC (Parliamentary Constituency) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  PC (Parliamentary Constituency) <span className="text-gray-400 text-xs">(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={manualForm.pc}
+                  onChange={(e) => handleManualFormChange('pc', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Parliamentary Constituency"
+                />
+              </div>
+
+              {/* PS (Polling Station) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  PS (Polling Station) <span className="text-gray-400 text-xs">(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={manualForm.ps}
+                  onChange={(e) => handleManualFormChange('ps', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Polling Station"
+                />
+              </div>
+            </div>
+
+            {/* Add Button */}
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={handleAddManualContact}
+                className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
+              >
+                <Plus className="w-4 h-4" />
+                Add Contact
+              </button>
+            </div>
           </div>
         )}
       </div>

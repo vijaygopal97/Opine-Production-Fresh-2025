@@ -1101,7 +1101,7 @@ export const catiInterviewAPI = {
   },
 
   // Complete CATI interview
-  completeCatiInterview: async (queueId, sessionId, responses, selectedAC, totalTimeSpent, startTime, endTime) => {
+  completeCatiInterview: async (queueId, sessionId, responses, selectedAC, totalTimeSpent, startTime, endTime, totalQuestions, answeredQuestions, completionPercentage) => {
     try {
       const response = await api.post(`/api/cati-interview/complete/${queueId}`, {
         sessionId,
@@ -1109,7 +1109,10 @@ export const catiInterviewAPI = {
         selectedAC,
         totalTimeSpent,
         startTime,
-        endTime
+        endTime,
+        totalQuestions,
+        answeredQuestions,
+        completionPercentage
       });
       return response.data;
     } catch (error) {
