@@ -44,7 +44,7 @@ const ViewResponsesPage = () => {
   // Filter states
   const [filters, setFilters] = useState({
     search: '',
-    status: 'Approved',
+    status: 'all', // 'all', 'Approved', 'Rejected'
     gender: '',
     ageMin: '',
     ageMax: '',
@@ -89,14 +89,18 @@ const ViewResponsesPage = () => {
         setSurvey(surveyResponse.data);
       }
       
-      // Then fetch responses
+      // Then fetch responses - always fetch all (Approved + Rejected) for client-side filtering
       const params = {
         page: 1,
         limit: 1000, // Get all responses for client-side filtering
-        status: 'Approved' // Only get approved responses
+        status: 'all' // Always fetch all (Approved + Rejected) for comprehensive filtering
       };
       
       const response = await surveyResponseAPI.getSurveyResponses(surveyId, params);
+      
+      console.log('🔍 ViewResponsesPage - API Response:', response);
+      console.log('🔍 ViewResponsesPage - Responses count:', response.data?.responses?.length);
+      console.log('🔍 ViewResponsesPage - Response statuses:', response.data?.responses?.map(r => r.status));
       
       if (response.success) {
         setOriginalResponses(response.data.responses); // Store original unfiltered data
@@ -154,7 +158,7 @@ const ViewResponsesPage = () => {
   const clearFilters = () => {
     setFilters({
       search: '',
-      status: 'Approved',
+      status: 'all', // Default to all (Approved + Rejected)
       gender: '',
       ageMin: '',
       ageMax: '',
@@ -548,6 +552,19 @@ const ViewResponsesPage = () => {
         return false;
       }
 
+      // Status filter
+      if (filters.status && filters.status !== 'all') {
+        // Filter by specific status
+        if (response.status !== filters.status) {
+          return false;
+        }
+      } else {
+        // Default (status === 'all' or undefined): Show both Approved and Rejected
+        if (response.status !== 'Approved' && response.status !== 'Rejected') {
+          return false;
+        }
+      }
+
       return true;
     });
   }, [originalResponses, filters]);
@@ -805,6 +822,22 @@ const ViewResponsesPage = () => {
           <div className="bg-white border-b border-gray-200 w-full">
             <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+                {/* Status Filter */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Status
+                  </label>
+                  <select
+                    value={filters.status}
+                    onChange={(e) => handleFilterChange('status', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="all">All (Approved + Rejected)</option>
+                    <option value="Approved">Approved</option>
+                    <option value="Rejected">Rejected</option>
+                  </select>
+                </div>
+
                 {/* Search */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">

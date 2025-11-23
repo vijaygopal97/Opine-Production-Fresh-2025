@@ -69,6 +69,7 @@ const SurveyReportsPage = () => {
     dateRange: 'all', // 'today', 'week', 'month', 'all'
     startDate: '',
     endDate: '',
+    status: 'all', // 'all', 'Approved', 'Rejected'
     interviewMode: '', // 'CAPI', 'CATI', ''
     ac: '',
     district: '',
@@ -224,14 +225,19 @@ const SurveyReportsPage = () => {
         setSurvey(surveyResponse.data);
       }
       
-      // Fetch all responses for analytics
+      // Fetch all responses for analytics - always fetch all (Approved + Rejected) for comprehensive analytics
+      // Client-side filtering will handle status filtering
       const params = {
         page: 1,
         limit: 10000, // Get all responses for comprehensive analytics
-        status: 'Approved'
+        status: 'all' // Always fetch all (Approved + Rejected) for comprehensive analytics
       };
       
       const response = await surveyResponseAPI.getSurveyResponses(surveyId, params);
+      console.log('🔍 SurveyReportsPage - API Response:', response);
+      console.log('🔍 SurveyReportsPage - Responses count:', response.data?.responses?.length);
+      console.log('🔍 SurveyReportsPage - Response statuses:', response.data?.responses?.map(r => r.status));
+      
       if (response.success) {
         setResponses(response.data.responses);
       }
@@ -264,7 +270,7 @@ const SurveyReportsPage = () => {
     if (surveyId) {
       fetchSurveyData();
     }
-  }, [surveyId]);
+  }, [surveyId, filters.status]);
 
   // Helper functions
   const getStateFromGPS = (location) => {
@@ -419,6 +425,19 @@ const SurveyReportsPage = () => {
           ? `${response.interviewer.firstName} ${response.interviewer.lastName}`.toLowerCase()
           : '';
         if (!interviewerName.includes(filters.interviewer.toLowerCase())) return false;
+      }
+
+      // Status filter
+      if (filters.status && filters.status !== 'all') {
+        // Filter by specific status
+        if (response.status !== filters.status) {
+          return false;
+        }
+      } else {
+        // Default (status === 'all' or undefined): Show both Approved and Rejected
+        if (response.status !== 'Approved' && response.status !== 'Rejected') {
+          return false;
+        }
       }
 
       return true;
@@ -870,6 +889,7 @@ const SurveyReportsPage = () => {
       dateRange: 'all',
       startDate: '',
       endDate: '',
+      status: 'all', // Default to all (Approved + Rejected)
       interviewMode: '',
       ac: '',
       district: '',
@@ -1010,6 +1030,20 @@ const SurveyReportsPage = () => {
           <div className="bg-white border-b border-gray-200 w-full">
             <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Status Filter */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <select
+                    value={filters.status}
+                    onChange={(e) => handleFilterChange('status', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="all">All (Approved + Rejected)</option>
+                    <option value="Approved">Approved</option>
+                    <option value="Rejected">Rejected</option>
+                  </select>
+                </div>
+
                 {/* Date Range */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Date Range</label>
@@ -1090,7 +1124,7 @@ const SurveyReportsPage = () => {
         {/* Main Content */}
         <div className="w-full py-6 px-4 sm:px-6 lg:px-8">
         {/* Overview Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
             <div className="flex items-center justify-between">
               <div>
@@ -1117,18 +1151,6 @@ const SurveyReportsPage = () => {
               </div>
               <div className="p-3 bg-indigo-100 rounded-lg">
                 <Target className="w-6 h-6 text-indigo-600" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Completion Rate</p>
-                <p className="text-2xl font-bold text-gray-900">{analytics.completionRate.toFixed(1)}%</p>
-              </div>
-              <div className="p-3 bg-green-100 rounded-lg">
-                <CheckCircle className="w-6 h-6 text-green-600" />
               </div>
             </div>
           </div>

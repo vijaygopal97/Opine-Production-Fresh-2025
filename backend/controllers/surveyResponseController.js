@@ -2324,14 +2324,21 @@ const getSurveyResponseById = async (req, res) => {
 const getSurveyResponses = async (req, res) => {
   try {
     const { surveyId } = req.params;
-    const { page = 1, limit = 10, status = 'Approved', gender, ageMin, ageMax, ac, city, district, lokSabha } = req.query;
+    const { page = 1, limit = 10, status, gender, ageMin, ageMax, ac, city, district, lokSabha } = req.query;
     
     // Build filter object
     const filter = { survey: surveyId };
     
-    if (status) {
+    // Handle status filter: 'all' or undefined/null means both Approved and Rejected, otherwise filter by specific status
+    if (status && status !== 'all' && status !== '') {
       filter.status = status;
+    } else {
+      // Default: Include both Approved and Rejected responses
+      filter.status = { $in: ['Approved', 'Rejected'] };
     }
+    
+    console.log('🔍 getSurveyResponses - Status filter:', status);
+    console.log('🔍 getSurveyResponses - Final filter:', JSON.stringify(filter, null, 2));
     
     if (gender) {
       filter['responses.gender'] = gender;
@@ -2370,16 +2377,22 @@ const getSurveyResponses = async (req, res) => {
       .skip(skip)
       .limit(parseInt(limit));
     
+    console.log('🔍 getSurveyResponses - Found responses:', responses.length);
+    console.log('🔍 getSurveyResponses - Response statuses:', responses.map(r => r.status));
+    
     // Get total count for pagination
     const totalResponses = await SurveyResponse.countDocuments(filter);
     
-    // Get filter options for dropdowns
-    const genderOptions = await SurveyResponse.distinct('responses.gender', { survey: surveyId, status: 'Approved' });
-    const ageOptions = await SurveyResponse.distinct('responses.age', { survey: surveyId, status: 'Approved' });
-    const acOptions = await SurveyResponse.distinct('responses.assemblyConstituency', { survey: surveyId, status: 'Approved' });
-    const cityOptions = await SurveyResponse.distinct('responses.city', { survey: surveyId, status: 'Approved' });
-    const districtOptions = await SurveyResponse.distinct('responses.district', { survey: surveyId, status: 'Approved' });
-    const lokSabhaOptions = await SurveyResponse.distinct('responses.lokSabha', { survey: surveyId, status: 'Approved' });
+    console.log('🔍 getSurveyResponses - Total responses count:', totalResponses);
+    
+    // Get filter options for dropdowns (include both Approved and Rejected for comprehensive options)
+    const statusFilterForOptions = { survey: surveyId, status: { $in: ['Approved', 'Rejected'] } };
+    const genderOptions = await SurveyResponse.distinct('responses.gender', statusFilterForOptions);
+    const ageOptions = await SurveyResponse.distinct('responses.age', statusFilterForOptions);
+    const acOptions = await SurveyResponse.distinct('responses.assemblyConstituency', statusFilterForOptions);
+    const cityOptions = await SurveyResponse.distinct('responses.city', statusFilterForOptions);
+    const districtOptions = await SurveyResponse.distinct('responses.district', statusFilterForOptions);
+    const lokSabhaOptions = await SurveyResponse.distinct('responses.lokSabha', statusFilterForOptions);
     
     res.json({
       success: true,
