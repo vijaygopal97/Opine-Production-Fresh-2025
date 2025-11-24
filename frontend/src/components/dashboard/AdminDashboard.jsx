@@ -23,7 +23,6 @@ import DocumentVerification from './DocumentVerification';
 import SuperAdminDocumentVerification from './SuperAdminDocumentVerification';
 import ProfileCompletionGate from './ProfileCompletionGate';
 import GenerateReport from './GenerateReport';
-import CatiTest from './CatiTest';
 import { useAuth } from '../../contexts/AuthContext';
 
 const AdminDashboard = () => {
@@ -101,9 +100,6 @@ const AdminDashboard = () => {
       }
       if (path === '/company/generate-report') {
         return <GenerateReport />;
-      }
-      if (path === '/company/cati-test') {
-        return <CatiTest />;
       }
       return <CompanyAdminDashboard />;
     }

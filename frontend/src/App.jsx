@@ -97,7 +97,6 @@ function App() {
             <Route path="/company/document-verification" element={<AdminDashboard />} />
             <Route path="/company/performance" element={<AdminDashboard />} />
             <Route path="/company/generate-report" element={<AdminDashboard />} />
-            <Route path="/company/cati-test" element={<AdminDashboard />} />
             <Route path="/company/payment-settings" element={<AdminDashboard />} />
             <Route path="/company/account-settings" element={<AdminDashboard />} />
             <Route path="/company/profile" element={<AdminDashboard />} />
