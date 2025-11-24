@@ -189,6 +189,9 @@ const CompanySurveysManagement = () => {
     } else if (action === 'reports') {
       // Navigate to survey reports page
       navigate(`/company/surveys/${surveyId}/reports`);
+    } else if (action === 'qc-batches') {
+      // Navigate to QC batches page
+      navigate(`/company/surveys/${surveyId}/qc-batches`);
     } else {
       // Implement other survey actions
       // Action not implemented yet
@@ -631,6 +634,14 @@ const CompanySurveysManagement = () => {
                   >
                     <BarChart3 className="w-4 h-4" />
                     <span>Reports</span>
+                  </button>
+                  <button
+                    onClick={() => handleSurveyAction(survey._id || survey.id, 'qc-batches')}
+                    className="flex items-center space-x-1 px-3 py-1.5 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 transition-colors text-sm font-medium"
+                    title="View QC Batches"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>QC Batches</span>
                   </button>
                   <button
                     onClick={() => setDeleteConfirm(survey._id || survey.id)}

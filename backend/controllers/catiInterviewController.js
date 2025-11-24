@@ -638,6 +638,16 @@ const completeCatiInterview = async (req, res) => {
         callRecordId: queueEntry.callRecord?._id
       };
       await surveyResponse.save();
+      
+      // Add response to QC batch if not already in one
+      if (!surveyResponse.qcBatch) {
+        try {
+          const { addResponseToBatch } = require('../utils/qcBatchHelper');
+          await addResponseToBatch(surveyResponse._id, queueEntry.survey._id);
+        } catch (batchError) {
+          console.error('Error adding existing CATI response to batch:', batchError);
+        }
+      }
     } else {
       // Create new survey response (similar to CAPI flow)
       const responseId = uuidv4();
@@ -696,6 +706,15 @@ const completeCatiInterview = async (req, res) => {
         });
         throw saveError; // Re-throw to be caught by outer catch
       }
+    }
+    
+    // Add response to QC batch instead of queuing immediately
+    try {
+      const { addResponseToBatch } = require('../utils/qcBatchHelper');
+      await addResponseToBatch(surveyResponse._id, queueEntry.survey._id);
+    } catch (batchError) {
+      console.error('Error adding CATI response to batch:', batchError);
+      // Continue even if batch addition fails - response is still saved
     }
 
     // Update queue entry

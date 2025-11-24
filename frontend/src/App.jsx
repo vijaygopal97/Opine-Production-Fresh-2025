@@ -21,6 +21,7 @@ import ComingSoon from './components/dashboard/ComingSoon';
 import ViewResponsesPage from './pages/ViewResponsesPage';
 import SurveyReportsPage from './pages/SurveyReportsPage';
 import QCPerformancePage from './pages/QCPerformancePage';
+import QCBatchesPage from './pages/QCBatchesPage';
 import PageTitleManager from './components/PageTitleManager';
 import './App.css';
 
@@ -109,6 +110,9 @@ function App() {
             
             {/* QC Performance Page */}
             <Route path="/company/surveys/:surveyId/qc-performance" element={<QCPerformancePage />} />
+            
+            {/* QC Batches Page */}
+            <Route path="/company/surveys/:surveyId/qc-batches" element={<QCBatchesPage />} />
             
             {/* Project Manager routes */}
             <Route path="/project-manager/dashboard" element={<AdminDashboard />} />

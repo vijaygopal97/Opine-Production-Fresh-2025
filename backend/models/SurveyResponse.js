@@ -379,6 +379,19 @@ const surveyResponseSchema = new mongoose.Schema({
     }
   },
 
+  // QC Batch reference (if response is part of a batch)
+  qcBatch: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'QCBatch',
+    index: true
+  },
+  
+  // QC Batch sample status (if response is in the 40% sample)
+  isSampleResponse: {
+    type: Boolean,
+    default: false
+  },
+  
   // Metadata
   metadata: {
     surveyVersion: String,

@@ -16,6 +16,13 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
 
   // Fetch CATI call details when modal opens for CATI responses
   useEffect(() => {
+    // Reset state when response changes
+    setCatiCallDetails(null);
+    if (catiRecordingBlobUrl) {
+      URL.revokeObjectURL(catiRecordingBlobUrl);
+      setCatiRecordingBlobUrl(null);
+    }
+    
     if (response?.interviewMode === 'cati') {
       const callId = response.call_id;
       if (callId) {
@@ -32,16 +39,20 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                     `/api/cati/recording/${callResponse.data._id}`,
                     { responseType: 'blob' }
                   );
-                  const blob = new Blob([recordingResponse.data], { type: 'audio/mpeg' });
-                  const blobUrl = URL.createObjectURL(blob);
-                  setCatiRecordingBlobUrl(blobUrl);
+                  if (recordingResponse.data) {
+                    const blob = new Blob([recordingResponse.data], { type: 'audio/mpeg' });
+                    const blobUrl = URL.createObjectURL(blob);
+                    setCatiRecordingBlobUrl(blobUrl);
+                  }
                 } catch (recordingError) {
                   console.error('Error fetching CATI recording:', recordingError);
+                  // Don't show error for recording - it's optional
                 }
               }
             }
           } catch (error) {
             console.error('Error fetching CATI call details:', error);
+            // Don't show error - call details are optional
           }
         };
         fetchCallDetails();
@@ -54,7 +65,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
         URL.revokeObjectURL(catiRecordingBlobUrl);
       }
     };
-  }, [response?.interviewMode, response?.call_id]);
+  }, [response?._id, response?.interviewMode, response?.call_id]);
 
   // Helper function to format duration
   const formatDuration = (seconds) => {
@@ -399,16 +410,23 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
   const getAllQuestions = () => {
     const questions = [];
     
-    if (survey.sections) {
-      survey.sections.forEach(section => {
+    if (!survey) {
+      return questions;
+    }
+    
+    // Handle nested survey structure
+    const actualSurvey = survey.survey || survey;
+    
+    if (actualSurvey.sections) {
+      actualSurvey.sections.forEach(section => {
         if (section.questions) {
           questions.push(...section.questions);
         }
       });
     }
     
-    if (survey.questions) {
-      questions.push(...survey.questions);
+    if (actualSurvey.questions) {
+      questions.push(...actualSurvey.questions);
     }
     
     return questions;
@@ -465,7 +483,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
               Response Details
             </h2>
             <p className="text-sm text-gray-600 mt-1">
-              Response ID: {response._id}
+              Response ID: {response.responseId || response._id}
             </p>
           </div>
           <button
@@ -804,7 +822,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                   Call Recording
                 </h3>
                 <div className="space-y-3">
-                  <div className="text-sm text-gray-600">
+                  <div className="text-sm text-gray-600 space-y-1">
                     <div>Call Duration: {catiCallDetails?.callDuration ? formatDuration(catiCallDetails.callDuration) : 'N/A'}</div>
                     <div>Talk Duration: {catiCallDetails?.talkDuration ? formatDuration(catiCallDetails.talkDuration) : 'N/A'}</div>
                     <div>Format: MP3</div>
@@ -834,35 +852,37 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                   )}
                 </div>
               </div>
+            ) : response.interviewMode === 'cati' && !catiCallDetails?.recordingUrl ? (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                  <PhoneCall className="w-5 h-5 mr-2" />
+                  Call Recording
+                </h3>
+                <div className="bg-gray-50 p-4 rounded-lg text-center">
+                  <Headphones className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-sm text-gray-600">No call recording available</p>
+                </div>
+              </div>
             ) : response.audioRecording?.audioUrl ? (
               <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Audio Recording</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                  <Headphones className="w-5 h-5 mr-2" />
+                  Audio Recording (CAPI)
+                </h3>
                 <div className="space-y-3">
-                  <div className="flex items-center space-x-3">
-                    <button
-                      onClick={() => {
-                        const audioElement = document.querySelector(`audio[data-response-id="${response._id}"]`);
-                        if (audioElement) {
-                          if (audioPlaying) {
-                            audioElement.pause();
-                            setAudioPlaying(false);
-                          } else {
-                            audioElement.play();
-                            setAudioPlaying(true);
-                          }
-                        }
-                      }}
-                      className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    >
-                      {audioPlaying ? (
-                        <Pause className="w-4 h-4 mr-1" />
-                      ) : (
-                        <Play className="w-4 h-4 mr-1" />
-                      )}
-                      {audioPlaying ? 'Pause' : 'Play'}
-                    </button>
+                  <div className="text-sm text-gray-600 space-y-1">
+                    {response.audioRecording.recordingDuration && (
+                      <div>Duration: {formatDuration(response.audioRecording.recordingDuration)}</div>
+                    )}
+                    {response.audioRecording.format && (
+                      <div>Format: {response.audioRecording.format.toUpperCase()}</div>
+                    )}
+                    {response.audioRecording.fileSize && (
+                      <div>File Size: {(response.audioRecording.fileSize / 1024 / 1024).toFixed(2)} MB</div>
+                    )}
+                  </div>
                     <audio
-                      data-response-id={response._id}
+                    data-response-id={response._id || response.responseId}
                       src={(() => {
                         let audioUrl = response.audioRecording.audioUrl || '';
                         if (!audioUrl) return '';
@@ -902,6 +922,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                       })()}
                       onEnded={() => setAudioPlaying(false)}
                       onPause={() => setAudioPlaying(false)}
+                    onPlay={() => setAudioPlaying(true)}
                       onError={(e) => {
                         console.error('Audio element error:', e);
                         showError('Failed to load audio file. The file may have been deleted or moved.');
@@ -910,7 +931,22 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                       className="w-full"
                       controls
                     />
-                  </div>
+                  {response.audioRecording.audioUrl && (
+                    <a
+                      href={(() => {
+                        let audioUrl = response.audioRecording.audioUrl || '';
+                        if (audioUrl.startsWith('/')) {
+                          return `${window.location.origin}${audioUrl}`;
+                        }
+                        return audioUrl;
+                      })()}
+                      download={`capi_recording_${response.responseId || response._id || 'recording'}.${response.audioRecording.format || 'webm'}`}
+                      className="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Download Recording
+                    </a>
+                  )}
                 </div>
               </div>
             ) : (

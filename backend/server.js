@@ -17,6 +17,7 @@ const performanceRoutes = require('./routes/performanceRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const catiRoutes = require('./routes/catiRoutes');
 const catiInterviewRoutes = require('./routes/catiInterviewRoutes');
+const qcBatchRoutes = require('./routes/qcBatchRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -88,6 +89,7 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/cati-interview', catiInterviewRoutes);
 app.use('/api/cati', catiRoutes);
 app.use('/api/survey-responses', surveyResponseRoutes);
+app.use('/api/qc-batches', qcBatchRoutes);
 
 // Note: Opines API routes removed - using Contact API instead
 

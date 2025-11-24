@@ -950,6 +950,39 @@ export const performanceAPI = {
   }
 };
 
+// QC Batch API
+export const qcBatchAPI = {
+  // Get all batches for a survey
+  getBatchesBySurvey: async (surveyId) => {
+    try {
+      const response = await api.get(`/api/qc-batches/survey/${surveyId}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get a single batch by ID
+  getBatchById: async (batchId) => {
+    try {
+      const response = await api.get(`/api/qc-batches/${batchId}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Manually trigger batch processing
+  triggerBatchProcessing: async () => {
+    try {
+      const response = await api.post('/api/qc-batches/process');
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  }
+};
+
 // Report Generation API
 export const reportAPI = {
   // Generate report from Excel file

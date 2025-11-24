@@ -4,6 +4,7 @@ const Survey = require('../models/Survey');
 const User = require('../models/User');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
+const { addResponseToBatch } = require('../utils/qcBatchHelper');
 
 // Start a new interview session
 const startInterview = async (req, res) => {
@@ -482,6 +483,14 @@ const completeInterview = async (req, res) => {
     });
 
     await surveyResponse.save();
+    
+    // Add response to QC batch instead of queuing immediately
+    try {
+      await addResponseToBatch(surveyResponse._id, session.survey._id);
+    } catch (batchError) {
+      console.error('Error adding response to batch:', batchError);
+      // Continue even if batch addition fails - response is still saved
+    }
 
     // Mark session as abandoned (cleanup)
     session.abandonSession();
@@ -1529,13 +1538,29 @@ const getNextReviewAssignment = async (req, res) => {
       : userId;
     
     // Build base query - only get responses with status 'Pending_Approval' that are NOT assigned
+    // Exclude responses that are in batches (unless they're in the 40% sample)
     // Check for responses that either don't have reviewAssignment, or have expired assignments
     let query = { 
       status: 'Pending_Approval',
-      $or: [
-        { reviewAssignment: { $exists: false } },
-        { 'reviewAssignment.assignedTo': null },
-        { 'reviewAssignment.expiresAt': { $lt: now } } // Expired assignments
+      $and: [
+        // Assignment check
+        {
+          $or: [
+            { reviewAssignment: { $exists: false } },
+            { 'reviewAssignment.assignedTo': null },
+            { 'reviewAssignment.expiresAt': { $lt: now } } // Expired assignments
+          ]
+        },
+        // Batch check - only include responses that are:
+        // 1. Not in any batch (qcBatch is null/undefined), OR
+        // 2. In a batch but are part of the 40% sample (isSampleResponse: true)
+        {
+          $or: [
+            { qcBatch: { $exists: false } },
+            { qcBatch: null },
+            { isSampleResponse: true }
+          ]
+        }
       ]
     };
 
