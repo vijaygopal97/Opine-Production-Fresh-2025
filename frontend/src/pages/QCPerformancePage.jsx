@@ -59,7 +59,7 @@ const QCPerformancePage = () => {
     sortOrder: 'desc' // asc, desc
   });
 
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(true);
 
   // Add CSS to ensure full width (must be before any conditional returns)
   useEffect(() => {

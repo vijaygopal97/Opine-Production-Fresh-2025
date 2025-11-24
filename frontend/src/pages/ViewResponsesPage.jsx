@@ -56,7 +56,7 @@ const ViewResponsesPage = () => {
     interviewMode: ''
   });
   
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(true);
   const [selectedResponse, setSelectedResponse] = useState(null);
   const [showResponseDetails, setShowResponseDetails] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);

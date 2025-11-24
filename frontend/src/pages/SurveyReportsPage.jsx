@@ -56,7 +56,7 @@ const SurveyReportsPage = () => {
   const [survey, setSurvey] = useState(null);
   const [responses, setResponses] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(true);
   const [showACModal, setShowACModal] = useState(false);
   const [showInterviewerModal, setShowInterviewerModal] = useState(false);
   const [showDailyTrendsModal, setShowDailyTrendsModal] = useState(false);
@@ -712,7 +712,15 @@ const SurveyReportsPage = () => {
       // AC stats
       const ac = respondentInfo.ac;
       if (ac && ac !== 'N/A') {
-        const currentCount = acMap.get(ac) || { total: 0, capi: 0, cati: 0 };
+        const currentCount = acMap.get(ac) || { 
+          total: 0, 
+          capi: 0, 
+          cati: 0,
+          interviewers: new Set(),
+          approved: 0,
+          rejected: 0,
+          underQC: 0
+        };
         currentCount.total += 1;
         
         // Check interview mode
@@ -721,6 +729,20 @@ const SurveyReportsPage = () => {
           currentCount.capi += 1;
         } else if (interviewMode === 'CATI') {
           currentCount.cati += 1;
+        }
+        
+        // Track unique interviewers
+        if (response.interviewer && response.interviewer._id) {
+          currentCount.interviewers.add(response.interviewer._id.toString());
+        }
+        
+        // Track status counts
+        if (response.status === 'Approved') {
+          currentCount.approved += 1;
+        } else if (response.status === 'Rejected') {
+          currentCount.rejected += 1;
+        } else if (response.status === 'Pending_Approval') {
+          currentCount.underQC += 1;
         }
         
         acMap.set(ac, currentCount);
@@ -741,7 +763,17 @@ const SurveyReportsPage = () => {
       // Interviewer stats
       if (response.interviewer) {
         const interviewerName = `${response.interviewer.firstName} ${response.interviewer.lastName}`;
-        interviewerMap.set(interviewerName, (interviewerMap.get(interviewerName) || 0) + 1);
+        const currentCount = interviewerMap.get(interviewerName) || { total: 0, approved: 0, rejected: 0 };
+        currentCount.total += 1;
+        
+        // Track status counts
+        if (response.status === 'Approved') {
+          currentCount.approved += 1;
+        } else if (response.status === 'Rejected') {
+          currentCount.rejected += 1;
+        }
+        
+        interviewerMap.set(interviewerName, currentCount);
       }
 
       // Gender stats
@@ -769,7 +801,12 @@ const SurveyReportsPage = () => {
         count: data.total, 
         capi: data.capi, 
         cati: data.cati, 
-        percentage: (data.total / totalResponses) * 100 
+        percentage: totalResponses > 0 ? (data.total / totalResponses) * 100 : 0,
+        pcName: '', // Empty for now, will be populated later
+        interviewersCount: data.interviewers ? data.interviewers.size : 0,
+        approved: data.approved || 0,
+        rejected: data.rejected || 0,
+        underQC: data.underQC || 0
       }))
       .sort((a, b) => b.count - a.count);
 
@@ -791,7 +828,12 @@ const SurveyReportsPage = () => {
         count: 0,
         capi: 0,
         cati: 0,
-        percentage: 0
+        percentage: 0,
+        pcName: '', // Empty for now
+        interviewersCount: 0,
+        approved: 0,
+        rejected: 0,
+        underQC: 0
       }))
       .sort((a, b) => a.ac.localeCompare(b.ac));
 
@@ -812,7 +854,21 @@ const SurveyReportsPage = () => {
       .sort((a, b) => b.count - a.count);
 
     const interviewerStats = Array.from(interviewerMap.entries())
-      .map(([interviewer, count]) => ({ interviewer, count, percentage: (count / totalResponses) * 100 }))
+      .map(([interviewer, data]) => {
+        // Handle both object format (new) and number format (old/backward compatibility)
+        const isObject = typeof data === 'object' && data !== null;
+        const total = isObject ? (data.total || 0) : (data || 0);
+        const approved = isObject ? (data.approved || 0) : 0;
+        const rejected = isObject ? (data.rejected || 0) : 0;
+        
+        return {
+          interviewer,
+          count: total,
+          approved: approved,
+          rejected: rejected,
+          percentage: totalResponses > 0 ? (total / totalResponses) * 100 : 0
+        };
+      })
       .sort((a, b) => b.count - a.count);
 
     const genderStats = Object.fromEntries(genderMap);
@@ -1628,7 +1684,7 @@ const SurveyReportsPage = () => {
         {/* AC Performance Modal */}
         {showACModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <div className="bg-white rounded-xl p-6 max-w-7xl w-full mx-4 max-h-[80vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-xl font-semibold text-gray-900">
                   Assembly Constituency Performance
@@ -1643,6 +1699,11 @@ const SurveyReportsPage = () => {
                     onClick={() => {
                       const csvData = analytics.acStats.map(stat => ({
                         'Assembly Constituency': stat.ac,
+                        'PC Name': stat.pcName || '',
+                        'Number of Interviewers Worked': stat.interviewersCount || 0,
+                        'Approved': stat.approved || 0,
+                        'Rejected': stat.rejected || 0,
+                        'Under QC': stat.underQC || 0,
                         'Total Responses': stat.count,
                         'CAPI Responses': stat.capi,
                         'CATI Responses': stat.cati,
@@ -1681,6 +1742,11 @@ const SurveyReportsPage = () => {
                     <tr className="border-b border-gray-200">
                       <th className="text-left py-3 px-4 font-medium text-gray-900">Rank</th>
                       <th className="text-left py-3 px-4 font-medium text-gray-900">Assembly Constituency</th>
+                      <th className="text-left py-3 px-4 font-medium text-gray-900">PC Name</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">Number of Interviewers Worked</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">Approved</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">Rejected</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">Under QC</th>
                       <th className="text-right py-3 px-4 font-medium text-gray-900">Total Responses</th>
                       <th className="text-right py-3 px-4 font-medium text-gray-900">CAPI</th>
                       <th className="text-right py-3 px-4 font-medium text-gray-900">CATI</th>
@@ -1696,6 +1762,11 @@ const SurveyReportsPage = () => {
                           </span>
                         </td>
                         <td className="py-3 px-4 font-medium text-gray-900">{stat.ac}</td>
+                        <td className="py-3 px-4 text-gray-600">{stat.pcName || '-'}</td>
+                        <td className="py-3 px-4 text-right font-semibold text-gray-900">{stat.interviewersCount || 0}</td>
+                        <td className="py-3 px-4 text-right font-semibold text-green-600">{stat.approved || 0}</td>
+                        <td className="py-3 px-4 text-right font-semibold text-red-600">{stat.rejected || 0}</td>
+                        <td className="py-3 px-4 text-right font-semibold text-yellow-600">{stat.underQC || 0}</td>
                         <td className="py-3 px-4 text-right font-semibold text-gray-900">{stat.count}</td>
                         <td className="py-3 px-4 text-right font-semibold text-green-600">{stat.capi}</td>
                         <td className="py-3 px-4 text-right font-semibold text-orange-600">{stat.cati}</td>
@@ -1721,6 +1792,8 @@ const SurveyReportsPage = () => {
                       const csvData = analytics.interviewerStats.map(stat => ({
                         'Interviewer': stat.interviewer,
                         'Total Responses': stat.count,
+                        'Approved': stat.approved || 0,
+                        'Rejected': stat.rejected || 0,
                         'Percentage': `${stat.percentage.toFixed(1)}%`
                       }));
                       const csvContent = [Object.keys(csvData[0]), ...csvData.map(row => Object.values(row))]
@@ -1757,6 +1830,8 @@ const SurveyReportsPage = () => {
                       <th className="text-left py-3 px-4 font-medium text-gray-900">Rank</th>
                       <th className="text-left py-3 px-4 font-medium text-gray-900">Interviewer</th>
                       <th className="text-right py-3 px-4 font-medium text-gray-900">Total Responses</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">Approved</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">Rejected</th>
                       <th className="text-right py-3 px-4 font-medium text-gray-900">Percentage</th>
                     </tr>
                   </thead>
@@ -1770,6 +1845,8 @@ const SurveyReportsPage = () => {
                         </td>
                         <td className="py-3 px-4 font-medium text-gray-900">{stat.interviewer}</td>
                         <td className="py-3 px-4 text-right font-semibold text-gray-900">{stat.count}</td>
+                        <td className="py-3 px-4 text-right font-semibold text-green-600">{stat.approved || 0}</td>
+                        <td className="py-3 px-4 text-right font-semibold text-red-600">{stat.rejected || 0}</td>
                         <td className="py-3 px-4 text-right text-gray-600">{stat.percentage.toFixed(1)}%</td>
                       </tr>
                     ))}
