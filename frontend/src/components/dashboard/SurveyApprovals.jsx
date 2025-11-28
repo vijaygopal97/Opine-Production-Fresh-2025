@@ -507,40 +507,46 @@ const SurveyApprovals = () => {
 
   // Determine approval status based on form responses
   const getApprovalStatus = () => {
-    // Q1: Audio Status - Accept only if coded "1" (Survey Conversation can be heard) or "4" (Can hear the interviewer more than the respondent)
-    // Reject anything other than "1" and "4"
+    // For approval, ALL fields must be either:
+    // - Best case (option 1 for most fields, or 1/4 for audioStatus), OR
+    // - "Cannot hear the response clearly" (option 3 for matching fields, or 7 for audioStatus)
+    // If ANY field has "Not Matched" (2) or any other invalid value, reject
+    
+    // Q1: Audio Status - Accept only if "1" (best), "4" (best), or "7" (cannot hear)
     const audioStatus = verificationForm.audioStatus;
-    if (audioStatus !== '1' && audioStatus !== '4') {
+    if (audioStatus !== '1' && audioStatus !== '4' && audioStatus !== '7') {
       return 'rejected';
     }
     
-    // Q2: Gender Matching - Reject if coded "2" (Not Matched)
-    if (verificationForm.genderMatching === '2') {
+    // Q2: Gender Matching - Accept only if "1" (matched/best)
+    // Note: Option "3" is "Male answering on behalf of female", NOT "cannot hear", so reject it
+    // Reject if "2" (not matched), "3" (male answering), or any other value
+    if (verificationForm.genderMatching !== '1') {
       return 'rejected';
     }
     
-    // Q3: Upcoming Elections Matching - Reject if coded "2" (Not Matched)
-    if (verificationForm.upcomingElectionsMatching === '2') {
+    // Q3: Upcoming Elections Matching - Accept only if "1" (matched/best) or "3" (cannot hear)
+    if (verificationForm.upcomingElectionsMatching !== '1' && verificationForm.upcomingElectionsMatching !== '3') {
       return 'rejected';
     }
     
-    // Q4: Previous Elections Matching - Reject if coded "2" (Not Matched)
-    if (verificationForm.previousElectionsMatching === '2') {
+    // Q4: Previous Elections Matching - Accept only if "1" (matched/best) or "3" (cannot hear)
+    if (verificationForm.previousElectionsMatching !== '1' && verificationForm.previousElectionsMatching !== '3') {
       return 'rejected';
     }
     
-    // Q5: Previous Loksabha Elections Matching - Reject if coded "2" (Not Matched)
-    if (verificationForm.previousLoksabhaElectionsMatching === '2') {
+    // Q5: Previous Loksabha Elections Matching - Accept only if "1" (matched/best) or "3" (cannot hear)
+    if (verificationForm.previousLoksabhaElectionsMatching !== '1' && verificationForm.previousLoksabhaElectionsMatching !== '3') {
       return 'rejected';
     }
     
-    // Q6: Name Matching - Reject if coded "2" (Not Matched)
-    if (verificationForm.nameMatching === '2') {
+    // Q6: Name Matching - Accept only if "1" (matched/best) or "3" (cannot hear)
+    if (verificationForm.nameMatching !== '1' && verificationForm.nameMatching !== '3') {
       return 'rejected';
     }
     
-    // Q7: Age Matching - Reject if coded "2" (Not Matched)
-    if (verificationForm.ageMatching === '2') {
+    // Q7: Age Matching - Accept only if "1" (matched/best) or "3" (cannot hear)
+    if (verificationForm.ageMatching !== '1' && verificationForm.ageMatching !== '3') {
       return 'rejected';
     }
     

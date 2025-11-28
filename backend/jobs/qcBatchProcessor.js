@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const QCBatch = require('../models/QCBatch');
+const QCBatchConfig = require('../models/QCBatchConfig');
 const SurveyResponse = require('../models/SurveyResponse');
 
 // Helper to convert ObjectId strings to ObjectIds
@@ -11,134 +12,352 @@ const toObjectId = (id) => {
 };
 
 /**
- * Process QC batches - runs daily to:
- * 1. Process batches from previous day (select 40% randomly and send to QC)
- * 2. Check if 40% QC is complete and make decision on remaining 60%
+ * Process a single batch - select sample and send to QC
+ * @param {QCBatch} batch - The batch to process
+ * @param {Object} config - The QC batch configuration to use
  */
-const processQCBatches = async () => {
+const processBatch = async (batch, config) => {
   try {
-    console.log('🔄 Starting QC Batch Processing Job...');
+    console.log(`\n📋 Processing batch ${batch._id}`);
+    console.log(`   Total responses: ${batch.totalResponses}`);
+    console.log(`   Using config: Sample ${config.samplePercentage}%`);
     
-    // Get yesterday's date (start and end of day)
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    yesterday.setHours(0, 0, 0, 0);
+    if (batch.totalResponses === 0) {
+      console.log(`   ⚠️  Batch has no responses, skipping...`);
+      return;
+    }
     
-    const endOfYesterday = new Date(yesterday);
-    endOfYesterday.setHours(23, 59, 59, 999);
+    // Calculate sample size based on config
+    const sampleSize = Math.ceil(batch.totalResponses * (config.samplePercentage / 100));
+    console.log(`   📊 Sample size (${config.samplePercentage}%): ${sampleSize}`);
     
-    console.log(`📅 Processing batches for date: ${yesterday.toISOString().split('T')[0]}`);
+    // Randomly select sample responses
+    const allResponseIds = batch.responses.map(id => id.toString());
+    const shuffled = [...allResponseIds].sort(() => Math.random() - 0.5);
+    const sampleResponseIds = shuffled.slice(0, sampleSize);
+    const remainingResponseIds = shuffled.slice(sampleSize);
     
-    // Find all batches from yesterday that are still collecting
-    const batchesToProcess = await QCBatch.find({
-      batchDate: {
-        $gte: yesterday,
-        $lte: endOfYesterday
-      },
-      status: 'collecting',
-      totalResponses: { $gt: 0 } // Only process batches with responses
-    }).populate('survey');
+    console.log(`   ✅ Selected ${sampleResponseIds.length} responses for QC sample`);
+    console.log(`   📝 Remaining responses: ${remainingResponseIds.length}`);
     
-    console.log(`📦 Found ${batchesToProcess.length} batches to process`);
+    // Convert string IDs to ObjectIds
+    const sampleObjectIds = sampleResponseIds.map(id => toObjectId(id));
+    const remainingObjectIds = remainingResponseIds.map(id => toObjectId(id));
     
-    for (const batch of batchesToProcess) {
-      try {
-        console.log(`\n📋 Processing batch ${batch._id} for survey ${batch.survey?._id || 'unknown'}`);
-        console.log(`   Total responses: ${batch.totalResponses}`);
-        
-        // Check if batch has responses
-        if (batch.totalResponses === 0) {
-          console.log(`   ⚠️  Batch has no responses, skipping...`);
-          continue;
+    // Mark sample responses
+    await SurveyResponse.updateMany(
+      { _id: { $in: sampleObjectIds } },
+      { 
+        $set: { 
+          isSampleResponse: true,
+          status: 'Pending_Approval'
         }
-        
-        // Calculate 40% sample size
-        const sampleSize = Math.ceil(batch.totalResponses * 0.4);
-        console.log(`   📊 Sample size (40%): ${sampleSize}`);
-        
-        // Randomly select 40% of responses
-        const allResponseIds = batch.responses.map(id => id.toString());
-        const shuffled = [...allResponseIds].sort(() => Math.random() - 0.5);
-        const sampleResponseIds = shuffled.slice(0, sampleSize);
-        const remainingResponseIds = shuffled.slice(sampleSize);
-        
-        console.log(`   ✅ Selected ${sampleResponseIds.length} responses for QC sample`);
-        console.log(`   📝 Remaining responses: ${remainingResponseIds.length}`);
-        
-        // Update batch with sample and remaining responses
-        batch.sampleResponses = sampleResponseIds;
-        batch.sampleSize = sampleResponseIds.length;
-        batch.remainingResponses = remainingResponseIds;
-        batch.remainingSize = remainingResponseIds.length;
-        batch.status = 'processing';
-        batch.processingStartedAt = new Date();
-        
-        // Convert string IDs to ObjectIds
-        const sampleObjectIds = sampleResponseIds.map(id => toObjectId(id));
-        const remainingObjectIds = remainingResponseIds.map(id => toObjectId(id));
-        
-        // Mark sample responses in SurveyResponse documents
-        await SurveyResponse.updateMany(
-          { _id: { $in: sampleObjectIds } },
-          { 
-            $set: { 
-              isSampleResponse: true,
-              status: 'Pending_Approval' // Ensure they're in Pending_Approval status
-            }
-          }
-        );
-        
-        // Mark remaining responses (they stay in batch but won't be in QC queue yet)
-        await SurveyResponse.updateMany(
-          { _id: { $in: remainingObjectIds } },
-          { 
-            $set: { 
-              isSampleResponse: false,
-              status: 'Pending_Approval' // Keep as Pending_Approval but they won't show in queue
-            }
-          }
-        );
-        
-        // Update batch status to qc_in_progress
-        batch.status = 'qc_in_progress';
-        await batch.save();
-        
-        console.log(`   ✅ Batch ${batch._id} processed successfully`);
-        console.log(`   📊 ${sampleSize} responses sent to QC queue`);
-        console.log(`   ⏳ ${remainingResponseIds.length} responses waiting for decision`);
-        
-      } catch (error) {
-        console.error(`   ❌ Error processing batch ${batch._id}:`, error);
-        // Continue with next batch
+      }
+    );
+    
+    // Mark remaining responses (not in QC queue yet)
+    await SurveyResponse.updateMany(
+      { _id: { $in: remainingObjectIds } },
+      { 
+        $set: { 
+          isSampleResponse: false,
+          status: 'Pending_Approval'
+        }
+      }
+    );
+    
+    // Update batch with sample and config snapshot
+    batch.sampleResponses = sampleResponseIds;
+    batch.sampleSize = sampleResponseIds.length;
+    batch.remainingResponses = remainingResponseIds;
+    batch.remainingSize = remainingResponseIds.length;
+    batch.status = 'qc_in_progress';
+    batch.processingStartedAt = new Date();
+    batch.batchConfig = {
+      samplePercentage: config.samplePercentage,
+      approvalRules: config.approvalRules || [],
+      configId: config._id || null
+    };
+    
+    await batch.save();
+    
+    console.log(`   ✅ Batch ${batch._id} processed successfully`);
+    console.log(`   📊 ${sampleSize} responses sent to QC queue`);
+    
+  } catch (error) {
+    console.error(`   ❌ Error processing batch ${batch._id}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Make decision on remaining responses based on approval rate and config rules
+ * @param {QCBatch} batch - The batch to process
+ */
+const makeDecisionOnRemaining = async (batch) => {
+  try {
+    // Get the config that was used for this batch
+    const config = batch.batchConfig || {
+      samplePercentage: 40,
+      approvalRules: [
+        { minRate: 50, maxRate: 100, action: 'auto_approve', description: '50%+ - Auto approve' },
+        { minRate: 0, maxRate: 50, action: 'send_to_qc', description: 'Below 50% - Send to QC' }
+      ]
+    };
+    
+    // Update QC stats first
+    await batch.updateQCStats();
+    
+    const approvalRate = batch.qcStats.approvalRate;
+    const totalQCed = batch.qcStats.approvedCount + batch.qcStats.rejectedCount;
+    
+    console.log(`\n📊 Batch ${batch._id} Decision Check:`);
+    console.log(`   Approval Rate: ${approvalRate}%`);
+    console.log(`   Total QCed: ${totalQCed}`);
+    console.log(`   Pending: ${batch.qcStats.pendingCount}`);
+    
+    // If there are still pending responses in the sample, wait
+    if (batch.qcStats.pendingCount > 0) {
+      console.log(`   ⏳ Waiting for all sample responses to be QCed...`);
+      return;
+    }
+    
+    // If no responses have been QCed yet, wait
+    if (totalQCed === 0) {
+      console.log(`   ⏳ No responses QCed yet, waiting...`);
+      return;
+    }
+    
+    // Find matching rule based on approval rate
+    let matchedRule = null;
+    for (const rule of config.approvalRules || []) {
+      if (approvalRate >= rule.minRate && approvalRate <= rule.maxRate) {
+        matchedRule = rule;
+        break;
       }
     }
     
-    // Now check all batches in 'qc_in_progress' status to see if 40% QC is complete
-    console.log('\n🔍 Checking batches for 40% QC completion...');
+    if (!matchedRule) {
+      console.log(`   ⚠️  No matching rule found for approval rate ${approvalRate}%`);
+      // Default: if > 50%, auto-approve; else send to QC
+      matchedRule = approvalRate > 50 
+        ? { action: 'auto_approve', description: 'Default: Auto approve' }
+        : { action: 'send_to_qc', description: 'Default: Send to QC' };
+    }
+    
+    console.log(`   ✅ Matched Rule: ${matchedRule.description || matchedRule.action}`);
+    console.log(`   Action: ${matchedRule.action}`);
+    
+    // Convert remaining response IDs to ObjectIds
+    const remainingObjectIds = batch.remainingResponses.map(id => {
+      if (typeof id === 'string') {
+        return new mongoose.Types.ObjectId(id);
+      }
+      return id;
+    });
+    
+    // Execute the action
+    if (matchedRule.action === 'auto_approve') {
+      // Auto-approve all remaining responses
+      await SurveyResponse.updateMany(
+        { _id: { $in: remainingObjectIds } },
+        { 
+          $set: { 
+            status: 'Approved',
+            autoApproved: true,
+            verificationData: {
+              reviewer: null,
+              reviewedAt: new Date(),
+              criteria: {},
+              feedback: `Auto-approved based on ${approvalRate.toFixed(2)}% approval rate in ${config.samplePercentage}% sample`,
+              autoApproved: true,
+              batchId: batch._id
+            }
+          }
+        }
+      );
+      
+      batch.status = 'auto_approved';
+      batch.remainingDecision = {
+        decision: 'auto_approved',
+        decidedAt: new Date(),
+        triggerApprovalRate: approvalRate
+      };
+      
+      console.log(`   ✅ Auto-approved ${remainingObjectIds.length} remaining responses`);
+      
+    } else if (matchedRule.action === 'send_to_qc') {
+      // Send remaining responses to QC queue
+      await SurveyResponse.updateMany(
+        { _id: { $in: remainingObjectIds } },
+        { 
+          $set: { 
+            status: 'Pending_Approval',
+            isSampleResponse: false // They're not in the sample, but they're now in QC queue
+          }
+        }
+      );
+      
+      batch.status = 'queued_for_qc';
+      batch.remainingDecision = {
+        decision: 'queued_for_qc',
+        decidedAt: new Date(),
+        triggerApprovalRate: approvalRate
+      };
+      
+      console.log(`   ✅ Sent ${remainingObjectIds.length} remaining responses to QC queue`);
+      
+    } else if (matchedRule.action === 'reject_all') {
+      // Reject all remaining responses
+      await SurveyResponse.updateMany(
+        { _id: { $in: remainingObjectIds } },
+        { 
+          $set: { 
+            status: 'Rejected',
+            verificationData: {
+              reviewer: null,
+              reviewedAt: new Date(),
+              criteria: {},
+              feedback: `Auto-rejected based on ${approvalRate.toFixed(2)}% approval rate in ${config.samplePercentage}% sample`,
+              autoRejected: true,
+              batchId: batch._id
+            }
+          }
+        }
+      );
+      
+      batch.status = 'completed';
+      batch.remainingDecision = {
+        decision: 'rejected_all',
+        decidedAt: new Date(),
+        triggerApprovalRate: approvalRate
+      };
+      
+      console.log(`   ❌ Rejected ${remainingObjectIds.length} remaining responses`);
+    }
+    
+    batch.processingCompletedAt = new Date();
+    await batch.save();
+    
+  } catch (error) {
+    console.error(`   ❌ Error making decision for batch ${batch._id}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Process batches that need to be processed (called when new batch is created)
+ * This processes the previous batch for the same survey
+ */
+const processPreviousBatch = async (surveyId) => {
+  try {
+    console.log(`\n🔄 Processing previous batch for survey ${surveyId}`);
+    
+    // Get active config for this survey
+    const Survey = require('../models/Survey');
+    const survey = await Survey.findById(surveyId).populate('company');
+    if (!survey) {
+      console.log(`   ⚠️  Survey not found: ${surveyId}`);
+      return;
+    }
+    
+    const config = await QCBatchConfig.getActiveConfig(surveyId, survey.company._id || survey.company);
+    console.log(`   📋 Using config: ${config.samplePercentage}% sample`);
+    
+    // Find the most recent batch in 'collecting' status for this survey
+    const previousBatch = await QCBatch.findOne({
+      survey: surveyId,
+      status: 'collecting',
+      totalResponses: { $gt: 0 }
+    }).sort({ batchDate: -1 });
+    
+    if (!previousBatch) {
+      console.log(`   ℹ️  No previous batch found to process`);
+      return;
+    }
+    
+    console.log(`   📦 Found previous batch: ${previousBatch._id} from ${previousBatch.batchDate.toISOString().split('T')[0]}`);
+    
+    // Process the previous batch
+    await processBatch(previousBatch, config);
+    
+  } catch (error) {
+    console.error(`❌ Error processing previous batch:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Check and make decisions on batches in progress
+ */
+const checkBatchesInProgress = async () => {
+  try {
+    console.log('\n🔍 Checking batches for decision making...');
     
     const batchesInProgress = await QCBatch.find({
       status: 'qc_in_progress',
-      'sampleResponses.0': { $exists: true } // Has sample responses
+      'sampleResponses.0': { $exists: true }
     });
     
     console.log(`📦 Found ${batchesInProgress.length} batches in QC progress`);
     
     for (const batch of batchesInProgress) {
       try {
-        // Update QC stats and check if complete
-        await batch.updateQCStats();
-        
-        console.log(`\n📊 Batch ${batch._id} QC Stats:`);
-        console.log(`   Approved: ${batch.qcStats.approvedCount}`);
-        console.log(`   Rejected: ${batch.qcStats.rejectedCount}`);
-        console.log(`   Pending: ${batch.qcStats.pendingCount}`);
-        console.log(`   Approval Rate: ${batch.qcStats.approvalRate}%`);
-        console.log(`   Status: ${batch.status}`);
-        
+        await makeDecisionOnRemaining(batch);
       } catch (error) {
-        console.error(`   ❌ Error updating stats for batch ${batch._id}:`, error);
+        console.error(`   ❌ Error checking batch ${batch._id}:`, error);
       }
     }
+    
+  } catch (error) {
+    console.error('❌ Error checking batches in progress:', error);
+    throw error;
+  }
+};
+
+/**
+ * Main batch processing function (called by cron at midnight)
+ */
+const processQCBatches = async () => {
+  try {
+    console.log('🔄 Starting QC Batch Processing Job (Midnight)...');
+    
+    // This function is called at midnight to:
+    // 1. Process batches from previous day that are still collecting
+    // 2. Check batches in progress and make decisions
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Find batches from before today that are still collecting
+    const batchesToProcess = await QCBatch.find({
+      batchDate: { $lt: today },
+      status: 'collecting',
+      totalResponses: { $gt: 0 }
+    }).populate('survey').sort({ batchDate: 1 });
+    
+    console.log(`📦 Found ${batchesToProcess.length} batches to process`);
+    
+    // Process each batch
+    for (const batch of batchesToProcess) {
+      try {
+        const Survey = require('../models/Survey');
+        const survey = await Survey.findById(batch.survey._id || batch.survey).populate('company');
+        if (!survey) continue;
+        
+        const config = await QCBatchConfig.getActiveConfig(
+          batch.survey._id || batch.survey,
+          survey.company._id || survey.company
+        );
+        
+        await processBatch(batch, config);
+      } catch (error) {
+        console.error(`   ❌ Error processing batch ${batch._id}:`, error);
+      }
+    }
+    
+    // Check batches in progress
+    await checkBatchesInProgress();
     
     console.log('\n✅ QC Batch Processing Job completed');
     
@@ -148,36 +367,10 @@ const processQCBatches = async () => {
   }
 };
 
-/**
- * Check and process batches (can be called manually or via cron)
- */
-const checkAndProcessBatches = async () => {
-  // This function can be called periodically to check batches
-  // It will process yesterday's batches and check in-progress batches
-  await processQCBatches();
-};
-
 module.exports = {
   processQCBatches,
-  checkAndProcessBatches
+  processPreviousBatch,
+  checkBatchesInProgress,
+  processBatch,
+  makeDecisionOnRemaining
 };
-
-// If running directly (for testing)
-if (require.main === module) {
-  const connectDB = require('../config/db');
-  
-  connectDB()
-    .then(() => {
-      console.log('✅ Database connected');
-      return processQCBatches();
-    })
-    .then(() => {
-      console.log('✅ Job completed successfully');
-      process.exit(0);
-    })
-    .catch((error) => {
-      console.error('❌ Job failed:', error);
-      process.exit(1);
-    });
-}
-

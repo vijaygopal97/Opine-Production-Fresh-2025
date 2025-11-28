@@ -392,6 +392,12 @@ const surveyResponseSchema = new mongoose.Schema({
     default: false
   },
   
+  // Auto-approved flag (for responses approved automatically based on batch approval rate)
+  autoApproved: {
+    type: Boolean,
+    default: false
+  },
+  
   // Metadata
   metadata: {
     surveyVersion: String,

@@ -994,6 +994,39 @@ export const qcBatchAPI = {
   }
 };
 
+// QC Batch Config API
+export const qcBatchConfigAPI = {
+  // Get active config for a survey
+  getConfigBySurvey: async (surveyId) => {
+    try {
+      const response = await api.get(`/api/qc-batch-config/survey/${surveyId}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get all configs for company
+  getConfigsByCompany: async () => {
+    try {
+      const response = await api.get('/api/qc-batch-config/company');
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Create or update config
+  createOrUpdateConfig: async (configData) => {
+    try {
+      const response = await api.post('/api/qc-batch-config', configData);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  }
+};
+
 // Report Generation API
 export const reportAPI = {
   // Generate report from Excel file

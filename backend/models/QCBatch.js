@@ -121,6 +121,27 @@ const qcBatchSchema = new mongoose.Schema({
     type: Date
   },
   
+  // Configuration used when batch was created (snapshot)
+  batchConfig: {
+    // Percentage used for this batch
+    samplePercentage: {
+      type: Number,
+      default: 40
+    },
+    // Approval rules used for this batch
+    approvalRules: [{
+      minRate: Number,
+      maxRate: Number,
+      action: String,
+      description: String
+    }],
+    // Reference to the config that was used
+    configId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'QCBatchConfig'
+    }
+  },
+  
   // Metadata
   metadata: {
     type: mongoose.Schema.Types.Mixed,
@@ -187,74 +208,8 @@ qcBatchSchema.methods.updateQCStats = async function() {
     sampleQCCompletedAt: pendingCount === 0 && totalQCed > 0 ? new Date() : this.qcStats?.sampleQCCompletedAt
   };
   
-  // Check if 40% QC is complete
-  if (pendingCount === 0 && totalQCed > 0) {
-    // All sample responses have been QCed
-    // Make decision on remaining 60%
-    if (approvalRate > 50) {
-      // Auto-approve remaining 60%
-      this.status = 'auto_approved';
-      this.remainingDecision = {
-        decision: 'auto_approved',
-        decidedAt: new Date(),
-        triggerApprovalRate: approvalRate
-      };
-      
-      // Convert remaining response IDs to ObjectIds
-      const remainingObjectIds = this.remainingResponses.map(id => {
-        if (typeof id === 'string') {
-          return new mongoose.Types.ObjectId(id);
-        }
-        return id;
-      });
-      
-      // Auto-approve all remaining responses
-      await SurveyResponse.updateMany(
-        { _id: { $in: remainingObjectIds } },
-        { 
-          $set: { 
-            status: 'Approved',
-            verificationData: {
-              reviewer: null,
-              reviewedAt: new Date(),
-              criteria: {},
-              feedback: 'Auto-approved based on 40% sample approval rate',
-              autoApproved: true,
-              batchId: this._id
-            }
-          }
-        }
-      );
-    } else {
-      // Send remaining 60% to QC queue
-      this.status = 'queued_for_qc';
-      this.remainingDecision = {
-        decision: 'queued_for_qc',
-        decidedAt: new Date(),
-        triggerApprovalRate: approvalRate
-      };
-      
-      // Convert remaining response IDs to ObjectIds
-      const remainingObjectIds = this.remainingResponses.map(id => {
-        if (typeof id === 'string') {
-          return new mongoose.Types.ObjectId(id);
-        }
-        return id;
-      });
-      
-      // Update remaining responses to Pending_Approval (they're already in that status, but ensure it)
-      await SurveyResponse.updateMany(
-        { _id: { $in: remainingObjectIds } },
-        { 
-          $set: { 
-            status: 'Pending_Approval'
-          }
-        }
-      );
-    }
-    
-    this.processingCompletedAt = new Date();
-  }
+  // Note: Decision making is now handled by the batch processor
+  // This method only updates stats, not decisions
   
   await this.save();
   return this;

@@ -1089,8 +1089,17 @@ const getPendingApprovals = async (req, res) => {
       console.log('getPendingApprovals - Company survey IDs:', companySurveyIds.length);
     }
 
+    // Build query - only get responses with status 'Pending_Approval'
+    // For responses in QC batches, only include those that are part of the 40% sample
     let query = { 
-      status: 'Pending_Approval'
+      status: 'Pending_Approval',
+      $or: [
+        // Responses not in any batch (legacy responses or responses before batch system)
+        { qcBatch: { $exists: false } },
+        { qcBatch: null },
+        // Responses in batches that are part of the 40% sample
+        { isSampleResponse: true }
+      ]
     };
 
     // If quality agent, first get the surveys they're assigned to and filter responses by those surveys

@@ -18,6 +18,9 @@ const reportRoutes = require('./routes/reportRoutes');
 const catiRoutes = require('./routes/catiRoutes');
 const catiInterviewRoutes = require('./routes/catiInterviewRoutes');
 const qcBatchRoutes = require('./routes/qcBatchRoutes');
+const qcBatchConfigRoutes = require('./routes/qcBatchConfigRoutes');
+const cron = require('node-cron');
+const { processQCBatches } = require('./jobs/qcBatchProcessor');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -65,6 +68,23 @@ mongoose.connect(MONGODB_URI)
 .then(() => {
   console.log('✅ Connected to MongoDB successfully!');
   console.log(`📊 Database: ${MONGODB_URI.split('@')[1]?.split('/')[0] || 'Connected'}`);
+  
+  // Schedule QC batch processing to run daily at 12:00 AM (midnight) IST
+  // This will process batches from previous days and check in-progress batches
+  cron.schedule('0 0 * * *', async () => {
+    console.log('⏰ QC Batch Processing Job triggered by cron (12:00 AM IST)');
+    try {
+      await processQCBatches();
+      console.log('✅ QC Batch Processing Job completed successfully');
+    } catch (error) {
+      console.error('❌ QC Batch Processing Job failed:', error);
+    }
+  }, {
+    scheduled: true,
+    timezone: "Asia/Kolkata"
+  });
+  
+  console.log('⏰ QC Batch Processing Job scheduled to run daily at 12:00 AM IST');
 })
 .catch((error) => {
   console.error('❌ MongoDB connection error:', error.message);
@@ -90,6 +110,7 @@ app.use('/api/cati-interview', catiInterviewRoutes);
 app.use('/api/cati', catiRoutes);
 app.use('/api/survey-responses', surveyResponseRoutes);
 app.use('/api/qc-batches', qcBatchRoutes);
+app.use('/api/qc-batch-config', qcBatchConfigRoutes);
 
 // Note: Opines API routes removed - using Contact API instead
 

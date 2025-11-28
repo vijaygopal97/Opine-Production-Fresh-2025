@@ -9,9 +9,12 @@ import {
   Clock,
   TrendingUp,
   FileText,
-  RefreshCw
+  RefreshCw,
+  Settings,
+  Plus,
+  Trash2
 } from 'lucide-react';
-import { qcBatchAPI, surveyAPI } from '../services/api';
+import { qcBatchAPI, surveyAPI, qcBatchConfigAPI } from '../services/api';
 import { useToast } from '../contexts/ToastContext';
 import ResponseDetailsModal from '../components/dashboard/ResponseDetailsModal';
 
@@ -26,6 +29,10 @@ const QCBatchesPage = () => {
   const [selectedResponse, setSelectedResponse] = useState(null);
   const [showResponseDetails, setShowResponseDetails] = useState(false);
   const [responseSurvey, setResponseSurvey] = useState(null);
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  const [config, setConfig] = useState(null);
+  const [configLoading, setConfigLoading] = useState(false);
+  const [savingConfig, setSavingConfig] = useState(false);
   const { showError, showSuccess } = useToast();
 
   // Fetch survey and batches
@@ -70,8 +77,116 @@ const QCBatchesPage = () => {
   useEffect(() => {
     if (surveyId) {
       fetchData();
+      fetchConfig();
     }
   }, [surveyId]);
+
+  // Fetch QC batch configuration
+  const fetchConfig = async () => {
+    try {
+      setConfigLoading(true);
+      const response = await qcBatchConfigAPI.getConfigBySurvey(surveyId);
+      if (response.success) {
+        setConfig(response.data.config);
+      }
+    } catch (error) {
+      console.error('Error fetching config:', error);
+    } finally {
+      setConfigLoading(false);
+    }
+  };
+
+  // Save configuration
+  const handleSaveConfig = async () => {
+    try {
+      setSavingConfig(true);
+      
+      // Validate sample percentage
+      if (!config.samplePercentage || config.samplePercentage < 1 || config.samplePercentage > 100) {
+        showError('Sample percentage must be between 1 and 100');
+        return;
+      }
+      
+      const rules = config.approvalRules || [];
+      
+      // Only require approval rules if sample percentage is less than 100%
+      // When sample percentage is 100%, all responses go to QC, no rules needed for remaining
+      if (config.samplePercentage < 100) {
+        if (rules.length === 0) {
+          showError('At least one approval rule is required when sample percentage is less than 100%');
+          return;
+        }
+        
+        // Validate rules cover 0-100%
+        const sortedRules = [...rules].sort((a, b) => a.minRate - b.minRate);
+        let coverage = 0;
+        for (const rule of sortedRules) {
+          if (rule.minRate > coverage) {
+            showError(`Approval rules must cover 0-100% without gaps. Gap found at ${coverage}%`);
+            return;
+          }
+          coverage = Math.max(coverage, rule.maxRate);
+        }
+        
+        if (coverage < 100) {
+          showError('Approval rules must cover 0-100%. Current coverage: 0-' + coverage + '%');
+          return;
+        }
+      }
+      
+      const response = await qcBatchConfigAPI.createOrUpdateConfig({
+        surveyId,
+        samplePercentage: config.samplePercentage,
+        approvalRules: rules,
+        notes: config.notes || ''
+      });
+      
+      if (response.success) {
+        showSuccess('QC batch configuration saved successfully. New batches will use this configuration.');
+        setShowConfigModal(false);
+        await fetchConfig();
+      }
+    } catch (error) {
+      console.error('Error saving config:', error);
+      showError(error.response?.data?.message || 'Failed to save configuration');
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
+  // Add new approval rule
+  const handleAddRule = () => {
+    setConfig({
+      ...config,
+      approvalRules: [
+        ...(config.approvalRules || []),
+        { minRate: 0, maxRate: 100, action: 'auto_approve', description: '' }
+      ]
+    });
+  };
+
+  // Remove approval rule
+  const handleRemoveRule = (index) => {
+    const newRules = [...config.approvalRules];
+    newRules.splice(index, 1);
+    setConfig({
+      ...config,
+      approvalRules: newRules
+    });
+  };
+
+  // Update approval rule
+  const handleUpdateRule = (index, field, value) => {
+    const newRules = [...config.approvalRules];
+    newRules[index] = {
+      ...newRules[index],
+      [field]: value
+    };
+    setConfig({
+      ...config,
+      approvalRules: newRules
+    });
+  };
 
   // Add CSS to ensure full width
   useEffect(() => {
@@ -235,6 +350,30 @@ const QCBatchesPage = () => {
                     {batches.length} batch{batches.length !== 1 ? 'es' : ''}
                   </p>
                 </div>
+                <button
+                  onClick={async () => {
+                    // Fetch config if not loaded
+                    if (!config && !configLoading) {
+                      await fetchConfig();
+                    }
+                    // Initialize with defaults if still no config
+                    if (!config) {
+                      setConfig({
+                        samplePercentage: 40,
+                        approvalRules: [
+                          { minRate: 50, maxRate: 100, action: 'auto_approve', description: '50%+ approval rate - Auto approve remaining' },
+                          { minRate: 0, maxRate: 50, action: 'send_to_qc', description: 'Below 50% approval rate - Send to QC' }
+                        ],
+                        notes: ''
+                      });
+                    }
+                    setShowConfigModal(true);
+                  }}
+                  className="flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                >
+                  <Settings className="w-4 h-4" />
+                  <span>Configure Rules</span>
+                </button>
               </div>
             </div>
           </div>
@@ -454,6 +593,7 @@ const QCBatchesPage = () => {
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Mode</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">In Sample</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">In QC Queue</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                       </tr>
@@ -492,6 +632,20 @@ const QCBatchesPage = () => {
                               <span className="text-sm text-gray-400">-</span>
                             )}
                           </td>
+                          <td className="px-4 py-3">
+                            {response.isSampleResponse && response.status === 'Pending_Approval' ? (
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                <Clock className="w-3 h-3 mr-1" />
+                                In QC Queue
+                              </span>
+                            ) : response.isSampleResponse && (response.status === 'Approved' || response.status === 'Rejected') ? (
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                QC Completed
+                              </span>
+                            ) : (
+                              <span className="text-sm text-gray-400">-</span>
+                            )}
+                          </td>
                           <td className="px-4 py-3 text-sm text-gray-600">{formatDate(response.createdAt)}</td>
                           <td className="px-4 py-3">
                             <button
@@ -523,6 +677,200 @@ const QCBatchesPage = () => {
             setResponseSurvey(null);
           }}
         />
+      )}
+
+      {/* Configuration Modal */}
+      {showConfigModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-gray-900">QC Batch Configuration</h2>
+              <button
+                onClick={() => setShowConfigModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XCircle className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {configLoading ? (
+                <div className="text-center py-8">
+                  <RefreshCw className="w-8 h-8 text-gray-400 animate-spin mx-auto mb-4" />
+                  <p className="text-gray-600">Loading configuration...</p>
+                </div>
+              ) : config ? (
+                <div className="space-y-6">
+                  {/* Sample Percentage */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Sample Percentage (%)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={config.samplePercentage || 40}
+                      onChange={(e) => setConfig({ ...config, samplePercentage: parseInt(e.target.value) || 40 })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                    <p className="text-sm text-gray-500 mt-1">
+                      Percentage of responses to send to QC queue (e.g., 40 for 40%)
+                    </p>
+                  </div>
+
+                  {/* Approval Rules */}
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Approval Rate Rules
+                      </label>
+                      {config.samplePercentage < 100 && (
+                        <button
+                          onClick={handleAddRule}
+                          className="flex items-center space-x-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Add Rule</span>
+                        </button>
+                      )}
+                    </div>
+                    
+                    {config.samplePercentage >= 100 ? (
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+                        <p className="text-sm text-green-800">
+                          <strong>100% Sample:</strong> All responses will be sent to QC. No approval rules are needed since there are no remaining responses to auto-process.
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500 mb-4">
+                        Define rules based on approval rate. Rules must cover 0-100% without gaps.
+                      </p>
+                    )}
+                    
+                    {config.samplePercentage < 100 && (
+                    <div className="space-y-4">
+                      {config.approvalRules && config.approvalRules.map((rule, index) => (
+                        <div key={index} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                          <div className="grid grid-cols-12 gap-4 items-end">
+                            <div className="col-span-3">
+                              <label className="block text-xs font-medium text-gray-700 mb-1">
+                                Min Rate (%)
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={rule.minRate}
+                                onChange={(e) => handleUpdateRule(index, 'minRate', parseInt(e.target.value) || 0)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                              />
+                            </div>
+                            <div className="col-span-3">
+                              <label className="block text-xs font-medium text-gray-700 mb-1">
+                                Max Rate (%)
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={rule.maxRate}
+                                onChange={(e) => handleUpdateRule(index, 'maxRate', parseInt(e.target.value) || 100)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                              />
+                            </div>
+                            <div className="col-span-4">
+                              <label className="block text-xs font-medium text-gray-700 mb-1">
+                                Action
+                              </label>
+                              <select
+                                value={rule.action}
+                                onChange={(e) => handleUpdateRule(index, 'action', e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                              >
+                                <option value="auto_approve">Auto Approve</option>
+                                <option value="send_to_qc">Send to QC</option>
+                                <option value="reject_all">Reject All</option>
+                              </select>
+                            </div>
+                            <div className="col-span-2">
+                              <button
+                                onClick={() => handleRemoveRule(index)}
+                                className="w-full px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm flex items-center justify-center space-x-1"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                <span>Remove</span>
+                              </button>
+                            </div>
+                          </div>
+                          <div className="mt-3">
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              Description (Optional)
+                            </label>
+                            <input
+                              type="text"
+                              value={rule.description || ''}
+                              onChange={(e) => handleUpdateRule(index, 'description', e.target.value)}
+                              placeholder="e.g., 75%+ approval rate - All Accepted"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    )}
+                  </div>
+
+                  {/* Notes */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Notes (Optional)
+                    </label>
+                    <textarea
+                      value={config.notes || ''}
+                      onChange={(e) => setConfig({ ...config, notes: e.target.value })}
+                      rows="3"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Add any notes about this configuration..."
+                    />
+                  </div>
+
+                  {/* Info Box */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <p className="text-sm text-blue-800">
+                      <strong>Note:</strong> This configuration will apply to all new batches created after saving. 
+                      Existing batches will continue using the configuration that was active when they were created.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <p className="text-gray-600">Failed to load configuration</p>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-end space-x-4">
+              <button
+                onClick={() => setShowConfigModal(false)}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveConfig}
+                disabled={savingConfig || configLoading}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              >
+                {savingConfig && <RefreshCw className="w-4 h-4 animate-spin" />}
+                <span>Save Configuration</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );
