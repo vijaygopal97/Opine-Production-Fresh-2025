@@ -427,104 +427,193 @@ const QCBatchesPage = () => {
 
                   {/* Batch Stats */}
                   <div className="px-6 py-4">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div>
-                        <p className="text-sm text-gray-600">Total Responses</p>
-                        <p className="text-2xl font-semibold text-gray-900">{batch.totalResponses}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-600">40% Sample</p>
-                        <p className="text-2xl font-semibold text-blue-600">{batch.sampleSize}</p>
-                        {batch.realTimeStats && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            {batch.realTimeStats.pendingCount} pending QC
-                          </p>
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-600">60% Remaining</p>
-                        <p className="text-2xl font-semibold text-gray-600">{batch.remainingSize}</p>
-                        {batch.remainingDecision?.decision && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            {batch.remainingDecision.decision === 'auto_approved' ? 'Auto-approved' : 'Queued for QC'}
-                          </p>
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-600">Approval Rate (40%)</p>
-                        {batch.realTimeStats && batch.realTimeStats.approvalRate !== undefined ? (
-                          <>
-                            <p className="text-2xl font-semibold text-green-600">
-                              {batch.realTimeStats.approvalRate.toFixed(1)}%
-                            </p>
-                            <p className="text-xs text-gray-500 mt-1">
-                              {batch.realTimeStats.approvedCount || 0} approved / {batch.realTimeStats.totalQCed || 0} QCed
-                            </p>
-                          </>
-                        ) : (
-                          <p className="text-2xl font-semibold text-gray-400">-</p>
-                        )}
-                      </div>
-                    </div>
+                    {(() => {
+                      const samplePercentage = batch.batchConfig?.samplePercentage || batch.config?.samplePercentage || 40;
+                      const is100Percent = samplePercentage >= 100;
+                      const remainingPercentage = 100 - samplePercentage;
+                      
+                      if (is100Percent) {
+                        // For 100% sample, only show total responses and QC status
+                        return (
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                            <div>
+                              <p className="text-sm text-gray-600">Total Responses</p>
+                              <p className="text-2xl font-semibold text-gray-900">{batch.totalResponses}</p>
+                            </div>
+                            <div>
+                              <p className="text-sm text-gray-600">In QC Queue</p>
+                              <p className="text-2xl font-semibold text-blue-600">{batch.sampleSize || batch.totalResponses}</p>
+                              {batch.realTimeStats && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {batch.realTimeStats.pendingCount} pending QC
+                                </p>
+                              )}
+                            </div>
+                            <div>
+                              <p className="text-sm text-gray-600">Approval Rate</p>
+                              {batch.realTimeStats && batch.realTimeStats.approvalRate !== undefined ? (
+                                <>
+                                  <p className="text-2xl font-semibold text-green-600">
+                                    {batch.realTimeStats.approvalRate.toFixed(1)}%
+                                  </p>
+                                  <p className="text-xs text-gray-500 mt-1">
+                                    {batch.realTimeStats.approvedCount || 0} approved / {batch.realTimeStats.totalQCed || 0} QCed
+                                  </p>
+                                </>
+                              ) : (
+                                <p className="text-2xl font-semibold text-gray-400">-</p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      } else {
+                        // For less than 100%, show the split
+                        return (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div>
+                              <p className="text-sm text-gray-600">Total Responses</p>
+                              <p className="text-2xl font-semibold text-gray-900">{batch.totalResponses}</p>
+                            </div>
+                            <div>
+                              <p className="text-sm text-gray-600">{samplePercentage}% Sample</p>
+                              <p className="text-2xl font-semibold text-blue-600">{batch.sampleSize}</p>
+                              {batch.realTimeStats && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {batch.realTimeStats.pendingCount} pending QC
+                                </p>
+                              )}
+                            </div>
+                            <div>
+                              <p className="text-sm text-gray-600">{remainingPercentage}% Remaining</p>
+                              <p className="text-2xl font-semibold text-gray-600">{batch.remainingSize}</p>
+                              {batch.remainingDecision?.decision && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {batch.remainingDecision.decision === 'auto_approved' ? 'Auto-approved' : 'Queued for QC'}
+                                </p>
+                              )}
+                            </div>
+                            <div>
+                              <p className="text-sm text-gray-600">Approval Rate ({samplePercentage}%)</p>
+                              {batch.realTimeStats && batch.realTimeStats.approvalRate !== undefined ? (
+                                <>
+                                  <p className="text-2xl font-semibold text-green-600">
+                                    {batch.realTimeStats.approvalRate.toFixed(1)}%
+                                  </p>
+                                  <p className="text-xs text-gray-500 mt-1">
+                                    {batch.realTimeStats.approvedCount || 0} approved / {batch.realTimeStats.totalQCed || 0} QCed
+                                  </p>
+                                </>
+                              ) : (
+                                <p className="text-2xl font-semibold text-gray-400">-</p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }
+                    })()}
 
-                    {/* Progress Bar for 40% QC */}
-                    {batch.realTimeStats && batch.sampleSize > 0 && batch.realTimeStats.totalQCed !== undefined && (
-                      <div className="mt-4">
-                        <div className="flex items-center justify-between text-sm text-gray-600 mb-1">
-                          <span>40% Sample QC Progress</span>
-                          <span>
-                            {batch.realTimeStats.totalQCed || 0} / {batch.sampleSize} completed
-                          </span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div
-                            className="bg-blue-600 h-2 rounded-full transition-all"
-                            style={{
-                              width: `${((batch.realTimeStats.totalQCed || 0) / batch.sampleSize) * 100}%`
-                            }}
-                          ></div>
-                        </div>
-                      </div>
-                    )}
+                    {/* Progress Bar for Sample QC */}
+                    {(() => {
+                      const samplePercentage = batch.batchConfig?.samplePercentage || batch.config?.samplePercentage || 40;
+                      const is100Percent = samplePercentage >= 100;
+                      
+                      if (!is100Percent && batch.realTimeStats && batch.sampleSize > 0 && batch.realTimeStats.totalQCed !== undefined) {
+                        return (
+                          <div className="mt-4">
+                            <div className="flex items-center justify-between text-sm text-gray-600 mb-1">
+                              <span>{samplePercentage}% Sample QC Progress</span>
+                              <span>
+                                {batch.realTimeStats.totalQCed || 0} / {batch.sampleSize} completed
+                              </span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                              <div
+                                className="bg-blue-600 h-2 rounded-full transition-all"
+                                style={{
+                                  width: `${((batch.realTimeStats.totalQCed || 0) / batch.sampleSize) * 100}%`
+                                }}
+                              ></div>
+                            </div>
+                          </div>
+                        );
+                      } else if (is100Percent && batch.realTimeStats && batch.sampleSize > 0 && batch.realTimeStats.totalQCed !== undefined) {
+                        return (
+                          <div className="mt-4">
+                            <div className="flex items-center justify-between text-sm text-gray-600 mb-1">
+                              <span>QC Progress</span>
+                              <span>
+                                {batch.realTimeStats.totalQCed || 0} / {batch.sampleSize} completed
+                              </span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                              <div
+                                className="bg-blue-600 h-2 rounded-full transition-all"
+                                style={{
+                                  width: `${((batch.realTimeStats.totalQCed || 0) / batch.sampleSize) * 100}%`
+                                }}
+                              ></div>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
 
-                    {/* Decision on Remaining 60% - Only show if batch has been processed and decision made */}
-                    {batch.remainingDecision?.decision && 
-                     batch.remainingDecision.decision !== 'pending' && 
-                     batch.status !== 'collecting' && (
-                      <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-                        <p className="text-sm font-medium text-gray-900">
-                          Decision on Remaining 60%:
-                        </p>
-                        <p className="text-sm text-gray-600 mt-1">
-                          {batch.remainingDecision.decision === 'auto_approved' ? (
-                            <span className="text-green-600">
-                              ✓ Auto-approved {batch.remainingDecision.triggerApprovalRate !== undefined ? `(Approval rate: ${batch.remainingDecision.triggerApprovalRate.toFixed(1)}% > 50%)` : ''}
-                            </span>
-                          ) : (
-                            <span className="text-orange-600">
-                              → Sent to QC Queue {batch.remainingDecision.triggerApprovalRate !== undefined ? `(Approval rate: ${batch.remainingDecision.triggerApprovalRate.toFixed(1)}% ≤ 50%)` : ''}
-                            </span>
-                          )}
-                        </p>
-                        {batch.remainingDecision.decidedAt && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            Decided on: {formatDate(batch.remainingDecision.decidedAt)}
-                          </p>
-                        )}
-                      </div>
-                    )}
+                    {/* Decision on Remaining - Only show if batch has been processed and decision made, and samplePercentage < 100 */}
+                    {(() => {
+                      const samplePercentage = batch.batchConfig?.samplePercentage || batch.config?.samplePercentage || 40;
+                      const remainingPercentage = 100 - samplePercentage;
+                      const is100Percent = samplePercentage >= 100;
+                      
+                      if (!is100Percent && batch.remainingDecision?.decision && 
+                          batch.remainingDecision.decision !== 'pending' && 
+                          batch.status !== 'collecting') {
+                        return (
+                          <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                            <p className="text-sm font-medium text-gray-900">
+                              Decision on Remaining {remainingPercentage}%:
+                            </p>
+                            <p className="text-sm text-gray-600 mt-1">
+                              {batch.remainingDecision.decision === 'auto_approved' ? (
+                                <span className="text-green-600">
+                                  ✓ Auto-approved {batch.remainingDecision.triggerApprovalRate !== undefined ? `(Approval rate: ${batch.remainingDecision.triggerApprovalRate.toFixed(1)}%)` : ''}
+                                </span>
+                              ) : (
+                                <span className="text-orange-600">
+                                  → Sent to QC Queue {batch.remainingDecision.triggerApprovalRate !== undefined ? `(Approval rate: ${batch.remainingDecision.triggerApprovalRate.toFixed(1)}%)` : ''}
+                                </span>
+                              )}
+                            </p>
+                            {batch.remainingDecision.decidedAt && (
+                              <p className="text-xs text-gray-500 mt-1">
+                                Decided on: {formatDate(batch.remainingDecision.decidedAt)}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                     
                     {/* Show status message for batches still collecting */}
-                    {batch.status === 'collecting' && (
-                      <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-                        <p className="text-sm font-medium text-blue-900">
-                          Batch Status: Collecting Responses
-                        </p>
-                        <p className="text-sm text-blue-700 mt-1">
-                          This batch will be processed tomorrow. 40% of responses will be randomly selected and sent to QC queue.
-                        </p>
-                      </div>
-                    )}
+                    {batch.status === 'collecting' && (() => {
+                      const samplePercentage = batch.batchConfig?.samplePercentage || batch.config?.samplePercentage || 40;
+                      const is100Percent = samplePercentage >= 100;
+                      
+                      return (
+                        <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+                          <p className="text-sm font-medium text-blue-900">
+                            Batch Status: Collecting Responses
+                          </p>
+                          <p className="text-sm text-blue-700 mt-1">
+                            {is100Percent 
+                              ? `This batch will be processed tomorrow. All ${samplePercentage}% of responses will be sent to QC queue.`
+                              : `This batch will be processed tomorrow. ${samplePercentage}% of responses will be randomly selected and sent to QC queue.`
+                            }
+                          </p>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               ))}
@@ -561,105 +650,145 @@ const QCBatchesPage = () => {
             {/* Modal Content */}
             <div className="flex-1 overflow-y-auto p-6">
               {/* Stats Summary */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <p className="text-sm text-gray-600">Total Responses</p>
-                  <p className="text-2xl font-semibold text-blue-600">{selectedBatch.totalResponses}</p>
-                </div>
-                <div className="bg-purple-50 p-4 rounded-lg">
-                  <p className="text-sm text-gray-600">40% Sample</p>
-                  <p className="text-2xl font-semibold text-purple-600">{selectedBatch.sampleSize}</p>
-                </div>
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <p className="text-sm text-gray-600">60% Remaining</p>
-                  <p className="text-2xl font-semibold text-gray-600">{selectedBatch.remainingSize}</p>
-                </div>
-                <div className="bg-green-50 p-4 rounded-lg">
-                  <p className="text-sm text-gray-600">Approval Rate</p>
-                  <p className="text-2xl font-semibold text-green-600">
-                    {selectedBatch.realTimeStats?.approvalRate !== undefined ? selectedBatch.realTimeStats.approvalRate.toFixed(1) : '0'}%
-                  </p>
-                </div>
-              </div>
+              {(() => {
+                const samplePercentage = selectedBatch.batchConfig?.samplePercentage || selectedBatch.config?.samplePercentage || 40;
+                const is100Percent = samplePercentage >= 100;
+                const remainingPercentage = 100 - samplePercentage;
+                
+                if (is100Percent) {
+                  return (
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+                      <div className="bg-blue-50 p-4 rounded-lg">
+                        <p className="text-sm text-gray-600">Total Responses</p>
+                        <p className="text-2xl font-semibold text-blue-600">{selectedBatch.totalResponses}</p>
+                      </div>
+                      <div className="bg-purple-50 p-4 rounded-lg">
+                        <p className="text-sm text-gray-600">In QC Queue</p>
+                        <p className="text-2xl font-semibold text-purple-600">{selectedBatch.sampleSize || selectedBatch.totalResponses}</p>
+                      </div>
+                      <div className="bg-green-50 p-4 rounded-lg">
+                        <p className="text-sm text-gray-600">Approval Rate</p>
+                        <p className="text-2xl font-semibold text-green-600">
+                          {selectedBatch.realTimeStats?.approvalRate !== undefined ? selectedBatch.realTimeStats.approvalRate.toFixed(1) : '0'}%
+                        </p>
+                      </div>
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                      <div className="bg-blue-50 p-4 rounded-lg">
+                        <p className="text-sm text-gray-600">Total Responses</p>
+                        <p className="text-2xl font-semibold text-blue-600">{selectedBatch.totalResponses}</p>
+                      </div>
+                      <div className="bg-purple-50 p-4 rounded-lg">
+                        <p className="text-sm text-gray-600">{samplePercentage}% Sample</p>
+                        <p className="text-2xl font-semibold text-purple-600">{selectedBatch.sampleSize}</p>
+                      </div>
+                      <div className="bg-gray-50 p-4 rounded-lg">
+                        <p className="text-sm text-gray-600">{remainingPercentage}% Remaining</p>
+                        <p className="text-2xl font-semibold text-gray-600">{selectedBatch.remainingSize}</p>
+                      </div>
+                      <div className="bg-green-50 p-4 rounded-lg">
+                        <p className="text-sm text-gray-600">Approval Rate</p>
+                        <p className="text-2xl font-semibold text-green-600">
+                          {selectedBatch.realTimeStats?.approvalRate !== undefined ? selectedBatch.realTimeStats.approvalRate.toFixed(1) : '0'}%
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
+              })()}
 
               {/* Responses Table */}
               <div className="mb-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">All Responses</h3>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Response ID</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Mode</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">In Sample</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">In QC Queue</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {selectedBatch.allResponses?.map((response) => (
-                        <tr key={response._id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 text-sm text-gray-900">{response.responseId || 'N/A'}</td>
-                          <td className="px-4 py-3">
-                            {response.status === 'Approved' && (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                <CheckCircle className="w-3 h-3 mr-1" />
-                                Approved
-                              </span>
+                {(() => {
+                  const samplePercentage = selectedBatch.batchConfig?.samplePercentage || selectedBatch.config?.samplePercentage || 40;
+                  const is100Percent = samplePercentage >= 100;
+                  
+                  return (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Response ID</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Mode</th>
+                            {!is100Percent && (
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">In Sample</th>
                             )}
-                            {response.status === 'Rejected' && (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                <XCircle className="w-3 h-3 mr-1" />
-                                Rejected
-                              </span>
-                            )}
-                            {response.status === 'Pending_Approval' && (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                <Clock className="w-3 h-3 mr-1" />
-                                Pending
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600 uppercase">{response.interviewMode || 'N/A'}</td>
-                          <td className="px-4 py-3">
-                            {response.isSampleResponse ? (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                40% Sample
-                              </span>
-                            ) : (
-                              <span className="text-sm text-gray-400">-</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            {response.isSampleResponse && response.status === 'Pending_Approval' ? (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                <Clock className="w-3 h-3 mr-1" />
-                                In QC Queue
-                              </span>
-                            ) : response.isSampleResponse && (response.status === 'Approved' || response.status === 'Rejected') ? (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                                QC Completed
-                              </span>
-                            ) : (
-                              <span className="text-sm text-gray-400">-</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{formatDate(response.createdAt)}</td>
-                          <td className="px-4 py-3">
-                            <button
-                              onClick={() => handleViewResponse(response)}
-                              className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                            >
-                              View
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">In QC Queue</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {selectedBatch.allResponses?.map((response) => (
+                            <tr key={response._id} className="hover:bg-gray-50">
+                              <td className="px-4 py-3 text-sm text-gray-900">{response.responseId || 'N/A'}</td>
+                              <td className="px-4 py-3">
+                                {response.status === 'Approved' && (
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    <CheckCircle className="w-3 h-3 mr-1" />
+                                    Approved
+                                  </span>
+                                )}
+                                {response.status === 'Rejected' && (
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                    <XCircle className="w-3 h-3 mr-1" />
+                                    Rejected
+                                  </span>
+                                )}
+                                {response.status === 'Pending_Approval' && (
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                    <Clock className="w-3 h-3 mr-1" />
+                                    Pending
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-600 uppercase">{response.interviewMode || 'N/A'}</td>
+                              {!is100Percent && (
+                                <td className="px-4 py-3">
+                                  {response.isSampleResponse ? (
+                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                      {samplePercentage}% Sample
+                                    </span>
+                                  ) : (
+                                    <span className="text-sm text-gray-400">-</span>
+                                  )}
+                                </td>
+                              )}
+                              <td className="px-4 py-3">
+                                {(is100Percent || response.isSampleResponse) && response.status === 'Pending_Approval' ? (
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                    <Clock className="w-3 h-3 mr-1" />
+                                    In QC Queue
+                                  </span>
+                                ) : (is100Percent || response.isSampleResponse) && (response.status === 'Approved' || response.status === 'Rejected') ? (
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                    QC Completed
+                                  </span>
+                                ) : (
+                                  <span className="text-sm text-gray-400">-</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-600">{formatDate(response.createdAt)}</td>
+                              <td className="px-4 py-3">
+                                <button
+                                  onClick={() => handleViewResponse(response)}
+                                  className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                                >
+                                  View
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
