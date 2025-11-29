@@ -229,17 +229,17 @@ const ViewResponsesModal = ({ survey, onClose }) => {
                 row.push(questionResponse); // Return as-is (e.g., "Others: Custom text")
               } else if (Array.isArray(questionResponse)) {
                 // Handle array responses
-                const displayTexts = questionResponse.map((val: any) => {
+                const displayTexts = questionResponse.map((val) => {
                   if (typeof val === 'string' && val.startsWith('Others: ')) {
                     return val;
                   }
-                  const option = question.options.find((opt: any) => opt.value === val);
+                  const option = question.options.find((opt) => opt.value === val);
                   return option ? option.text : val;
                 });
                 row.push(displayTexts.join(', '));
               } else {
                 // Find the option text for the selected value
-                const option = question.options.find((opt: any) => opt.value === questionResponse);
+                const option = question.options.find((opt) => opt.value === questionResponse);
                 row.push(option ? option.text : questionResponse);
               }
             } else if (question.type === 'rating' && typeof questionResponse === 'number') {

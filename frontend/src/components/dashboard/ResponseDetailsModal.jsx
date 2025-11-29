@@ -645,13 +645,34 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                 </div>
                 
                 <div>
-                  <p className="text-sm font-medium text-gray-700">Assembly Constituency</p>
-                  <p className="text-sm text-gray-600">{respondentInfo.ac}</p>
+                  <p className="text-sm font-medium text-gray-700">Assembly Constituency (AC)</p>
+                  <p className="text-sm text-gray-600">{response.selectedPollingStation?.acName || response.selectedAC || respondentInfo.ac}</p>
                 </div>
+                
+                {response.selectedPollingStation?.pcName && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">Parliamentary Constituency (PC)</p>
+                    <p className="text-sm text-gray-600">{response.selectedPollingStation.pcName} ({response.selectedPollingStation.pcNo})</p>
+                  </div>
+                )}
+                
+                {response.selectedPollingStation?.district && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">District</p>
+                    <p className="text-sm text-gray-600">{response.selectedPollingStation.district}</p>
+                  </div>
+                )}
+                
+                {response.selectedPollingStation?.stationName && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">Polling Station</p>
+                    <p className="text-sm text-gray-600">{response.selectedPollingStation.stationName}</p>
+                  </div>
+                )}
                 
                 <div>
                   <p className="text-sm font-medium text-gray-700">Lok Sabha</p>
-                  <p className="text-sm text-gray-600">{respondentInfo.lokSabha}</p>
+                  <p className="text-sm text-gray-600">{response.selectedPollingStation?.pcName || respondentInfo.lokSabha}</p>
                 </div>
                 
                 {response.location && (

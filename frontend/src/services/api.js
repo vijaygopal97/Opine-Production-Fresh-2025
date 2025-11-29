@@ -1027,6 +1027,41 @@ export const qcBatchConfigAPI = {
   }
 };
 
+export const pollingStationAPI = {
+  // Get groups for an AC (state and AC name or number)
+  getGroupsByAC: async (state, acIdentifier) => {
+    try {
+      const response = await api.get(`/api/polling-stations/groups/${encodeURIComponent(state)}/${encodeURIComponent(acIdentifier)}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching groups:', error);
+      throw error;
+    }
+  },
+  
+  // Get polling stations for a group
+  getPollingStationsByGroup: async (state, acIdentifier, groupName) => {
+    try {
+      const response = await api.get(`/api/polling-stations/stations/${encodeURIComponent(state)}/${encodeURIComponent(acIdentifier)}/${encodeURIComponent(groupName)}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching polling stations:', error);
+      throw error;
+    }
+  },
+  
+  // Get GPS location for a polling station
+  getPollingStationGPS: async (state, acIdentifier, groupName, stationName) => {
+    try {
+      const response = await api.get(`/api/polling-stations/gps/${encodeURIComponent(state)}/${encodeURIComponent(acIdentifier)}/${encodeURIComponent(groupName)}/${encodeURIComponent(stationName)}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching polling station GPS:', error);
+      throw error;
+    }
+  }
+};
+
 // Report Generation API
 export const reportAPI = {
   // Generate report from Excel file
@@ -1182,12 +1217,13 @@ export const catiInterviewAPI = {
   },
 
   // Complete CATI interview
-  completeCatiInterview: async (queueId, sessionId, responses, selectedAC, totalTimeSpent, startTime, endTime, totalQuestions, answeredQuestions, completionPercentage) => {
+  completeCatiInterview: async (queueId, sessionId, responses, selectedAC, selectedPollingStation, totalTimeSpent, startTime, endTime, totalQuestions, answeredQuestions, completionPercentage) => {
     try {
       const response = await api.post(`/api/cati-interview/complete/${queueId}`, {
         sessionId,
         responses,
         selectedAC,
+        selectedPollingStation,
         totalTimeSpent,
         startTime,
         endTime,

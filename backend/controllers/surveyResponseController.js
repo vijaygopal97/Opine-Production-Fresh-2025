@@ -474,6 +474,7 @@ const completeInterview = async (req, res) => {
       deviceInfo: session.deviceInfo,
       audioRecording: audioRecording,
       selectedAC: metadata?.selectedAC || null,
+      selectedPollingStation: metadata?.selectedPollingStation || null,
       location: metadata?.location || null,
       qualityMetrics,
       metadata: {
@@ -1089,15 +1090,42 @@ const getPendingApprovals = async (req, res) => {
       console.log('getPendingApprovals - Company survey IDs:', companySurveyIds.length);
     }
 
-    // Build query - only get responses with status 'Pending_Approval'
-    // For responses in QC batches, only include those that are part of the 40% sample
+    // Build query - get all responses with status 'Pending_Approval'
+    // Include:
+    // 1. Responses not in any batch (legacy responses or responses before batch system)
+    // 2. Responses in batches that are still collecting (status: 'collecting') - show ALL responses
+    // 3. Responses in batches that are part of the sample (isSampleResponse: true) - already sent to QC
+    // 4. Responses in batches that haven't been sent to QC queue yet (remaining portion, not yet processed)
+    const QCBatch = require('../models/QCBatch');
+    
+    // First, get all batches that are still collecting (show all responses in these batches)
+    const collectingBatches = await QCBatch.find({ 
+      status: 'collecting' 
+    }).select('_id').lean();
+    const collectingBatchIds = collectingBatches.map(b => b._id);
+    
+    // Also get batches that are processing but responses haven't been sent to QC yet
+    // (i.e., remaining responses that haven't been queued)
+    const processingBatches = await QCBatch.find({ 
+      status: { $in: ['processing', 'qc_in_progress'] },
+      $or: [
+        { 'remainingDecision.decision': { $exists: false } }, // No decision yet
+        { 'remainingDecision.decision': { $ne: 'queued_for_qc' } } // Not queued for QC
+      ]
+    }).select('_id').lean();
+    const processingBatchIds = processingBatches.map(b => b._id);
+    
     let query = { 
       status: 'Pending_Approval',
       $or: [
         // Responses not in any batch (legacy responses or responses before batch system)
         { qcBatch: { $exists: false } },
         { qcBatch: null },
-        // Responses in batches that are part of the 40% sample
+        // Responses in batches that are still collecting (show all responses in collecting batches)
+        { qcBatch: { $in: collectingBatchIds } },
+        // Responses in batches that are processing but remaining portion not yet queued
+        { qcBatch: { $in: processingBatchIds }, isSampleResponse: { $ne: true } },
+        // Responses in batches that are part of the sample (already sent to QC)
         { isSampleResponse: true }
       ]
     };
@@ -1218,6 +1246,11 @@ const getPendingApprovals = async (req, res) => {
           path: 'assignedQualityAgents.qualityAgent',
           select: 'firstName lastName email _id'
         }
+      })
+      .populate({
+        path: 'qcBatch',
+        select: '_id status batchDate batchConfig',
+        lean: true
       })
       .sort(sort)
       .lean();

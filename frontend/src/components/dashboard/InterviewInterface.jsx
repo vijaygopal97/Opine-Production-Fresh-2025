@@ -12,7 +12,7 @@ import {
   Phone
 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
-import { surveyResponseAPI, catiInterviewAPI } from '../../services/api';
+import { surveyResponseAPI, catiInterviewAPI, pollingStationAPI } from '../../services/api';
 import { getApiUrl } from '../../utils/config';
 
 const InterviewInterface = ({ survey, onClose, onComplete }) => {
@@ -57,6 +57,25 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
   
   // AC Selection state
   const [selectedAC, setSelectedAC] = useState('');
+  
+  // Polling Station Selection state
+  const [selectedPollingStation, setSelectedPollingStation] = useState({
+    state: null,
+    acName: null,
+    acNo: null,
+    pcNo: null,
+    pcName: null,
+    district: null,
+    groupName: null,
+    stationName: null,
+    gpsLocation: null,
+    latitude: null,
+    longitude: null
+  });
+  const [availableGroups, setAvailableGroups] = useState([]);
+  const [availablePollingStations, setAvailablePollingStations] = useState([]);
+  const [loadingGroups, setLoadingGroups] = useState(false);
+  const [loadingStations, setLoadingStations] = useState(false);
   
   // Location state
   const [gpsLocation, setGpsLocation] = useState(null);
@@ -744,6 +763,28 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
         isACSelection: true // Flag to identify this special question
       };
       allQuestions.push(acQuestion);
+      
+      // Add Polling Station selection question after AC selection (if AC is selected)
+      if (selectedAC) {
+        const pollingStationQuestion = {
+          id: 'polling-station-selection',
+          type: 'polling_station',
+          text: 'Select Polling Station',
+          description: 'Please select the Group and Polling Station where you are conducting this interview.',
+          required: true,
+          order: -0.5, // Make it appear after AC selection
+          sectionIndex: -1,
+          questionIndex: -0.5,
+          sectionId: 'polling-station-selection',
+          sectionTitle: 'Polling Station Selection',
+          isPollingStationSelection: true,
+          availableGroups: availableGroups,
+          availablePollingStations: availablePollingStations,
+          selectedGroup: selectedPollingStation.groupName,
+          selectedStation: selectedPollingStation.stationName
+        };
+        allQuestions.push(pollingStationQuestion);
+      }
     }
     
     // Add regular survey questions
@@ -761,7 +802,7 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
     return allQuestions;
   };
 
-  const allQuestions = useMemo(() => getAllQuestions(), [sessionData, survey]);
+  const allQuestions = useMemo(() => getAllQuestions(), [sessionData, survey, selectedAC, availableGroups, availablePollingStations]);
   const currentQuestion = allQuestions[currentQuestionIndex];
 
   // Helper function to check if an option is "Others"
@@ -908,6 +949,13 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
   const areAllRequiredQuestionsAnswered = () => {
     return visibleQuestions.every(question => {
       if (!question.required) return true;
+
+      // Special handling for polling station question:
+      // consider it answered when both group and station are selected
+      if (question.type === 'polling_station') {
+        return !!(selectedPollingStation.groupName && selectedPollingStation.stationName);
+      }
+
       const response = responses[question.id];
       return hasResponseContent(response);
     });
@@ -917,6 +965,11 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
   const findFirstUnansweredRequiredQuestion = () => {
     return visibleQuestions.find(question => {
       if (!question.required) return false;
+
+      if (question.type === 'polling_station') {
+        return !(selectedPollingStation.groupName && selectedPollingStation.stationName);
+      }
+
       const response = responses[question.id];
       return !hasResponseContent(response);
     });
@@ -925,6 +978,11 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
   // Check if a specific question is required and unanswered
   const isQuestionRequiredAndUnanswered = (question) => {
     if (!question.required) return false;
+
+    if (question.type === 'polling_station') {
+      return !(selectedPollingStation.groupName && selectedPollingStation.stationName);
+    }
+
     const response = responses[question.id];
     return !hasResponseContent(response);
   };
@@ -1042,6 +1100,61 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
     // Handle AC selection specially
     if (questionId === 'ac-selection') {
       setSelectedAC(response);
+      // Reset polling station selection when AC changes
+      setSelectedPollingStation({
+        state: null,
+        acName: response,
+        acNo: null,
+        pcNo: null,
+        pcName: null,
+        district: null,
+        groupName: null,
+        stationName: null,
+        gpsLocation: null,
+        latitude: null,
+        longitude: null
+      });
+      setAvailableGroups([]);
+      setAvailablePollingStations([]);
+    }
+    
+    // Handle polling station group selection
+    if (questionId === 'polling-station-group') {
+      setSelectedPollingStation(prev => ({
+        ...prev,
+        groupName: response,
+        stationName: null,
+        gpsLocation: null,
+        latitude: null,
+        longitude: null
+      }));
+      setAvailablePollingStations([]);
+      // Clear polling station selection response when group changes
+      setResponses(prev => ({
+        ...prev,
+        'polling-station-selection': null
+      }));
+    }
+    
+    // Handle polling station selection
+    if (questionId === 'polling-station-station') {
+      // Use functional update so we have the latest groupName
+      setSelectedPollingStation(prev => {
+        const updated = {
+          ...prev,
+          stationName: response
+        };
+
+        // Also store a human-readable combined value in responses for use in logic/exports
+        if (response && updated.groupName) {
+          setResponses(prevResp => ({
+            ...prevResp,
+            'polling-station-selection': `${updated.groupName} - ${response}`
+          }));
+        }
+
+        return updated;
+      });
     }
     
     // Clear validation error for this question if it has content
@@ -1082,6 +1195,106 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
       });
     }
   }, []);
+
+  // Fetch groups when AC is selected
+  useEffect(() => {
+    const fetchGroups = async () => {
+      if (!selectedAC) {
+        setAvailableGroups([]);
+        return;
+      }
+      
+      try {
+        setLoadingGroups(true);
+        // Default to West Bengal for now (polling station data is for West Bengal)
+        const state = survey?.acAssignmentState || 'West Bengal';
+        const response = await pollingStationAPI.getGroupsByAC(state, selectedAC);
+        
+        if (response.success) {
+          setAvailableGroups(response.data.groups || []);
+          setSelectedPollingStation(prev => ({
+            ...prev,
+            state: state,
+            acName: selectedAC,
+            acNo: response.data.ac_no,
+            pcNo: response.data.pc_no,
+            pcName: response.data.pc_name,
+            district: response.data.district
+          }));
+        }
+      } catch (error) {
+        console.error('Error fetching groups:', error);
+        setAvailableGroups([]);
+      } finally {
+        setLoadingGroups(false);
+      }
+    };
+    
+    fetchGroups();
+  }, [selectedAC, survey?.acAssignmentState]);
+
+  // Fetch polling stations when group is selected
+  useEffect(() => {
+    const fetchPollingStations = async () => {
+      if (!selectedPollingStation.groupName || !selectedPollingStation.acName) {
+        setAvailablePollingStations([]);
+        return;
+      }
+      
+      try {
+        setLoadingStations(true);
+        const state = selectedPollingStation.state || survey?.acAssignmentState || 'West Bengal';
+        const response = await pollingStationAPI.getPollingStationsByGroup(
+          state,
+          selectedPollingStation.acName,
+          selectedPollingStation.groupName
+        );
+        
+        if (response.success) {
+          setAvailablePollingStations(response.data.stations || []);
+        }
+      } catch (error) {
+        console.error('Error fetching polling stations:', error);
+        setAvailablePollingStations([]);
+      } finally {
+        setLoadingStations(false);
+      }
+    };
+    
+    fetchPollingStations();
+  }, [selectedPollingStation.groupName, selectedPollingStation.acName, selectedPollingStation.state, survey?.acAssignmentState]);
+
+  // Update polling station GPS when station is selected
+  useEffect(() => {
+    const updateStationGPS = async () => {
+      if (!selectedPollingStation.stationName || !selectedPollingStation.groupName || !selectedPollingStation.acName) {
+        return;
+      }
+      
+      try {
+        const state = selectedPollingStation.state || survey?.acAssignmentState || 'West Bengal';
+        const response = await pollingStationAPI.getPollingStationGPS(
+          state,
+          selectedPollingStation.acName,
+          selectedPollingStation.groupName,
+          selectedPollingStation.stationName
+        );
+        
+        if (response.success) {
+          setSelectedPollingStation(prev => ({
+            ...prev,
+            gpsLocation: response.data.gps_location,
+            latitude: response.data.latitude,
+            longitude: response.data.longitude
+          }));
+        }
+      } catch (error) {
+        console.error('Error fetching polling station GPS:', error);
+      }
+    };
+    
+    updateStationGPS();
+  }, [selectedPollingStation.stationName, selectedPollingStation.groupName, selectedPollingStation.acName, selectedPollingStation.state, survey?.acAssignmentState]);
 
   // Navigate to next question
   const goToNextQuestion = () => {
@@ -1144,13 +1357,24 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                     showSuccess('Call initiated. Waiting for connection...');
                   } else {
                     setCallStatus('failed');
-                    showError(callResponse.message || 'Failed to initiate call');
+                    // Extract detailed error message from API response
+                    const errorMsg = callResponse.message || 
+                                    callResponse.error?.message || 
+                                    callResponse.error || 
+                                    'Failed to initiate call';
+                    showError(`Call failed: ${errorMsg}. You can abandon this interview or try again.`);
                   }
                 })
                 .catch(error => {
                   console.error('Error making call:', error);
                   setCallStatus('failed');
-                  showError('Failed to make call');
+                  // Extract detailed error message from error response
+                  const errorMsg = error.response?.data?.message || 
+                                  error.response?.data?.error?.message || 
+                                  error.response?.data?.error || 
+                                  error.message || 
+                                  'Failed to make call';
+                  showError(`Call failed: ${errorMsg}. You can abandon this interview or try again.`);
                 });
             }
           }, 1500); // Delay to ensure UI is ready
@@ -1282,25 +1506,25 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
         setCallStatus('calling');
         showSuccess('Call initiated. Waiting for connection...');
       } else {
-        // Call failed - close interface and show message
+        // Call failed - show error but don't close interface, allow abandon
         setCallStatus('failed');
-        showError('Call failed. The contact has been moved to the end of the queue and can be tried later.');
-        // Close the interview interface after a short delay
-        setTimeout(() => {
-          if (onClose) onClose();
-          if (onComplete) onComplete({ callFailed: true });
-        }, 2000);
+        // Extract detailed error message from API response
+        const errorMsg = response.message || 
+                        response.error?.message || 
+                        response.error || 
+                        'Failed to initiate call';
+        showError(`Call failed: ${errorMsg}. You can abandon this interview.`);
       }
     } catch (error) {
       console.error('Error making call:', error);
       setCallStatus('failed');
-      // Call failed - close interface and show message
-      showError('Call failed. The contact has been moved to the end of the queue and can be tried later.');
-      // Close the interview interface after a short delay
-      setTimeout(() => {
-        if (onClose) onClose();
-        if (onComplete) onComplete({ callFailed: true });
-      }, 2000);
+      // Extract detailed error message from error response
+      const errorMsg = error.response?.data?.message || 
+                      error.response?.data?.error?.message || 
+                      error.response?.data?.error || 
+                      error.message || 
+                      'Failed to make call';
+      showError(`Call failed: ${errorMsg}. You can abandon this interview.`);
     } finally {
       setIsLoading(false);
     }
@@ -1313,22 +1537,29 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
       return;
     }
 
-    if (!abandonReason) {
-      showError('Please select a reason for abandoning the interview');
-      return;
-    }
+    // If call failed, allow abandoning without reason
+    // Otherwise, require a reason
+    if (!callStatus || callStatus !== 'failed') {
+      if (!abandonReason) {
+        showError('Please select a reason for abandoning the interview');
+        return;
+      }
 
-    if (abandonReason === 'call_later' && !callLaterDate) {
-      showError('Please select a date for calling later');
-      return;
+      if (abandonReason === 'call_later' && !callLaterDate) {
+        showError('Please select a date for calling later');
+        return;
+      }
     }
 
     try {
       setIsLoading(true);
       
+      // If call failed, reason is optional
+      const reasonToSend = callStatus === 'failed' ? (abandonReason || null) : abandonReason;
+      
       const response = await catiInterviewAPI.abandonInterview(
         catiQueueId,
-        abandonReason,
+        reasonToSend,
         abandonNotes,
         abandonReason === 'call_later' ? callLaterDate : null
       );
@@ -1549,6 +1780,13 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
       let response;
       
       if (isCatiMode && catiQueueId) {
+        // CATI mode - check if call was successful before allowing submission
+        if (callStatus === 'failed' || !callId) {
+          showError('Cannot submit interview: Call was not successfully initiated. Please abandon this interview or try making the call again.');
+          setIsLoading(false);
+          return;
+        }
+        
         // CATI mode - use CATI-specific completion endpoint
         const totalQuestions = allQuestions.length;
         const answeredQuestions = finalResponses.filter(r => hasResponseContent(r.response)).length;
@@ -1559,6 +1797,19 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
           sessionId,
           finalResponses,
           selectedAC,
+          selectedPollingStation.stationName ? {
+            state: selectedPollingStation.state,
+            acNo: selectedPollingStation.acNo,
+            acName: selectedPollingStation.acName,
+            pcNo: selectedPollingStation.pcNo,
+            pcName: selectedPollingStation.pcName,
+            district: selectedPollingStation.district,
+            groupName: selectedPollingStation.groupName,
+            stationName: selectedPollingStation.stationName,
+            gpsLocation: selectedPollingStation.gpsLocation,
+            latitude: selectedPollingStation.latitude,
+            longitude: selectedPollingStation.longitude
+          } : null,
           totalTime,
           sessionData?.startTime || new Date(),
           new Date(),
@@ -1589,8 +1840,21 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
           },
           audioRecording: audioRecordingData,
-            selectedAC: selectedAC,
-            location: gpsLocation, // Include location data for CAPI
+          selectedAC: selectedAC,
+          selectedPollingStation: selectedPollingStation.stationName ? {
+            state: selectedPollingStation.state,
+            acNo: selectedPollingStation.acNo,
+            acName: selectedPollingStation.acName,
+            pcNo: selectedPollingStation.pcNo,
+            pcName: selectedPollingStation.pcName,
+            district: selectedPollingStation.district,
+            groupName: selectedPollingStation.groupName,
+            stationName: selectedPollingStation.stationName,
+            gpsLocation: selectedPollingStation.gpsLocation,
+            latitude: selectedPollingStation.latitude,
+            longitude: selectedPollingStation.longitude
+          } : null,
+          location: gpsLocation, // Include location data for CAPI
           totalQuestions: allQuestions.length,
           answeredQuestions: finalResponses.filter(r => hasResponseContent(r.response)).length,
           skippedQuestions: finalResponses.filter(r => !hasResponseContent(r.response)).length,
@@ -2068,7 +2332,7 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                         let currentAnswers = Array.isArray(currentResponse) ? [...currentResponse] : [];
                         
                         if (currentAnswers.includes(optionValue)) {
-                          // Deselecting
+                          // Deselecting - remove from array while preserving order of remaining items
                           currentAnswers = currentAnswers.filter((a) => a !== optionValue);
                           
                           // Clear "Others" text input if "Others" is deselected
@@ -2080,7 +2344,7 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                             });
                           }
                         } else {
-                          // Selecting
+                          // Selecting - add to end to preserve selection order
                           // Handle "None" option - mutual exclusivity
                           if (isNoneOption) {
                             // If "None" is selected, clear all other selections
@@ -2120,9 +2384,12 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                               showError(`Maximum ${maxSelections} selection${maxSelections > 1 ? 's' : ''} allowed`);
                               return;
                             }
+                            // Add to end to preserve selection order (order in which options were first selected)
+                            // If option was previously selected and deselected, it goes to the end (newest selection)
                             currentAnswers.push(optionValue);
                           }
                         }
+                        // The array order now represents the order in which options were selected
                         handleResponseChange(currentVisibleQuestion.id, currentAnswers);
                       } else {
                         // Single selection
@@ -2335,6 +2602,69 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
             className="w-full p-4 text-lg border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200"
             required={required}
           />
+        );
+
+      case 'polling_station':
+        return (
+          <div className="space-y-4">
+            {/* Group Selection */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Select Group <span className="text-red-500">*</span>
+              </label>
+              {loadingGroups ? (
+                <div className="p-4 text-center text-gray-500">Loading groups...</div>
+              ) : availableGroups.length === 0 ? (
+                <div className="p-4 text-center text-gray-500">No groups available. Please select an AC first.</div>
+              ) : (
+                <select
+                  value={selectedPollingStation.groupName || ''}
+                  onChange={(e) => {
+                    handleResponseChange('polling-station-group', e.target.value);
+                  }}
+                  className="w-full p-4 text-lg border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200"
+                  required={required}
+                >
+                  <option value="">Select a group...</option>
+                  {availableGroups.map((group, index) => (
+                    <option key={index} value={group.name}>
+                      {group.name} ({group.polling_station_count} stations)
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {/* Polling Station Selection - Only show if group is selected */}
+            {selectedPollingStation.groupName && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Polling Station <span className="text-red-500">*</span>
+                </label>
+                {loadingStations ? (
+                  <div className="p-4 text-center text-gray-500">Loading polling stations...</div>
+                ) : availablePollingStations.length === 0 ? (
+                  <div className="p-4 text-center text-gray-500">No polling stations available for this group.</div>
+                ) : (
+                  <select
+                    value={selectedPollingStation.stationName || ''}
+                    onChange={(e) => {
+                      handleResponseChange('polling-station-station', e.target.value);
+                    }}
+                    className="w-full p-4 text-lg border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200"
+                    required={required}
+                  >
+                    <option value="">Select a polling station...</option>
+                    {availablePollingStations.map((station, index) => (
+                      <option key={index} value={station.name}>
+                        {station.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+          </div>
         );
 
       default:
@@ -2733,8 +3063,14 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                     {currentVisibleIndex === visibleQuestions.length - 1 ? (
                       <button
                         onClick={completeInterview}
-                        className="px-6 py-3 bg-green-500 text-white rounded-xl hover:bg-green-600 transition-all duration-200 flex items-center space-x-2 shadow-lg"
+                        disabled={isCatiMode && (callStatus === 'failed' || !callId)}
+                        className={`px-6 py-3 rounded-xl transition-all duration-200 flex items-center space-x-2 shadow-lg ${
+                          isCatiMode && (callStatus === 'failed' || !callId)
+                            ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                            : 'bg-green-500 text-white hover:bg-green-600'
+                        }`}
                         style={{ minHeight: '44px', minWidth: '180px' }}
+                        title={isCatiMode && (callStatus === 'failed' || !callId) ? 'Cannot submit: Call was not successfully initiated' : 'Submit interview'}
                       >
                         <CheckCircle className="w-5 h-5" />
                         <span>Submit</span>
@@ -2806,8 +3142,17 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Abandon Interview</h3>
+            {callStatus === 'failed' && (
+              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-sm text-yellow-800">
+                  <strong>Call Failed:</strong> You can abandon this interview without selecting a reason, or optionally provide one below.
+                </p>
+              </div>
+            )}
             <p className="text-gray-600 mb-4">
-              Please select a reason for abandoning this interview:
+              {callStatus === 'failed' 
+                ? 'Optionally select a reason for abandoning this interview:'
+                : 'Please select a reason for abandoning this interview:'}
             </p>
             
             <div className="space-y-2 mb-4">
@@ -2883,10 +3228,14 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
               </button>
               <button
                 onClick={handleAbandonInterview}
-                disabled={!abandonReason || (abandonReason === 'call_later' && !callLaterDate) || isLoading}
+                disabled={
+                  (!callStatus || callStatus !== 'failed') && 
+                  (!abandonReason || (abandonReason === 'call_later' && !callLaterDate)) || 
+                  isLoading
+                }
                 className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isLoading ? 'Submitting...' : 'Submit'}
+                {isLoading ? 'Submitting...' : callStatus === 'failed' ? 'Abandon (No Reason Required)' : 'Submit'}
               </button>
             </div>
           </div>

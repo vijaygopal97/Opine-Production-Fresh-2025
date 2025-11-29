@@ -211,7 +211,9 @@ const InterviewerSelection = ({ onUpdate, onACSettingsUpdate, initialData, mode,
             companyCode: user.companyCode,
             // Add interview mode fields for filtering
             interviewModes: user.interviewModes || 'Both',
-            canSelectMode: user.canSelectMode || false
+            canSelectMode: user.canSelectMode || false,
+            // Add location control booster from user preferences
+            locationControlBooster: user.preferences?.locationControlBooster || false
           }));
 
           // Filter interviewers based on survey mode
@@ -1092,6 +1094,32 @@ const InterviewerSelection = ({ onUpdate, onACSettingsUpdate, initialData, mode,
                         )}
                         <div className="flex items-center space-x-3 mb-2">
                           <h3 className="text-lg font-semibold text-gray-900">{interviewer.name}</h3>
+                          {/* Location Control (Booster) Toggle - Only for selected interviewers */}
+                          {isSelected && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const updated = selectedInterviewers.map((inv) => {
+                                  if (inv.id === interviewer.id) {
+                                    return {
+                                      ...inv,
+                                      locationControlBooster: !(inv.locationControlBooster || false)
+                                    };
+                                  }
+                                  return inv;
+                                });
+                                setSelectedInterviewers(updated);
+                              }}
+                              className={`p-1.5 rounded-lg transition-colors ${
+                                currentInterviewer?.locationControlBooster
+                                  ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                              }`}
+                              title="Location Control (Booster) - Allow interviewer to bypass geofencing"
+                            >
+                              <MapPin className="w-4 h-4" />
+                            </button>
+                          )}
                           <span className={`px-2 py-1 text-xs font-medium rounded-full ${getAvailabilityColor(interviewer.availability)}`}>
                             {interviewer.availability}
                           </span>

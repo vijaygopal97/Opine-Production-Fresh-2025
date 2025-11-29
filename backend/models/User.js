@@ -233,6 +233,11 @@ const userSchema = new mongoose.Schema({
       preferredLocations: [{ type: String }],
       minPayment: { type: Number, default: 0 },
       maxInterviewsPerDay: { type: Number, default: 10 }
+    },
+    // Location Control (Booster) - allows interviewer to bypass geofencing
+    locationControlBooster: {
+      type: Boolean,
+      default: false
     }
   },
 

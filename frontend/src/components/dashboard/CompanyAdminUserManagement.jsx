@@ -32,7 +32,8 @@ import {
   FileCheck,
   Star,
   FileText,
-  FileImage
+  FileImage,
+  MapPin
 } from 'lucide-react';
 import { authAPI } from '../../services/api';
 import { useToast } from '../../contexts/ToastContext';
@@ -493,13 +494,98 @@ const CompanyAdminUserManagement = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex items-center justify-end space-x-2">
                         {user.userType === 'interviewer' && (
-                          <button
-                            onClick={() => handleViewInterviewer(user)}
-                            className="text-green-600 hover:text-green-800 transition-colors"
-                            title="View Interviewer Profile"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
+                          <>
+                            {/* Location Control (Booster) Toggle */}
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                const newValue = !(user.preferences?.locationControlBooster || false);
+                                
+                                // Optimistically update the UI
+                                setUsers(prevUsers => 
+                                  prevUsers.map(u => 
+                                    u._id === user._id 
+                                      ? {
+                                          ...u,
+                                          preferences: {
+                                            ...u.preferences,
+                                            locationControlBooster: newValue
+                                          }
+                                        }
+                                      : u
+                                  )
+                                );
+                                
+                                try {
+                                  const updatedPreferences = {
+                                    ...user.preferences,
+                                    locationControlBooster: newValue
+                                  };
+                                  const response = await authAPI.updateCompanyUser(user._id, {
+                                    preferences: updatedPreferences
+                                  });
+                                  if (response.success) {
+                                    // Show success toast
+                                    showSuccess(
+                                      newValue 
+                                        ? `Location Control (Booster) enabled for ${user.name || user.email}` 
+                                        : `Location Control (Booster) disabled for ${user.name || user.email}`
+                                    );
+                                  } else {
+                                    // Revert on failure
+                                    setUsers(prevUsers => 
+                                      prevUsers.map(u => 
+                                        u._id === user._id 
+                                          ? {
+                                              ...u,
+                                              preferences: {
+                                                ...u.preferences,
+                                                locationControlBooster: !newValue
+                                              }
+                                            }
+                                          : u
+                                      )
+                                    );
+                                    showError('Failed to update location control setting');
+                                  }
+                                } catch (error) {
+                                  console.error('Error updating location control booster:', error);
+                                  // Revert on error
+                                  setUsers(prevUsers => 
+                                    prevUsers.map(u => 
+                                      u._id === user._id 
+                                        ? {
+                                            ...u,
+                                            preferences: {
+                                              ...u.preferences,
+                                              locationControlBooster: !newValue
+                                            }
+                                          }
+                                        : u
+                                    )
+                                  );
+                                  showError('Failed to update location control setting');
+                                }
+                              }}
+                              className={`p-2 rounded-lg transition-colors ${
+                                user.preferences?.locationControlBooster
+                                  ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                              }`}
+                              title={user.preferences?.locationControlBooster 
+                                ? 'Location Control (Booster) - Enabled - Click to disable' 
+                                : 'Location Control (Booster) - Disabled - Click to enable'}
+                            >
+                              <MapPin className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleViewInterviewer(user)}
+                              className="text-green-600 hover:text-green-800 transition-colors"
+                              title="View Interviewer Profile"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                          </>
                         )}
                         <button
                           onClick={() => handleEditUser(user)}

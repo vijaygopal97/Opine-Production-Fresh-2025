@@ -702,6 +702,9 @@ const ViewResponsesPage = () => {
       'Interviewer Email',
       'Response Date',
       'Status',
+      'Assembly Constituency (AC)',
+      'Parliamentary Constituency (PC)',
+      'District',
       'GPS Coordinates',
       'Call ID' // For CATI interviews
     ];
@@ -1336,22 +1339,51 @@ const ViewResponsesPage = () => {
                           {/* Location - Hidden on small screens */}
                           <td className="px-3 sm:px-6 py-4 whitespace-nowrap hidden md:table-cell">
                             <div className="text-sm text-gray-900">
-                              <div className="flex items-center space-x-1 mb-1">
-                                <MapPin className="h-4 w-4 text-gray-400" />
-                                <span className="font-medium">AC: {respondentInfo.ac}</span>
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                <span className="font-medium">City:</span> {response.location?.city || respondentInfo.city}
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                <span className="font-medium">District:</span> {respondentInfo.district}
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                <span className="font-medium">State:</span> {getStateFromGPS(response.location)}
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                <span className="font-medium">Lok Sabha:</span> {getLokSabhaFromAC(respondentInfo.ac)}
-                              </div>
+                              {response.selectedPollingStation ? (
+                                <>
+                                  <div className="flex items-center space-x-1 mb-1">
+                                    <MapPin className="h-4 w-4 text-gray-400" />
+                                    <span className="font-medium">AC: {response.selectedPollingStation.acName || response.selectedAC || respondentInfo.ac}</span>
+                                  </div>
+                                  {response.selectedPollingStation.pcName && (
+                                    <div className="text-xs text-gray-500">
+                                      <span className="font-medium">PC:</span> {response.selectedPollingStation.pcName} ({response.selectedPollingStation.pcNo})
+                                    </div>
+                                  )}
+                                  {response.selectedPollingStation.district && (
+                                    <div className="text-xs text-gray-500">
+                                      <span className="font-medium">District:</span> {response.selectedPollingStation.district}
+                                    </div>
+                                  )}
+                                  {response.selectedPollingStation.stationName && (
+                                    <div className="text-xs text-gray-500">
+                                      <span className="font-medium">Polling Station:</span> {response.selectedPollingStation.stationName}
+                                    </div>
+                                  )}
+                                  <div className="text-xs text-gray-500">
+                                    <span className="font-medium">State:</span> {response.selectedPollingStation.state || getStateFromGPS(response.location)}
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="flex items-center space-x-1 mb-1">
+                                    <MapPin className="h-4 w-4 text-gray-400" />
+                                    <span className="font-medium">AC: {response.selectedAC || respondentInfo.ac}</span>
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    <span className="font-medium">City:</span> {response.location?.city || respondentInfo.city}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    <span className="font-medium">District:</span> {respondentInfo.district}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    <span className="font-medium">State:</span> {getStateFromGPS(response.location)}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    <span className="font-medium">Lok Sabha:</span> {getLokSabhaFromAC(respondentInfo.ac)}
+                                  </div>
+                                </>
+                              )}
                             </div>
                           </td>
                           

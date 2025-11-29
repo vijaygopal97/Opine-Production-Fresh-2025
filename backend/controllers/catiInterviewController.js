@@ -45,12 +45,46 @@ const initiateDeepCall = async (fromNumber, toNumber, fromType = 'Number', toTyp
     });
 
     const apiResponse = response.data;
+    console.log('📞 DeepCall API raw response:', apiResponse);
+    
+    // Normalize common fields
+    const status = typeof apiResponse?.status === 'string'
+      ? apiResponse.status.toLowerCase()
+      : apiResponse?.status;
+    const code = apiResponse?.code ?? apiResponse?.statusCode ?? apiResponse?.status_code;
+
+    // Treat as error only when status explicitly indicates error or when we have a clear non‑success code
+    const isExplicitErrorStatus = status === 'error' || status === 'failed' || status === 'failure';
+    const isErrorCode = code !== undefined && !['0', 0, '200', 200].includes(code);
+
+    if (isExplicitErrorStatus || isErrorCode) {
+      const errorMessage =
+        apiResponse.message ||
+        (typeof apiResponse.error === 'string' ? apiResponse.error : apiResponse.error?.message) ||
+        `DeepCall API Error: ${code || 'Unknown error'}`;
+      return {
+        success: false,
+        message: errorMessage,
+        error: {
+          message: errorMessage,
+          code,
+          status: apiResponse.status,
+          details: apiResponse
+        },
+        statusCode: code
+      };
+    }
+    
     const callId = apiResponse?.callId || apiResponse?.id || apiResponse?.call_id || apiResponse?.data?.callId;
 
     if (!callId) {
       return {
         success: false,
         message: 'API response does not contain call ID',
+        error: {
+          message: 'API response does not contain call ID',
+          details: apiResponse
+        },
         apiResponse: apiResponse
       };
     }
@@ -68,10 +102,30 @@ const initiateDeepCall = async (fromNumber, toNumber, fromType = 'Number', toTyp
 
   } catch (error) {
     console.error('Error initiating DeepCall:', error);
+    console.error('Error details:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+      statusText: error.response?.statusText
+    });
+    
+    // Extract error message from various possible formats
+    const errorMessage = error.response?.data?.message || 
+                        error.response?.data?.error?.message || 
+                        (typeof error.response?.data?.error === 'string' ? error.response?.data?.error : null) ||
+                        error.message || 
+                        'Failed to initiate call';
+    
     return {
       success: false,
-      message: error.response?.data?.message || error.message,
-      error: error.response?.data || error.message
+      message: errorMessage,
+      error: {
+        message: errorMessage,
+        code: error.response?.data?.code || error.response?.data?.error?.code || error.response?.status,
+        status: error.response?.data?.status,
+        details: error.response?.data || error.message
+      },
+      statusCode: error.response?.status
     };
   }
 };
@@ -317,12 +371,19 @@ const makeCallToRespondent = async (req, res) => {
       queueEntry.assignedTo = null; // Unassign so it can be picked up later
       queueEntry.assignedAt = null;
       queueEntry.currentAttemptNumber += 1;
+      
+      // Extract detailed error message
+      const errorMessage = callResult.message || 
+                          callResult.error?.message || 
+                          (typeof callResult.error === 'string' ? callResult.error : null) ||
+                          'Call initiation failed';
+      
       queueEntry.callAttempts.push({
         attemptNumber: queueEntry.currentAttemptNumber,
         attemptedAt: new Date(),
         attemptedBy: interviewerId,
         status: 'failed',
-        reason: callResult.message || 'Call initiation failed'
+        reason: errorMessage
       });
       // Update createdAt to move to end of queue (for sorting by createdAt)
       queueEntry.createdAt = new Date();
@@ -330,8 +391,12 @@ const makeCallToRespondent = async (req, res) => {
 
       return res.status(500).json({
         success: false,
-        message: 'Failed to initiate call',
-        error: callResult.message
+        message: errorMessage,
+        error: {
+          message: errorMessage,
+          code: callResult.error?.code || callResult.statusCode,
+          details: callResult.error
+        }
       });
     }
 
@@ -390,6 +455,13 @@ const makeCallToRespondent = async (req, res) => {
   } catch (error) {
     console.error('Error making call to respondent:', error);
     
+    // Extract detailed error message
+    const errorMessage = error.response?.data?.message || 
+                        error.response?.data?.error?.message || 
+                        (typeof error.response?.data?.error === 'string' ? error.response?.data?.error : null) ||
+                        error.message || 
+                        'Failed to make call';
+    
     // If we have a queueEntry, move it to end of queue
     try {
       if (queueEntry) {
@@ -397,6 +469,14 @@ const makeCallToRespondent = async (req, res) => {
         queueEntry.priority = -1;
         queueEntry.assignedTo = null;
         queueEntry.assignedAt = null;
+        queueEntry.currentAttemptNumber += 1;
+        queueEntry.callAttempts.push({
+          attemptNumber: queueEntry.currentAttemptNumber,
+          attemptedAt: new Date(),
+          attemptedBy: interviewerId,
+          status: 'failed',
+          reason: errorMessage
+        });
         queueEntry.createdAt = new Date();
         await queueEntry.save();
       }
@@ -406,8 +486,12 @@ const makeCallToRespondent = async (req, res) => {
     
     res.status(500).json({
       success: false,
-      message: 'Failed to make call',
-      error: error.message
+      message: errorMessage,
+      error: {
+        message: errorMessage,
+        code: error.response?.data?.error?.code || error.response?.status,
+        details: error.response?.data?.error || error.message
+      }
     });
   }
 };
@@ -421,7 +505,8 @@ const abandonInterview = async (req, res) => {
     const { reason, notes, callLaterDate } = req.body;
     const interviewerId = req.user._id;
 
-    const queueEntry = await CatiRespondentQueue.findById(queueId);
+    const queueEntry = await CatiRespondentQueue.findById(queueId)
+      .populate('assignedTo', '_id');
     if (!queueEntry) {
       return res.status(404).json({
         success: false,
@@ -429,7 +514,9 @@ const abandonInterview = async (req, res) => {
       });
     }
 
-    if (queueEntry.assignedTo.toString() !== interviewerId.toString()) {
+    // Check if assigned to this interviewer, or if not assigned (call failed scenario)
+    // Allow abandonment if not assigned (call failed) or if assigned to this interviewer
+    if (queueEntry.assignedTo && queueEntry.assignedTo._id.toString() !== interviewerId.toString()) {
       return res.status(403).json({
         success: false,
         message: 'You are not assigned to this respondent'
@@ -437,6 +524,7 @@ const abandonInterview = async (req, res) => {
     }
 
     // Map abandonment reason to status
+    // If no reason provided (call failed scenario), default to 'call_failed'
     const statusMap = {
       'call_later': 'call_later',
       'not_interested': 'not_interested',
@@ -450,7 +538,7 @@ const abandonInterview = async (req, res) => {
       'other': 'call_failed'
     };
 
-    const newStatus = statusMap[reason] || 'call_failed';
+    const newStatus = reason ? (statusMap[reason] || 'call_failed') : 'call_failed';
 
     // Update queue entry
     queueEntry.status = newStatus;
@@ -508,7 +596,7 @@ const abandonInterview = async (req, res) => {
 const completeCatiInterview = async (req, res) => {
   try {
     const { queueId } = req.params;
-    const { sessionId, responses, selectedAC, totalTimeSpent, startTime, endTime, totalQuestions: frontendTotalQuestions, answeredQuestions: frontendAnsweredQuestions, completionPercentage: frontendCompletionPercentage } = req.body;
+    const { sessionId, responses, selectedAC, selectedPollingStation, totalTimeSpent, startTime, endTime, totalQuestions: frontendTotalQuestions, answeredQuestions: frontendAnsweredQuestions, completionPercentage: frontendCompletionPercentage } = req.body;
     const interviewerId = req.user._id;
 
     const queueEntry = await CatiRespondentQueue.findById(queueId)
@@ -621,6 +709,7 @@ const completeCatiInterview = async (req, res) => {
       // Update existing response
       surveyResponse.responses = allResponses;
       surveyResponse.selectedAC = selectedAC || null;
+      surveyResponse.selectedPollingStation = selectedPollingStation || null;
       surveyResponse.endTime = finalEndTime;
       surveyResponse.totalTimeSpent = finalTotalTimeSpent;
       surveyResponse.totalQuestions = totalQuestions;
@@ -676,6 +765,7 @@ const completeCatiInterview = async (req, res) => {
         call_id: callId || null, // Store DeepCall callId
         responses: allResponses,
         selectedAC: selectedAC || null,
+        selectedPollingStation: selectedPollingStation || null,
         location: null, // No GPS location for CATI
         startTime: finalStartTime, // Required field
         endTime: finalEndTime, // Required field

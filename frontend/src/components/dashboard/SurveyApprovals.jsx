@@ -1546,6 +1546,19 @@ const SurveyApprovals = () => {
                                 </span>
                               </div>
                             )}
+                            {interview.qcBatch && (
+                              <div className="text-xs mt-1">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                                  interview.qcBatch.status === 'collecting' 
+                                    ? 'bg-yellow-100 text-yellow-800' 
+                                    : interview.qcBatch.status === 'processing' || interview.qcBatch.status === 'qc_in_progress'
+                                    ? 'bg-blue-100 text-blue-800'
+                                    : 'bg-gray-100 text-gray-800'
+                                }`} title={`Batch Status: ${interview.qcBatch.status === 'collecting' ? 'Collecting Responses' : interview.qcBatch.status}`}>
+                                  {interview.qcBatch.status === 'collecting' ? 'Batch: Collecting' : `Batch: ${interview.qcBatch.status}`}
+                                </span>
+                              </div>
+                            )}
                           </div>
                         </td>
                         

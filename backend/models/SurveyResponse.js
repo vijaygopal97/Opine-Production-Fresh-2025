@@ -124,6 +124,21 @@ const surveyResponseSchema = new mongoose.Schema({
     trim: true
   },
   
+  // Polling Station Selection (for surveys with AC assignment)
+  selectedPollingStation: {
+    state: { type: String, trim: true },
+    acNo: { type: String, trim: true },
+    acName: { type: String, trim: true },
+    pcNo: { type: Number },
+    pcName: { type: String, trim: true },
+    district: { type: String, trim: true },
+    groupName: { type: String, trim: true },
+    stationName: { type: String, trim: true },
+    gpsLocation: { type: String, trim: true }, // "lat,lng" format
+    latitude: { type: Number },
+    longitude: { type: Number }
+  },
+  
   // Location Information
   location: {
     latitude: {
@@ -459,6 +474,7 @@ surveyResponseSchema.statics.createCompleteResponse = async function(data) {
     qualityMetrics,
     metadata,
     selectedAC,
+    selectedPollingStation,
     location
   } = data;
   
@@ -489,6 +505,7 @@ surveyResponseSchema.statics.createCompleteResponse = async function(data) {
     deviceInfo,
     audioRecording: audioRecording || {},
     selectedAC: selectedAC || null,
+    selectedPollingStation: selectedPollingStation || null,
     location: location || null,
     totalQuestions,
     answeredQuestions,
