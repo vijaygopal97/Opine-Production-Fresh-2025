@@ -351,6 +351,30 @@ exports.login = async (req, res) => {
   }
 };
 
+// @desc    Logout user
+// @route   POST /api/auth/logout
+// @access  Protected
+// Note: Since JWT tokens are stateless, logout is primarily handled client-side
+// This endpoint exists for consistency and potential future token blacklisting
+exports.logout = async (req, res) => {
+  try {
+    // JWT tokens are stateless, so logout is primarily handled client-side
+    // by clearing the token from storage. This endpoint provides a clean
+    // way for clients to notify the server of logout if needed.
+    
+    res.status(200).json({
+      success: true,
+      message: 'Logout successful'
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error. Please try again later.'
+    });
+  }
+};
+
 // @desc    Get current user profile
 // @route   GET /api/auth/me
 // @access  Private

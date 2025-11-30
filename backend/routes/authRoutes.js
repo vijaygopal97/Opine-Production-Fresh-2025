@@ -2,6 +2,7 @@ const express = require('express');
 const {
   register,
   login,
+  logout,
   getMe,
   updateProfile,
   changePassword,
@@ -41,6 +42,7 @@ const router = express.Router();
 // Public routes
 router.post('/register', validateRegistration, register);
 router.post('/login', validateLogin, login);
+router.post('/logout', logout); // Logout doesn't require authentication (token cleared client-side)
 router.get('/verify-email/:token', verifyEmail);
 router.get('/companies', getCompanies);
 
