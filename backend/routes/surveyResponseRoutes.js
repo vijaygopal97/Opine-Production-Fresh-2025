@@ -23,7 +23,8 @@ const {
   getSurveyResponseById,
   getSurveyResponses,
   approveSurveyResponse,
-  rejectSurveyResponse
+  rejectSurveyResponse,
+  getACPerformanceStats
 } = require('../controllers/surveyResponseController');
 const { protect } = require('../middleware/auth');
 
@@ -115,6 +116,9 @@ router.get('/debug-responses', debugSurveyResponses);
 
 // Get survey responses for View Responses modal
 router.get('/survey/:surveyId/responses', getSurveyResponses);
+
+// Get AC Performance Stats
+router.get('/survey/:surveyId/ac-performance', getACPerformanceStats);
 
 // Approve survey response
 router.patch('/:responseId/approve', approveSurveyResponse);

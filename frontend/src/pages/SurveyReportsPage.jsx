@@ -62,6 +62,7 @@ const SurveyReportsPage = () => {
   const [showDailyTrendsModal, setShowDailyTrendsModal] = useState(false);
   const [catiStats, setCatiStats] = useState(null);
   const [showCallRecords, setShowCallRecords] = useState(false);
+  const [acPerformanceStats, setAcPerformanceStats] = useState(null);
   const { showError } = useToast();
 
   // Filter states
@@ -292,6 +293,17 @@ const SurveyReportsPage = () => {
           }
         } else {
           console.log('⚠️⚠️⚠️ Survey is not CATI, skipping CATI stats fetch');
+        }
+
+        // Fetch AC Performance Stats
+        try {
+          const acStatsResponse = await surveyResponseAPI.getACPerformanceStats(surveyId);
+          if (acStatsResponse.success) {
+            setAcPerformanceStats(acStatsResponse.data);
+          }
+        } catch (acStatsError) {
+          console.error('Error fetching AC performance stats:', acStatsError);
+          // Don't show error, just log it - AC stats are optional
         }
       }
     } catch (error) {
@@ -1697,18 +1709,54 @@ const SurveyReportsPage = () => {
                 <div className="flex items-center space-x-3">
                   <button
                     onClick={() => {
-                      const csvData = analytics.acStats.map(stat => ({
-                        'Assembly Constituency': stat.ac,
-                        'PC Name': stat.pcName || '',
-                        'Number of Interviewers Worked': stat.interviewersCount || 0,
-                        'Approved': stat.approved || 0,
-                        'Rejected': stat.rejected || 0,
-                        'Under QC': stat.underQC || 0,
-                        'Total Responses': stat.count,
-                        'CAPI Responses': stat.capi,
-                        'CATI Responses': stat.cati,
-                        'Percentage': `${stat.percentage.toFixed(1)}%`
-                      }));
+                      const statsToUse = acPerformanceStats || analytics.acStats;
+                      const csvData = statsToUse.map(stat => {
+                        const displayStat = acPerformanceStats ? stat : {
+                          ...stat,
+                          pcName: stat.pcName || '',
+                          psCovered: 0,
+                          completedInterviews: stat.count,
+                          systemRejections: 0,
+                          countsAfterRejection: stat.count,
+                          gpsPending: 0,
+                          gpsFail: 0,
+                          femalePercentage: 0,
+                          withoutPhonePercentage: 0,
+                          scPercentage: 0,
+                          muslimPercentage: 0,
+                          age18to24Percentage: 0,
+                          age50PlusPercentage: 0
+                        };
+                        
+                        const csvRow = {
+                          'Assembly Constituency': stat.ac,
+                          'PC Name': displayStat.pcName || '',
+                          'PS Covered': displayStat.psCovered || 0,
+                          'Completed Interviews': displayStat.completedInterviews || displayStat.totalResponses || stat.count,
+                          'System Rejections': displayStat.systemRejections || 0,
+                          'Counts after Terminated and System Rejection': displayStat.countsAfterRejection || displayStat.totalResponses || stat.count,
+                          'GPS Pending': displayStat.gpsPending || 0,
+                          'GPS Fail': displayStat.gpsFail || 0,
+                          'Number of Interviewers Worked': displayStat.interviewersCount || stat.interviewersCount || 0,
+                          'Approved': displayStat.approved || stat.approved || 0,
+                          'Rejected': displayStat.rejected || stat.rejected || 0,
+                          'Under QC': displayStat.underQC || stat.underQC || 0,
+                          'CAPI Responses': displayStat.capi || stat.capi || 0,
+                          'CATI Responses': displayStat.cati || stat.cati || 0,
+                          '% Of Female Interviews': `${displayStat.femalePercentage?.toFixed(2) || '0.00'}%`,
+                          '% of interviews without Phone Number': `${displayStat.withoutPhonePercentage?.toFixed(2) || '0.00'}%`,
+                          '% of Interviews mentioned as Muslims': `${displayStat.muslimPercentage?.toFixed(2) || '0.00'}%`,
+                          '% of Interviews under the age of (18-24)': `${displayStat.age18to24Percentage?.toFixed(2) || '0.00'}%`,
+                          '% of Interviews under the age of (50)': `${displayStat.age50PlusPercentage?.toFixed(2) || '0.00'}%`
+                        };
+                        
+                        // Add SC column only for survey 68fd1915d41841da463f0d46
+                        if (surveyId === '68fd1915d41841da463f0d46') {
+                          csvRow['% of Interviews mentioned as SC'] = `${displayStat.scPercentage?.toFixed(2) || '0.00'}%`;
+                        }
+                        
+                        return csvRow;
+                      });
                       const csvContent = [Object.keys(csvData[0]), ...csvData.map(row => Object.values(row))]
                         .map(row => row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(','))
                         .join('\n');
@@ -1743,36 +1791,80 @@ const SurveyReportsPage = () => {
                       <th className="text-left py-3 px-4 font-medium text-gray-900">Rank</th>
                       <th className="text-left py-3 px-4 font-medium text-gray-900">Assembly Constituency</th>
                       <th className="text-left py-3 px-4 font-medium text-gray-900">PC Name</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">PS Covered</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">Completed Interviews</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">System Rejections</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">Counts after Terminated and System Rejection</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">GPS Pending</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">GPS Fail</th>
                       <th className="text-right py-3 px-4 font-medium text-gray-900">Number of Interviewers Worked</th>
                       <th className="text-right py-3 px-4 font-medium text-gray-900">Approved</th>
                       <th className="text-right py-3 px-4 font-medium text-gray-900">Rejected</th>
                       <th className="text-right py-3 px-4 font-medium text-gray-900">Under QC</th>
-                      <th className="text-right py-3 px-4 font-medium text-gray-900">Total Responses</th>
                       <th className="text-right py-3 px-4 font-medium text-gray-900">CAPI</th>
                       <th className="text-right py-3 px-4 font-medium text-gray-900">CATI</th>
-                      <th className="text-right py-3 px-4 font-medium text-gray-900">Percentage</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">% Of Female Interviews</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">% of interviews without Phone Number</th>
+                      {surveyId === '68fd1915d41841da463f0d46' && (
+                        <th className="text-right py-3 px-4 font-medium text-gray-900">% of Interviews mentioned as SC</th>
+                      )}
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">% of Interviews mentioned as Muslims</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">% of Interviews under the age of (18-24)</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">% of Interviews under the age of (50)</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {analytics.acStats.map((stat, index) => (
-                      <tr key={stat.ac} className="border-b border-gray-100">
-                        <td className="py-3 px-4">
-                          <span className="w-6 h-6 bg-blue-100 text-blue-600 text-xs font-semibold rounded-full flex items-center justify-center">
-                            {index + 1}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 font-medium text-gray-900">{stat.ac}</td>
-                        <td className="py-3 px-4 text-gray-600">{stat.pcName || '-'}</td>
-                        <td className="py-3 px-4 text-right font-semibold text-gray-900">{stat.interviewersCount || 0}</td>
-                        <td className="py-3 px-4 text-right font-semibold text-green-600">{stat.approved || 0}</td>
-                        <td className="py-3 px-4 text-right font-semibold text-red-600">{stat.rejected || 0}</td>
-                        <td className="py-3 px-4 text-right font-semibold text-yellow-600">{stat.underQC || 0}</td>
-                        <td className="py-3 px-4 text-right font-semibold text-gray-900">{stat.count}</td>
-                        <td className="py-3 px-4 text-right font-semibold text-green-600">{stat.capi}</td>
-                        <td className="py-3 px-4 text-right font-semibold text-orange-600">{stat.cati}</td>
-                        <td className="py-3 px-4 text-right text-gray-600">{stat.percentage.toFixed(1)}%</td>
-                      </tr>
-                    ))}
+                    {(acPerformanceStats || analytics.acStats).map((stat, index) => {
+                      // Use backend data if available, otherwise use frontend calculated data
+                      const displayStat = acPerformanceStats ? stat : {
+                        ...stat,
+                        pcName: stat.pcName || '',
+                        psCovered: 0,
+                        completedInterviews: stat.count,
+                        systemRejections: 0,
+                        countsAfterRejection: stat.count,
+                        gpsPending: 0,
+                        gpsFail: 0,
+                        femalePercentage: 0,
+                        withoutPhonePercentage: 0,
+                        scPercentage: 0,
+                        muslimPercentage: 0,
+                        age18to24Percentage: 0,
+                        age50PlusPercentage: 0
+                      };
+                      
+                      return (
+                        <tr key={stat.ac} className="border-b border-gray-100">
+                          <td className="py-3 px-4">
+                            <span className="w-6 h-6 bg-blue-100 text-blue-600 text-xs font-semibold rounded-full flex items-center justify-center">
+                              {index + 1}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-medium text-gray-900">{stat.ac}</td>
+                          <td className="py-3 px-4 text-gray-600">{displayStat.pcName || '-'}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-gray-900">{displayStat.psCovered || 0}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-gray-900">{displayStat.completedInterviews || displayStat.totalResponses || stat.count}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-red-600">{displayStat.systemRejections || 0}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-gray-900">{displayStat.countsAfterRejection || displayStat.totalResponses || stat.count}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-gray-900">{displayStat.gpsPending || 0}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-gray-900">{displayStat.gpsFail || 0}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-gray-900">{displayStat.interviewersCount || stat.interviewersCount || 0}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-green-600">{displayStat.approved || stat.approved || 0}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-red-600">{displayStat.rejected || stat.rejected || 0}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-yellow-600">{displayStat.underQC || stat.underQC || 0}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-green-600">{displayStat.capi || stat.capi || 0}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-orange-600">{displayStat.cati || stat.cati || 0}</td>
+                          <td className="py-3 px-4 text-right text-gray-600">{displayStat.femalePercentage?.toFixed(2) || '0.00'}%</td>
+                          <td className="py-3 px-4 text-right text-gray-600">{displayStat.withoutPhonePercentage?.toFixed(2) || '0.00'}%</td>
+                          {surveyId === '68fd1915d41841da463f0d46' && (
+                            <td className="py-3 px-4 text-right text-gray-600">{displayStat.scPercentage?.toFixed(2) || '0.00'}%</td>
+                          )}
+                          <td className="py-3 px-4 text-right text-gray-600">{displayStat.muslimPercentage?.toFixed(2) || '0.00'}%</td>
+                          <td className="py-3 px-4 text-right text-gray-600">{displayStat.age18to24Percentage?.toFixed(2) || '0.00'}%</td>
+                          <td className="py-3 px-4 text-right text-gray-600">{displayStat.age50PlusPercentage?.toFixed(2) || '0.00'}%</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

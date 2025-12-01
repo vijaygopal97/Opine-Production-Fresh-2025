@@ -849,6 +849,15 @@ export const surveyResponseAPI = {
     },
 
     // Get survey responses for View Responses modal
+    getACPerformanceStats: async (surveyId) => {
+      try {
+        const response = await api.get(`/api/survey-responses/survey/${surveyId}/ac-performance`);
+        return response.data;
+      } catch (error) {
+        console.error('Error fetching AC performance stats:', error);
+        throw error;
+      }
+    },
     getSurveyResponses: async (surveyId, params = {}) => {
       try {
         const response = await api.get(`/api/survey-responses/survey/${surveyId}/responses`, { params });

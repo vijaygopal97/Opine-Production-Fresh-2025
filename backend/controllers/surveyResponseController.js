@@ -2582,6 +2582,296 @@ const rejectSurveyResponse = async (req, res) => {
   }
 };
 
+// @desc    Get AC Performance Stats
+// @route   GET /api/survey-responses/survey/:surveyId/ac-performance
+// @access  Private (Company Admin)
+const getACPerformanceStats = async (req, res) => {
+  try {
+    const { surveyId } = req.params;
+    const { getGroupsForAC } = require('../utils/pollingStationHelper');
+    const QCBatch = require('../models/QCBatch');
+
+    // Get survey
+    const survey = await Survey.findById(surveyId);
+    if (!survey) {
+      return res.status(404).json({
+        success: false,
+        message: 'Survey not found'
+      });
+    }
+
+    // Check access
+    if (req.user.userType !== 'company_admin' && req.user.company?.toString() !== survey.company?.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    const state = survey.acAssignmentState || 'West Bengal';
+
+    // Get all responses for this survey
+    const allResponses = await SurveyResponse.find({ survey: surveyId })
+      .populate('interviewer', 'firstName lastName')
+      .populate('qcBatch', 'status')
+      .lean();
+
+    // Get all batches with 'collecting' status for this survey
+    const collectingBatches = await QCBatch.find({ 
+      survey: surveyId, 
+      status: 'collecting' 
+    }).select('_id responses').lean();
+    
+    const collectingBatchIds = new Set(collectingBatches.map(b => b._id.toString()));
+    const responsesInCollectingBatches = new Set();
+    collectingBatches.forEach(batch => {
+      batch.responses.forEach(respId => {
+        responsesInCollectingBatches.add(respId.toString());
+      });
+    });
+
+    // Helper to get PC from AC
+    const getPCFromAC = (acName) => {
+      if (!acName) return null;
+      const acData = getGroupsForAC(state, acName);
+      return acData?.pc_name || null;
+    };
+
+    // Helper to find question response by keywords
+    const findQuestionResponse = (responses, keywords) => {
+      if (!responses || !Array.isArray(responses)) return null;
+      const normalizedKeywords = keywords.map(k => k.toLowerCase());
+      return responses.find(r => {
+        const questionText = (r.questionText || '').toLowerCase();
+        return normalizedKeywords.some(keyword => questionText.includes(keyword));
+      });
+    };
+
+    // Helper to get main text (strip translations)
+    const getMainTextValue = (text) => {
+      if (!text || typeof text !== 'string') return text || '';
+      const translationRegex = /^(.+?)\s*\{([^}]+)\}\s*$/;
+      const match = text.match(translationRegex);
+      return match ? match[1].trim() : text.trim();
+    };
+
+    // Group responses by AC
+    const acMap = new Map();
+
+    allResponses.forEach(response => {
+      const ac = response.selectedAC || 
+                 response.selectedPollingStation?.acName || 
+                 (response.responses?.find(r => 
+                   (r.questionText || '').toLowerCase().includes('assembly') ||
+                   (r.questionText || '').toLowerCase().includes('constituency')
+                 )?.response);
+
+      if (!ac || ac === 'N/A') return;
+
+      if (!acMap.has(ac)) {
+        acMap.set(ac, {
+          ac,
+          responses: [],
+          pollingStations: new Set(),
+          interviewers: new Set(),
+          systemRejections: 0,
+          pendingQC: 0,
+          inBatches: 0
+        });
+      }
+
+      const acData = acMap.get(ac);
+      acData.responses.push(response);
+
+      // Track polling stations
+      if (response.selectedPollingStation?.stationName) {
+        acData.pollingStations.add(response.selectedPollingStation.stationName);
+      }
+
+      // Track interviewers
+      if (response.interviewer?._id) {
+        acData.interviewers.add(response.interviewer._id.toString());
+      }
+
+      // System rejections (auto-rejected, too short, etc.)
+      // Check verificationData.feedback or metadata for system rejection indicators
+      if (response.status === 'Rejected') {
+        const feedback = (response.verificationData?.feedback || '').toLowerCase();
+        const metadata = response.metadata || {};
+        const isAutoRejected = metadata.autoRejected || 
+                              metadata.isSystemRejection ||
+                              feedback.includes('too short') || 
+                              feedback.includes('system') || 
+                              feedback.includes('auto') ||
+                              feedback.includes('automatic') ||
+                              feedback.includes('duration') ||
+                              feedback.includes('minimum time');
+        
+        if (isAutoRejected) {
+          acData.systemRejections += 1;
+        }
+      }
+
+      // Under QC: Pending + In batches
+      if (response.status === 'Pending_Approval') {
+        acData.pendingQC += 1;
+      }
+      
+      // Check if in collecting batches
+      if (response.qcBatch && 
+          (collectingBatchIds.has(response.qcBatch._id?.toString()) || 
+           collectingBatchIds.has(response.qcBatch.toString()) ||
+           responsesInCollectingBatches.has(response._id.toString()))) {
+        acData.inBatches += 1;
+      }
+    });
+
+    // Calculate stats for each AC
+    const acStats = Array.from(acMap.entries()).map(([ac, acData]) => {
+      const responses = acData.responses;
+      const totalResponses = responses.length;
+
+      // Get PC
+      const pcName = getPCFromAC(ac) || 
+                     responses.find(r => r.selectedPollingStation?.pcName)?.selectedPollingStation?.pcName || 
+                     null;
+
+      // Count by status
+      const approved = responses.filter(r => r.status === 'Approved').length;
+      const rejected = responses.filter(r => r.status === 'Rejected').length;
+      const pending = responses.filter(r => r.status === 'Pending_Approval').length;
+
+      // Completed Interviews = Total (Approved + Rejected + Pending)
+      const completedInterviews = totalResponses;
+
+      // Counts after Terminated and System Rejection = Total - System Rejections
+      const countsAfterRejection = totalResponses - acData.systemRejections;
+
+      // Under QC = Pending + In batches (for now, just pending)
+      const underQC = acData.pendingQC + acData.inBatches;
+
+      // PS Covered
+      const psCovered = acData.pollingStations.size;
+
+      // CAPI and CATI counts
+      const capi = responses.filter(r => (r.interviewMode || '').toUpperCase() === 'CAPI').length;
+      const cati = responses.filter(r => (r.interviewMode || '').toUpperCase() === 'CATI').length;
+
+      // Demographic calculations
+      let femaleCount = 0;
+      let withoutPhoneCount = 0;
+      let scCount = 0;
+      let muslimCount = 0;
+      let age18to24Count = 0;
+      let age50PlusCount = 0;
+
+      responses.forEach(response => {
+        const responseData = response.responses || [];
+
+        // Female count
+        const genderResponse = findQuestionResponse(responseData, ['gender', 'sex']);
+        if (genderResponse?.response) {
+          const genderValue = getMainTextValue(String(genderResponse.response)).toLowerCase();
+          if (genderValue.includes('female') || genderValue.includes('woman') || genderValue.includes('f')) {
+            femaleCount += 1;
+          }
+        }
+
+        // Phone number check
+        const phoneResponse = findQuestionResponse(responseData, ['phone', 'mobile', 'contact', 'number']);
+        if (!phoneResponse?.response || 
+            String(phoneResponse.response).trim() === '' || 
+            String(phoneResponse.response).trim() === 'N/A') {
+          withoutPhoneCount += 1;
+        }
+
+        // SC count (only for survey 68fd1915d41841da463f0d46)
+        if (surveyId === '68fd1915d41841da463f0d46') {
+          const casteResponse = findQuestionResponse(responseData, ['caste', 'scheduled cast', 'sc', 'category']);
+          if (casteResponse?.response) {
+            const casteValue = getMainTextValue(String(casteResponse.response)).toLowerCase();
+            if (casteValue.includes('scheduled cast') || 
+                casteValue.includes('sc') || 
+                casteValue.includes('scheduled caste')) {
+              scCount += 1;
+            }
+          }
+        }
+
+        // Muslim count
+        const religionResponse = findQuestionResponse(responseData, ['religion', 'muslim', 'hindu', 'christian']);
+        if (religionResponse?.response) {
+          const religionValue = getMainTextValue(String(religionResponse.response)).toLowerCase();
+          if (religionValue.includes('muslim') || religionValue.includes('islam')) {
+            muslimCount += 1;
+          }
+        }
+
+        // Age groups
+        const ageResponse = findQuestionResponse(responseData, ['age', 'year']);
+        if (ageResponse?.response) {
+          const age = parseInt(ageResponse.response);
+          if (!isNaN(age)) {
+            if (age >= 18 && age <= 24) {
+              age18to24Count += 1;
+            }
+            if (age >= 50) {
+              age50PlusCount += 1;
+            }
+          }
+        }
+      });
+
+      // Calculate percentages
+      const femalePercentage = totalResponses > 0 ? (femaleCount / totalResponses) * 100 : 0;
+      const withoutPhonePercentage = totalResponses > 0 ? (withoutPhoneCount / totalResponses) * 100 : 0;
+      const scPercentage = totalResponses > 0 ? (scCount / totalResponses) * 100 : 0;
+      const muslimPercentage = totalResponses > 0 ? (muslimCount / totalResponses) * 100 : 0;
+      const age18to24Percentage = totalResponses > 0 ? (age18to24Count / totalResponses) * 100 : 0;
+      const age50PlusPercentage = totalResponses > 0 ? (age50PlusCount / totalResponses) * 100 : 0;
+
+      return {
+        ac,
+        pcName: pcName || '',
+        interviewersCount: acData.interviewers.size,
+        approved,
+        rejected,
+        underQC,
+        totalResponses: completedInterviews,
+        capi,
+        cati,
+        psCovered,
+        systemRejections: acData.systemRejections,
+        countsAfterRejection,
+        gpsPending: 0, // As requested
+        gpsFail: 0, // As requested
+        femalePercentage: parseFloat(femalePercentage.toFixed(2)),
+        withoutPhonePercentage: parseFloat(withoutPhonePercentage.toFixed(2)),
+        scPercentage: parseFloat(scPercentage.toFixed(2)),
+        muslimPercentage: parseFloat(muslimPercentage.toFixed(2)),
+        age18to24Percentage: parseFloat(age18to24Percentage.toFixed(2)),
+        age50PlusPercentage: parseFloat(age50PlusPercentage.toFixed(2))
+      };
+    });
+
+    // Sort by total responses (descending)
+    acStats.sort((a, b) => b.totalResponses - a.totalResponses);
+
+    res.json({
+      success: true,
+      data: acStats
+    });
+
+  } catch (error) {
+    console.error('Error fetching AC performance stats:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching AC performance stats',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   startInterview,
   getInterviewSession,
@@ -2603,5 +2893,6 @@ module.exports = {
   getSurveyResponseById,
   getSurveyResponses,
   approveSurveyResponse,
-  rejectSurveyResponse
+  rejectSurveyResponse,
+  getACPerformanceStats
 };
