@@ -858,6 +858,15 @@ export const surveyResponseAPI = {
         throw error;
       }
     },
+    getInterviewerPerformanceStats: async (surveyId) => {
+      try {
+        const response = await api.get(`/api/survey-responses/survey/${surveyId}/interviewer-performance`);
+        return response.data;
+      } catch (error) {
+        console.error('Error fetching interviewer performance stats:', error);
+        throw error;
+      }
+    },
     getSurveyResponses: async (surveyId, params = {}) => {
       try {
         const response = await api.get(`/api/survey-responses/survey/${surveyId}/responses`, { params });

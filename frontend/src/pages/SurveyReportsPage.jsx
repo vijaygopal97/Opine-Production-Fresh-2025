@@ -63,6 +63,7 @@ const SurveyReportsPage = () => {
   const [catiStats, setCatiStats] = useState(null);
   const [showCallRecords, setShowCallRecords] = useState(false);
   const [acPerformanceStats, setAcPerformanceStats] = useState(null);
+  const [interviewerPerformanceStats, setInterviewerPerformanceStats] = useState(null);
   const { showError } = useToast();
 
   // Filter states
@@ -304,6 +305,17 @@ const SurveyReportsPage = () => {
         } catch (acStatsError) {
           console.error('Error fetching AC performance stats:', acStatsError);
           // Don't show error, just log it - AC stats are optional
+        }
+
+        // Fetch Interviewer Performance Stats
+        try {
+          const interviewerStatsResponse = await surveyResponseAPI.getInterviewerPerformanceStats(surveyId);
+          if (interviewerStatsResponse.success) {
+            setInterviewerPerformanceStats(interviewerStatsResponse.data);
+          }
+        } catch (interviewerStatsError) {
+          console.error('Error fetching interviewer performance stats:', interviewerStatsError);
+          // Don't show error, just log it - interviewer stats are optional
         }
       }
     } catch (error) {
@@ -1875,19 +1887,60 @@ const SurveyReportsPage = () => {
         {/* Interviewer Performance Modal */}
         {showInterviewerModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <div className="bg-white rounded-xl p-6 max-w-7xl w-full mx-4 max-h-[80vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-xl font-semibold text-gray-900">Interviewer Performance</h3>
                 <div className="flex items-center space-x-3">
                   <button
                     onClick={() => {
-                      const csvData = analytics.interviewerStats.map(stat => ({
-                        'Interviewer': stat.interviewer,
-                        'Total Responses': stat.count,
-                        'Approved': stat.approved || 0,
-                        'Rejected': stat.rejected || 0,
-                        'Percentage': `${stat.percentage.toFixed(1)}%`
-                      }));
+                      const statsToUse = interviewerPerformanceStats || analytics.interviewerStats;
+                      const csvData = statsToUse.map(stat => {
+                        const displayStat = interviewerPerformanceStats ? stat : {
+                          ...stat,
+                          psCovered: 0,
+                          completedInterviews: stat.count,
+                          systemRejections: 0,
+                          countsAfterRejection: stat.count,
+                          gpsPending: 0,
+                          gpsFail: 0,
+                          underQC: 0,
+                          capi: 0,
+                          cati: 0,
+                          femalePercentage: 0,
+                          withoutPhonePercentage: 0,
+                          scPercentage: 0,
+                          muslimPercentage: 0,
+                          age18to24Percentage: 0,
+                          age50PlusPercentage: 0
+                        };
+                        
+                        const csvRow = {
+                          'Interviewer': stat.interviewer,
+                          'PS Covered': displayStat.psCovered || 0,
+                          'Completed Interviews': displayStat.completedInterviews || displayStat.totalResponses || stat.count,
+                          'System Rejections': displayStat.systemRejections || 0,
+                          'Counts after Terminated and System Rejection': displayStat.countsAfterRejection || displayStat.totalResponses || stat.count,
+                          'GPS Pending': displayStat.gpsPending || 0,
+                          'GPS Fail': displayStat.gpsFail || 0,
+                          'Approved': displayStat.approved || stat.approved || 0,
+                          'Rejected': displayStat.rejected || stat.rejected || 0,
+                          'Under QC': displayStat.underQC || stat.underQC || 0,
+                          'CAPI': displayStat.capi || stat.capi || 0,
+                          'CATI': displayStat.cati || stat.cati || 0,
+                          '% Of Female Interviews': `${displayStat.femalePercentage?.toFixed(2) || '0.00'}%`,
+                          '% of interviews without Phone Number': `${displayStat.withoutPhonePercentage?.toFixed(2) || '0.00'}%`,
+                          '% of Interviews mentioned as Muslims': `${displayStat.muslimPercentage?.toFixed(2) || '0.00'}%`,
+                          '% of Interviews under the age of (18-24)': `${displayStat.age18to24Percentage?.toFixed(2) || '0.00'}%`,
+                          '% of Interviews under the age of (50)': `${displayStat.age50PlusPercentage?.toFixed(2) || '0.00'}%`
+                        };
+                        
+                        // Add SC column only for survey 68fd1915d41841da463f0d46
+                        if (surveyId === '68fd1915d41841da463f0d46') {
+                          csvRow['% of Interviews mentioned as SC'] = `${displayStat.scPercentage?.toFixed(2) || '0.00'}%`;
+                        }
+                        
+                        return csvRow;
+                      });
                       const csvContent = [Object.keys(csvData[0]), ...csvData.map(row => Object.values(row))]
                         .map(row => row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(','))
                         .join('\n');
@@ -1921,27 +1974,79 @@ const SurveyReportsPage = () => {
                     <tr className="border-b border-gray-200">
                       <th className="text-left py-3 px-4 font-medium text-gray-900">Rank</th>
                       <th className="text-left py-3 px-4 font-medium text-gray-900">Interviewer</th>
-                      <th className="text-right py-3 px-4 font-medium text-gray-900">Total Responses</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">PS Covered</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">Completed Interviews</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">System Rejections</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">Counts after Terminated and System Rejection</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">GPS Pending</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">GPS Fail</th>
                       <th className="text-right py-3 px-4 font-medium text-gray-900">Approved</th>
                       <th className="text-right py-3 px-4 font-medium text-gray-900">Rejected</th>
-                      <th className="text-right py-3 px-4 font-medium text-gray-900">Percentage</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">Under QC</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">CAPI</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">CATI</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">% Of Female Interviews</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">% of interviews without Phone Number</th>
+                      {surveyId === '68fd1915d41841da463f0d46' && (
+                        <th className="text-right py-3 px-4 font-medium text-gray-900">% of Interviews mentioned as SC</th>
+                      )}
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">% of Interviews mentioned as Muslims</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">% of Interviews under the age of (18-24)</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-900">% of Interviews under the age of (50)</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {analytics.interviewerStats.map((stat, index) => (
-                      <tr key={stat.interviewer} className="border-b border-gray-100">
-                        <td className="py-3 px-4">
-                          <span className="w-6 h-6 bg-green-100 text-green-600 text-xs font-semibold rounded-full flex items-center justify-center">
-                            {index + 1}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 font-medium text-gray-900">{stat.interviewer}</td>
-                        <td className="py-3 px-4 text-right font-semibold text-gray-900">{stat.count}</td>
-                        <td className="py-3 px-4 text-right font-semibold text-green-600">{stat.approved || 0}</td>
-                        <td className="py-3 px-4 text-right font-semibold text-red-600">{stat.rejected || 0}</td>
-                        <td className="py-3 px-4 text-right text-gray-600">{stat.percentage.toFixed(1)}%</td>
-                      </tr>
-                    ))}
+                    {(interviewerPerformanceStats || analytics.interviewerStats).map((stat, index) => {
+                      // Use backend data if available, otherwise use frontend calculated data
+                      const displayStat = interviewerPerformanceStats ? stat : {
+                        ...stat,
+                        psCovered: 0,
+                        completedInterviews: stat.count,
+                        systemRejections: 0,
+                        countsAfterRejection: stat.count,
+                        gpsPending: 0,
+                        gpsFail: 0,
+                        underQC: 0,
+                        capi: 0,
+                        cati: 0,
+                        femalePercentage: 0,
+                        withoutPhonePercentage: 0,
+                        scPercentage: 0,
+                        muslimPercentage: 0,
+                        age18to24Percentage: 0,
+                        age50PlusPercentage: 0
+                      };
+                      
+                      return (
+                        <tr key={stat.interviewer} className="border-b border-gray-100">
+                          <td className="py-3 px-4">
+                            <span className="w-6 h-6 bg-green-100 text-green-600 text-xs font-semibold rounded-full flex items-center justify-center">
+                              {index + 1}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-medium text-gray-900">{stat.interviewer}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-gray-900">{displayStat.psCovered || 0}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-gray-900">{displayStat.completedInterviews || displayStat.totalResponses || stat.count}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-red-600">{displayStat.systemRejections || 0}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-gray-900">{displayStat.countsAfterRejection || displayStat.totalResponses || stat.count}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-gray-900">{displayStat.gpsPending || 0}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-gray-900">{displayStat.gpsFail || 0}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-green-600">{displayStat.approved || stat.approved || 0}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-red-600">{displayStat.rejected || stat.rejected || 0}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-yellow-600">{displayStat.underQC || stat.underQC || 0}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-green-600">{displayStat.capi || stat.capi || 0}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-orange-600">{displayStat.cati || stat.cati || 0}</td>
+                          <td className="py-3 px-4 text-right text-gray-600">{displayStat.femalePercentage?.toFixed(2) || '0.00'}%</td>
+                          <td className="py-3 px-4 text-right text-gray-600">{displayStat.withoutPhonePercentage?.toFixed(2) || '0.00'}%</td>
+                          {surveyId === '68fd1915d41841da463f0d46' && (
+                            <td className="py-3 px-4 text-right text-gray-600">{displayStat.scPercentage?.toFixed(2) || '0.00'}%</td>
+                          )}
+                          <td className="py-3 px-4 text-right text-gray-600">{displayStat.muslimPercentage?.toFixed(2) || '0.00'}%</td>
+                          <td className="py-3 px-4 text-right text-gray-600">{displayStat.age18to24Percentage?.toFixed(2) || '0.00'}%</td>
+                          <td className="py-3 px-4 text-right text-gray-600">{displayStat.age50PlusPercentage?.toFixed(2) || '0.00'}%</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
