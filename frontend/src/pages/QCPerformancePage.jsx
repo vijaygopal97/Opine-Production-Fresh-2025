@@ -150,6 +150,10 @@ const QCPerformancePage = () => {
       let aValue, bValue;
       
       switch (filters.sortBy) {
+        case 'assigned':
+          aValue = a.assigned || 0;
+          bValue = b.assigned || 0;
+          break;
         case 'totalReviews':
           aValue = a.totalReviews;
           bValue = b.totalReviews;
@@ -202,13 +206,14 @@ const QCPerformancePage = () => {
 
   // Handle CSV download
   const handleCSVDownload = () => {
-    const headers = ['S.No', 'Name', 'Email', 'Phone', 'Total Reviews', 'Approved Responses', 'Rejected Responses'];
+    const headers = ['S.No', 'Name', 'Email', 'Phone', 'Assigned', 'Total Reviews', 'Approved Responses', 'Rejected Responses'];
     
     const csvData = filteredAndSortedData.map(qa => [
       qa.serialNumber,
       qa.name,
       qa.email,
       qa.phone,
+      qa.assigned || 0,
       qa.totalReviews,
       qa.approvedResponses,
       qa.rejectedResponses
@@ -570,6 +575,15 @@ const QCPerformancePage = () => {
                     </th>
                     <th 
                       className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                      onClick={() => handleSort('assigned')}
+                    >
+                      <div className="flex items-center">
+                        Assigned
+                        {getSortIcon('assigned')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                       onClick={() => handleSort('totalReviews')}
                     >
                       <div className="flex items-center">
@@ -611,6 +625,9 @@ const QCPerformancePage = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {qa.phone}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
+                        {qa.assigned || 0}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
                         {qa.totalReviews}

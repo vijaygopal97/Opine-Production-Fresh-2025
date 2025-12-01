@@ -58,10 +58,18 @@ exports.getQCPerformanceBySurvey = async (req, res) => {
 
     // Get all quality agents assigned to this survey
     const assignedQualityAgentIds = [];
+    const qualityAgentAssignmentsMap = {}; // Map to store assignedACs for each quality agent
     if (survey.assignedQualityAgents && Array.isArray(survey.assignedQualityAgents)) {
       survey.assignedQualityAgents.forEach(assignment => {
         if (assignment.qualityAgent) {
-          assignedQualityAgentIds.push(new mongoose.Types.ObjectId(assignment.qualityAgent));
+          const qaId = new mongoose.Types.ObjectId(assignment.qualityAgent);
+          assignedQualityAgentIds.push(qaId);
+          // Store assignedACs for this quality agent
+          qualityAgentAssignmentsMap[qaId.toString()] = {
+            assignedACs: assignment.assignedACs || [],
+            selectedState: assignment.selectedState,
+            selectedCountry: assignment.selectedCountry
+          };
         }
       });
     }
@@ -138,6 +146,53 @@ exports.getQCPerformanceBySurvey = async (req, res) => {
       reviewerMap[reviewer._id.toString()] = reviewer;
     });
 
+    // Calculate assigned (pending) responses count for each quality agent
+    const assignedCountsMap = {};
+    
+    // For each quality agent, count pending responses in their assigned ACs
+    for (const qaId of assignedQualityAgentIds) {
+      const assignment = qualityAgentAssignmentsMap[qaId.toString()];
+      if (!assignment) continue;
+      
+      const assignedACs = assignment.assignedACs || [];
+      
+      // Build filter for pending responses in this quality agent's scope
+      // A response is pending if it hasn't been reviewed (verificationData.reviewer is null/undefined)
+      // Exclude responses that are already Approved or Rejected
+      const pendingFilter = {
+        survey: new mongoose.Types.ObjectId(surveyId),
+        $or: [
+          { 'verificationData': { $exists: false } },
+          { 'verificationData.reviewer': { $exists: false } },
+          { 'verificationData.reviewer': null }
+        ],
+        status: { $nin: ['Approved', 'Rejected'] } // Exclude already reviewed responses
+      };
+      
+      // If quality agent has assignedACs, filter by selectedAC
+      // Only count responses that belong to the ACs assigned to this quality agent
+      if (assignedACs.length > 0) {
+        // Trim and filter out empty strings from assignedACs
+        const validACs = assignedACs.filter(ac => ac && ac.trim().length > 0).map(ac => ac.trim());
+        if (validACs.length > 0) {
+          pendingFilter.selectedAC = { $in: validACs };
+        } else {
+          // No valid ACs, set count to 0
+          assignedCountsMap[qaId.toString()] = 0;
+          continue;
+        }
+      } else {
+        // If no assignedACs, this quality agent doesn't have a specific scope
+        // Set assigned count to 0 as they don't have assigned ACs
+        assignedCountsMap[qaId.toString()] = 0;
+        continue;
+      }
+      
+      // Count pending responses
+      const assignedCount = await SurveyResponse.countDocuments(pendingFilter);
+      assignedCountsMap[qaId.toString()] = assignedCount;
+    }
+
     // Combine all assigned quality agents with their performance data
     let combinedData = assignedQualityAgentIds.map((qaId) => {
       const reviewer = reviewerMap[qaId.toString()];
@@ -153,6 +208,7 @@ exports.getQCPerformanceBySurvey = async (req, res) => {
         name: reviewer ? `${reviewer.firstName || ''} ${reviewer.lastName || ''}`.trim() || reviewer.email || 'Unknown' : 'Unknown',
         email: reviewer ? reviewer.email || 'N/A' : 'N/A',
         phone: reviewer ? (reviewer.phone || 'N/A') : 'N/A',
+        assigned: assignedCountsMap[reviewerIdStr] || 0,
         totalReviews: performance.totalReviews,
         approvedResponses: performance.approvedResponses,
         rejectedResponses: performance.rejectedResponses
@@ -174,6 +230,7 @@ exports.getQCPerformanceBySurvey = async (req, res) => {
           name: `${reviewer.firstName || ''} ${reviewer.lastName || ''}`.trim() || reviewer.email || 'Unknown',
           email: reviewer.email || 'N/A',
           phone: reviewer.phone || 'N/A',
+          assigned: 0, // Additional reviewers don't have assigned ACs, so assigned count is 0
           totalReviews: performance.totalReviews,
           approvedResponses: performance.approvedResponses,
           rejectedResponses: performance.rejectedResponses
