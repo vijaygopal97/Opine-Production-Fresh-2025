@@ -33,6 +33,7 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
   const [genderQuotas, setGenderQuotas] = useState(null);
   const [shuffledOptions, setShuffledOptions] = useState({}); // Store shuffled options per questionId to maintain consistent order
   const [othersTextInputs, setOthersTextInputs] = useState({}); // Store "Others" text input values by questionId_optionValue
+  const [showTranslationOnly, setShowTranslationOnly] = useState(false);
   
   // Audio recording state
   const [isRecording, setIsRecording] = useState(false);
@@ -818,6 +819,36 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
     selectedGroupName,
     selectedStationName
   ]);
+
+  // Helper function to get display text based on translation toggle
+  const getDisplayText = (text) => {
+    if (!text) return '';
+    const parsed = parseTranslation(text);
+    // If toggle is ON and translation exists, show only translation
+    if (showTranslationOnly && parsed.translation) {
+      return parsed.translation;
+    }
+    // Otherwise show main text
+    return parsed.mainText;
+  };
+
+  // Helper function to render text based on translation toggle
+  const renderDisplayText = (text, options = {}) => {
+    if (!text) return null;
+    const parsed = parseTranslation(text);
+    
+    // If toggle is ON and translation exists, show only translation
+    if (showTranslationOnly && parsed.translation) {
+      return <span className={options.className || ''}>{parsed.translation}</span>;
+    }
+    
+    // Otherwise show main text (and translation if toggle is OFF and we want to show both)
+    if (!showTranslationOnly && parsed.translation) {
+      return renderWithTranslation(text, options);
+    }
+    
+    return <span className={options.className || ''}>{parsed.mainText}</span>;
+  };
 
   // Helper function to check if an option is "Others"
   const isOthersOption = (optText) => {
@@ -2582,9 +2613,8 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                           ? 'text-gray-400 line-through' 
                           : 'text-gray-700 group-hover:text-gray-900'
                       }`}>
-                        {renderWithTranslation(optionText, {
-                          mainClass: '',
-                          translationClass: 'text-sm text-gray-500 italic font-normal'
+                        {renderDisplayText(optionText, {
+                          className: ''
                         })}
                       </span>
                       {quotaInfo && (
@@ -2640,9 +2670,8 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                     className="w-6 h-6 text-blue-600 border-2 border-gray-300 focus:ring-blue-500 group-hover:border-blue-400 transition-colors"
                   />
                   <span className="text-lg text-gray-700 group-hover:text-gray-900 transition-colors">
-                    {renderWithTranslation(optionText, {
-                      mainClass: '',
-                      translationClass: 'text-sm text-gray-500 italic font-normal'
+                    {renderDisplayText(optionText, {
+                      className: ''
                     })}
                   </span>
                 </label>
@@ -2682,9 +2711,8 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                 </button>
                     {label && (
                       <span className="text-xs text-gray-600 text-center max-w-[60px]">
-                        {renderWithTranslation(label, {
-                          mainClass: '',
-                          translationClass: 'text-xs text-gray-400 italic block'
+                        {renderDisplayText(label, {
+                          className: ''
                         })}
                       </span>
                     )}
@@ -2695,15 +2723,13 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
             {(minLabel || maxLabel) && (
               <div className="flex justify-between text-sm text-gray-500 px-2">
                 <span>
-                  {renderWithTranslation(minLabel, {
-                    mainClass: '',
-                    translationClass: 'text-xs text-gray-400 italic'
+                  {renderDisplayText(minLabel, {
+                    className: ''
                   })}
                 </span>
                 <span>
-                  {renderWithTranslation(maxLabel, {
-                    mainClass: '',
-                    translationClass: 'text-xs text-gray-400 italic'
+                  {renderDisplayText(maxLabel, {
+                    className: ''
                   })}
                 </span>
               </div>
@@ -2753,7 +2779,7 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
               const optionText = typeof option === 'object' ? option.text : option;
               return (
                 <option key={index} value={optionValue}>
-                  {parseTranslation(optionText).mainText}{parseTranslation(optionText).translation ? ` / ${parseTranslation(optionText).translation}` : ''}
+                  {getDisplayText(optionText)}
                 </option>
               );
             })}
@@ -3186,9 +3212,8 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                         {hasTargetAudienceError && <span className="text-red-600 text-lg">⚠️</span>}
                       </div>
                       <p className="text-sm mt-2 line-clamp-2">
-                        {renderWithTranslation(question.text, {
-                          mainClass: '',
-                          translationClass: 'text-xs text-gray-400 italic'
+                        {renderDisplayText(question.text, {
+                          className: ''
                         })}
                       </p>
                     </button>
@@ -3261,15 +3286,27 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                 </div>
               </div>
 
+              {/* Translation Toggle */}
+              <div className="mb-6 flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <label className="text-sm font-medium text-blue-900 cursor-pointer">
+                  Show Translation Only
+                </label>
+                <input
+                  type="checkbox"
+                  checked={showTranslationOnly}
+                  onChange={(e) => setShowTranslationOnly(e.target.checked)}
+                  className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+              </div>
+
               <div className="mb-12">
                 <h2 className={`text-3xl font-semibold mb-6 leading-relaxed ${
                   validationErrors.has(currentQuestion.id) || targetAudienceErrors.has(currentQuestion.id)
                     ? 'text-red-600 border-l-4 border-red-500 pl-4' 
                     : 'text-gray-800'
                 }`}>
-                  {renderWithTranslation(currentQuestion.text, {
-                    mainClass: '',
-                    translationClass: 'text-xl text-gray-500 italic font-normal'
+                  {renderDisplayText(currentQuestion.text, {
+                    className: ''
                   })}
                   {currentQuestion.required && <span className="text-red-500 ml-2">*</span>}
                 </h2>

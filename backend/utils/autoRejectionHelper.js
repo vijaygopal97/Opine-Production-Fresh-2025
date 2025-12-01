@@ -1,6 +1,42 @@
 const SurveyResponse = require('../models/SurveyResponse');
 
 /**
+ * Helper function to get main text (strip translations)
+ * @param {String} text - Text that may contain translations in format "Main Text {Translation}"
+ * @returns {String} - Main text without translation
+ */
+const getMainText = (text) => {
+  if (!text || typeof text !== 'string') return text || '';
+  // Match pattern: "Main Text {Translation}"
+  const translationRegex = /^(.+?)\s*\{([^}]+)\}\s*$/;
+  const match = text.match(translationRegex);
+  return match ? match[1].trim() : text.trim();
+};
+
+/**
+ * Helper function to normalize response value for comparison
+ * @param {Any} response - Response value (can be string, array, object, etc.)
+ * @returns {String} - Normalized string value for comparison
+ */
+const normalizeResponseValue = (response) => {
+  if (!response) return '';
+  
+  // Handle arrays
+  if (Array.isArray(response)) {
+    response = response[0] || '';
+  }
+  
+  // Handle objects
+  if (typeof response === 'object' && response !== null) {
+    response = response.value || response.text || response.phone || response;
+  }
+  
+  // Convert to string and normalize
+  const responseStr = String(response).toLowerCase().trim();
+  return getMainText(responseStr).toLowerCase().trim();
+};
+
+/**
  * Check if a survey response should be automatically rejected
  * @param {Object} surveyResponse - The survey response object
  * @param {Array} responses - Array of response objects from the interview
@@ -18,7 +54,46 @@ const checkAutoRejection = async (surveyResponse, responses, surveyId) => {
     });
   }
   
-  // Condition 2: Duplicate phone number check (only for specific survey)
+  // Condition 2: Voter check - reject if respondent is not a registered voter
+  const VOTER_QUESTION_KEYWORDS = [
+    'registered voter',
+    'assembly constituency',
+    'assembly Constituency',
+    'নিবন্ধিত ভোটার',
+    'বিধানসভা কেন্দ্র'
+  ];
+  
+  // Find the voter question in responses
+  const voterResponse = responses.find(r => {
+    const questionText = getMainText(r.questionText || r.question?.text || '').toLowerCase();
+    // Check if question contains voter-related keywords
+    return VOTER_QUESTION_KEYWORDS.some(keyword => 
+      questionText.includes(keyword.toLowerCase())
+    );
+  });
+  
+  if (voterResponse && voterResponse.response !== null && voterResponse.response !== undefined) {
+    // Normalize the response value
+    const normalizedResponse = normalizeResponseValue(voterResponse.response);
+    
+    // Check if response is "no" (case-insensitive, ignoring translations)
+    // Common variations: "no", "না", "no.", "না।", etc.
+    const noVariations = ['no', 'না', 'non', 'nein', 'нет'];
+    const isNo = noVariations.some(noWord => {
+      // Check if normalized response starts with or equals "no" (ignoring punctuation)
+      const cleanedResponse = normalizedResponse.replace(/[।.,!?]/g, '').trim();
+      return cleanedResponse === noWord || cleanedResponse.startsWith(noWord + ' ');
+    });
+    
+    if (isNo) {
+      rejectionReasons.push({
+        reason: 'Not Voter',
+        condition: 'not_voter'
+      });
+    }
+  }
+  
+  // Condition 3: Duplicate phone number check (only for specific survey)
   const TARGET_SURVEY_ID = '68fd1915d41841da463f0d46';
   const PHONE_QUESTION_TEXT = 'Would you like to share your mobile number with us? We assure you we shall keep it confidential and shall use only for quality control purposes.';
   

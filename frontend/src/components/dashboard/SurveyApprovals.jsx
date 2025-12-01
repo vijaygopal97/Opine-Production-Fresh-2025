@@ -379,11 +379,11 @@ const SurveyApprovals = () => {
       resetVerificationForm();
     } catch (error) {
       // Silently ignore 403/404 errors (assignment might already be expired/released or doesn't exist)
-      if (error.response?.status === 403 || error.response?.status === 404) {
-        console.log('Assignment release skipped (already released or expired)');
-      } else {
-      console.error('Error releasing assignment:', error);
+      // Don't log these errors as they're expected when assignment is already released
+      if (error.response?.status !== 403 && error.response?.status !== 404) {
+        console.error('Error releasing assignment:', error);
       }
+      // Silently handle 403/404 - these are expected when assignment is already released/expired
     }
   };
 
@@ -597,10 +597,18 @@ const SurveyApprovals = () => {
         showSuccess('Survey response has been rejected with feedback provided to interviewer.');
       }
       
-      // Clear assignment and close modal
+      // Clear assignment and close modal (don't try to release - backend already did it)
       setCurrentAssignment(null);
       setAssignmentExpiresAt(null);
-      handleCloseModal();
+      setSelectedInterview(null);
+      setShowResponseDetails(false);
+      resetVerificationForm();
+      
+      // Cleanup CATI recording blob URL
+      if (catiRecordingBlobUrl) {
+        URL.revokeObjectURL(catiRecordingBlobUrl);
+        setCatiRecordingBlobUrl(null);
+      }
       
       // Refresh stats
       await fetchAllResponses();
@@ -1142,6 +1150,242 @@ const SurveyApprovals = () => {
     }
 
     return JSON.stringify(response);
+  };
+
+  // Helper function to find question in survey by keywords
+  const findQuestionInSurveyByKeywords = (keywords, survey, requireAll = false) => {
+    if (!survey) return null;
+    const actualSurvey = survey.survey || survey;
+    const normalizedKeywords = keywords.map(k => k.toLowerCase());
+    
+    const searchInQuestions = (questions) => {
+      for (const question of questions) {
+        const questionText = getMainText(question.text || question.questionText || '').toLowerCase();
+        if (requireAll) {
+          if (normalizedKeywords.every(keyword => questionText.includes(keyword))) {
+            return question;
+          }
+        } else {
+          if (normalizedKeywords.some(keyword => questionText.includes(keyword))) {
+            return question;
+          }
+        }
+      }
+      return null;
+    };
+    
+    // Search in sections
+    if (actualSurvey.sections) {
+      for (const section of actualSurvey.sections) {
+        if (section.questions) {
+          const found = searchInQuestions(section.questions);
+          if (found) return found;
+        }
+      }
+    }
+    
+    // Search in top-level questions
+    if (actualSurvey.questions) {
+      const found = searchInQuestions(actualSurvey.questions);
+      if (found) return found;
+    }
+    
+    return null;
+  };
+
+  // Helper function to find response by matching question text (without translations)
+  const findResponseByQuestionText = (responses, targetQuestionText) => {
+    if (!responses || !Array.isArray(responses)) return null;
+    const targetMainText = getMainText(targetQuestionText).toLowerCase().trim();
+    
+    return responses.find(r => {
+      const responseQuestionText = getMainText(r.questionText || '').toLowerCase().trim();
+      // Exact match or contains the main text
+      return responseQuestionText === targetMainText || 
+             responseQuestionText.includes(targetMainText) ||
+             targetMainText.includes(responseQuestionText);
+    });
+  };
+
+  // Helper function to find response by matching survey question (finds question in survey, then matches response)
+  const findResponseBySurveyQuestion = (keywords, responses, survey, requireAll = false, excludeKeywords = []) => {
+    // First, find the question in the survey
+    const surveyQuestion = findQuestionInSurveyByKeywords(keywords, survey, requireAll);
+    if (!surveyQuestion) return null;
+    
+    // Get the main text of the survey question (without translation)
+    const surveyQuestionMainText = getMainText(surveyQuestion.text || surveyQuestion.questionText || '');
+    
+    // If exclude keywords are provided, check if this question matches them
+    if (excludeKeywords.length > 0) {
+      const questionTextLower = surveyQuestionMainText.toLowerCase();
+      const hasExcludeKeyword = excludeKeywords.some(keyword => questionTextLower.includes(keyword.toLowerCase()));
+      if (hasExcludeKeyword) return null;
+    }
+    
+    // Now find the response that matches this question text
+    return findResponseByQuestionText(responses, surveyQuestionMainText);
+  };
+
+  // Helper function to find response by question text keywords (fallback method)
+  const findResponseByKeywords = (responses, keywords, requireAll = false, excludeKeywords = []) => {
+    if (!responses || !Array.isArray(responses)) return null;
+    const normalizedKeywords = keywords.map(k => k.toLowerCase());
+    const normalizedExclude = excludeKeywords.map(k => k.toLowerCase());
+    
+    return responses.find(r => {
+      const questionText = getMainText(r.questionText || '').toLowerCase();
+      
+      // Check exclude keywords first
+      if (normalizedExclude.length > 0) {
+        const hasExcludeKeyword = normalizedExclude.some(keyword => questionText.includes(keyword));
+        if (hasExcludeKeyword) return false;
+      }
+      
+      // Check include keywords
+      if (requireAll) {
+        return normalizedKeywords.every(keyword => questionText.includes(keyword));
+      } else {
+        return normalizedKeywords.some(keyword => questionText.includes(keyword));
+      }
+    });
+  };
+
+  // Get specific responses for verification questions
+  const getVerificationResponses = (interview) => {
+    if (!interview || !interview.responses) {
+      return {
+        gender: 'Not Available',
+        upcomingElection: 'Not Available',
+        assembly2021: 'Not Available',
+        lokSabha2024: 'Not Available',
+        name: 'Not Available',
+        age: 'Not Available'
+      };
+    }
+    
+    const responses = interview.responses;
+    const survey = interview.survey || fullSurveyData;
+    
+    // Gender response - match by finding question in survey first
+    let genderResponse = findResponseBySurveyQuestion(['gender', 'sex'], responses, survey, false);
+    if (!genderResponse) {
+      genderResponse = findResponseByKeywords(responses, ['gender', 'sex'], false);
+    }
+    const genderValue = genderResponse?.response 
+      ? (Array.isArray(genderResponse.response) ? genderResponse.response[0] : genderResponse.response)
+      : null;
+    const genderQuestion = genderResponse ? findQuestionByText(genderResponse.questionText, survey) : null;
+    
+    // Upcoming election response (Q9) - "2025 Preference"
+    // Match by finding question in survey first
+    let upcomingElectionResponse = findResponseBySurveyQuestion(['2025', 'preference'], responses, survey, true);
+    if (!upcomingElectionResponse) {
+      upcomingElectionResponse = findResponseByKeywords(responses, ['2025', 'preference'], true);
+    }
+    const upcomingElectionValue = upcomingElectionResponse?.response 
+      ? (Array.isArray(upcomingElectionResponse.response) ? upcomingElectionResponse.response[0] : upcomingElectionResponse.response)
+      : null;
+    const upcomingElectionQuestion = upcomingElectionResponse ? findQuestionByText(upcomingElectionResponse.questionText, survey) : null;
+    
+    // 2021 Assembly election response (Q6) - "Which party did you vote for in the last assembly elections (MLA) in 2021?"
+    let assembly2021Response = findResponseBySurveyQuestion([
+      'last assembly elections', 'mla', '2021', 'which party did you vote'
+    ], responses, survey, false);
+    if (!assembly2021Response) {
+      assembly2021Response = findResponseByKeywords(responses, [
+        'last assembly elections', 'mla', '2021', 'which party did you vote'
+      ], false);
+    }
+    const assembly2021Value = assembly2021Response?.response 
+      ? (Array.isArray(assembly2021Response.response) ? assembly2021Response.response[0] : assembly2021Response.response)
+      : null;
+    const assembly2021Question = assembly2021Response ? findQuestionByText(assembly2021Response.questionText, survey) : null;
+    
+    // 2024 Lok Sabha election response (Q7) - But user wants to show Q6 (2021 AE Party Choice) response
+    // Match by finding "2021 AE Party Choice" question in survey first
+    let lokSabha2024Response = findResponseBySurveyQuestion([
+      '2021', 'ae party choice', 'assembly elections', 'mla'
+    ], responses, survey, false);
+    if (!lokSabha2024Response) {
+      lokSabha2024Response = findResponseByKeywords(responses, [
+        '2021', 'ae party choice', 'assembly elections', 'mla'
+      ], false);
+    }
+    const lokSabha2024Value = lokSabha2024Response?.response 
+      ? (Array.isArray(lokSabha2024Response.response) ? lokSabha2024Response.response[0] : lokSabha2024Response.response)
+      : null;
+    const lokSabha2024Question = lokSabha2024Response ? findQuestionByText(lokSabha2024Response.questionText, survey) : null;
+    
+    // Name response
+    let nameResponse = findResponseBySurveyQuestion(['name', 'respondent'], responses, survey, false);
+    if (!nameResponse) {
+      nameResponse = findResponseByKeywords(responses, ['name', 'respondent'], false);
+    }
+    const nameValue = nameResponse?.response 
+      ? (Array.isArray(nameResponse.response) ? nameResponse.response[0] : nameResponse.response)
+      : null;
+    const nameQuestion = nameResponse ? findQuestionByText(nameResponse.questionText, survey) : null;
+    
+    // Age response - "Could you please tell me your age in complete years?"
+    // Try multiple matching strategies - start with simplest first
+    let ageResponse = null;
+    
+    // Strategy 1: Direct text match - look for exact question text or key phrases
+    ageResponse = responses.find(r => {
+      const questionText = getMainText(r.questionText || '').toLowerCase().trim();
+      // Match common age question patterns
+      return questionText.includes('could you please tell me your age') ||
+             questionText.includes('tell me your age in complete years') ||
+             questionText === 'could you please tell me your age in complete years?';
+    });
+    
+    // Strategy 2: More flexible matching - look for "age" and "years" or "complete years"
+    if (!ageResponse) {
+      ageResponse = responses.find(r => {
+        const questionText = getMainText(r.questionText || '').toLowerCase();
+        return (questionText.includes('age') || questionText.includes('বয়স')) && 
+               (questionText.includes('complete years') || questionText.includes('year'));
+      });
+    }
+    
+    // Strategy 3: Find question in survey first, excluding election-related terms
+    if (!ageResponse) {
+      ageResponse = findResponseBySurveyQuestion([
+        'age', 'how old', 'tell me your age', 'complete years', 'বয়স'
+      ], responses, survey, false, ['election', 'vote', 'party', 'preference', 'lok sabha', 'loksabha', 'mp', 'mla', '2025', '2024', '2021']);
+    }
+    
+    // Strategy 4: Direct keyword matching with exclusions
+    if (!ageResponse) {
+      ageResponse = findResponseByKeywords(responses, [
+        'age', 'how old', 'tell me your age', 'complete years', 'বয়স'
+      ], false, ['election', 'vote', 'party', 'preference', 'lok sabha', 'loksabha', 'mp', 'mla', '2025', '2024', '2021']);
+    }
+    
+    // Strategy 5: Last resort - any question with "age" that doesn't have election keywords
+    if (!ageResponse) {
+      ageResponse = responses.find(r => {
+        const questionText = getMainText(r.questionText || '').toLowerCase();
+        const hasAge = questionText.includes('age') || questionText.includes('বয়স');
+        const hasElection = questionText.includes('election') || questionText.includes('vote') || 
+                           questionText.includes('party') || questionText.includes('preference');
+        return hasAge && !hasElection;
+      });
+    }
+    const ageValue = ageResponse?.response 
+      ? (Array.isArray(ageResponse.response) ? ageResponse.response[0] : ageResponse.response)
+      : null;
+    const ageQuestion = ageResponse ? findQuestionByText(ageResponse.questionText, survey) : null;
+    
+    return {
+      gender: genderValue ? formatResponseDisplay(genderValue, genderQuestion) : 'Not Available',
+      upcomingElection: upcomingElectionValue ? formatResponseDisplay(upcomingElectionValue, upcomingElectionQuestion) : 'Not Available',
+      assembly2021: assembly2021Value ? formatResponseDisplay(assembly2021Value, assembly2021Question) : 'Not Available',
+      lokSabha2024: lokSabha2024Value ? formatResponseDisplay(lokSabha2024Value, lokSabha2024Question) : 'Not Available',
+      name: nameValue ? formatResponseDisplay(nameValue, nameQuestion) : 'Not Available',
+      age: ageValue ? formatResponseDisplay(ageValue, ageQuestion) : 'Not Available'
+    };
   };
 
   const filteredInterviews = interviews.filter(interview => {
@@ -3023,6 +3267,12 @@ const SurveyApprovals = () => {
                       2. Gender of the Respondent Matching? (উত্তরদাতার লিঙ্গ কি মেলানো হয়েছে?)
                       <span className="text-red-500 ml-1">*</span>
                     </label>
+                    {selectedInterview && (
+                      <div className="mb-3 p-2 bg-blue-50 border-l-4 border-blue-500 rounded">
+                        <span className="text-sm font-medium text-blue-700">Response: </span>
+                        <span className="text-sm text-blue-600">{getVerificationResponses(selectedInterview).gender}</span>
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <label className="flex items-center space-x-2 cursor-pointer">
                         <input
@@ -3063,9 +3313,15 @@ const SurveyApprovals = () => {
                   {/* Question 3: Upcoming Elections Matching */}
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-gray-700">
-                      3. Is the Response Matching for the Upcoming Elections preference (Q8)? (উত্তরটি কি আসন্ন নির্বাচনের পছন্দ (প্রশ্ন ৮) এর সাথে মিলে যাচ্ছে?)
+                      3. Is the Response Matching for the Upcoming Elections preference (Q9)? (উত্তরটি কি আসন্ন নির্বাচনের পছন্দ (প্রশ্ন ৯) এর সাথে মিলে যাচ্ছে?)
                       <span className="text-red-500 ml-1">*</span>
                     </label>
+                    {selectedInterview && (
+                      <div className="mb-3 p-2 bg-blue-50 border-l-4 border-blue-500 rounded">
+                        <span className="text-sm font-medium text-blue-700">Response: </span>
+                        <span className="text-sm text-blue-600">{getVerificationResponses(selectedInterview).upcomingElection}</span>
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <label className="flex items-center space-x-2 cursor-pointer">
                         <input
@@ -3117,9 +3373,15 @@ const SurveyApprovals = () => {
                   {/* Question 4: Previous Elections Matching */}
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-gray-700">
-                      4. Is the Response Matching for the Previous 2021 Assembly Election (Q5)? (উত্তরটি কি ২০২১ সালের পূর্ববর্তী বিধানসভা নির্বাচনের (প্রশ্ন ৫) সাথে মিলে যাচ্ছে?)
+                      4. Is the Response Matching for the Previous 2021 Assembly Election (Q6)? (উত্তরটি কি ২০২১ সালের পূর্ববর্তী বিধানসভা নির্বাচনের (প্রশ্ন ৬) সাথে মিলে যাচ্ছে?)
                       <span className="text-red-500 ml-1">*</span>
                     </label>
+                    {selectedInterview && (
+                      <div className="mb-3 p-2 bg-blue-50 border-l-4 border-blue-500 rounded">
+                        <span className="text-sm font-medium text-blue-700">Response: </span>
+                        <span className="text-sm text-blue-600">{getVerificationResponses(selectedInterview).assembly2021}</span>
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <label className="flex items-center space-x-2 cursor-pointer">
                         <input
@@ -3171,9 +3433,15 @@ const SurveyApprovals = () => {
                   {/* Question 5: Previous Loksabha Elections Matching */}
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-gray-700">
-                      5. Is the Response Matching for the Previous 2024 Loksabha Election (Q6)? (উত্তরটি কি ২০২৪ সালের পূর্ববর্তী লোকসভা নির্বাচনের (প্রশ্ন ৬) সাথে মিলে যাচ্ছে?)
+                      5. Is the Response Matching for the Previous 2024 Loksabha Election (Q7)? (উত্তরটি কি ২০২৪ সালের পূর্ববর্তী লোকসভা নির্বাচনের (প্রশ্ন ৭) সাথে মিলে যাচ্ছে?)
                       <span className="text-red-500 ml-1">*</span>
                     </label>
+                    {selectedInterview && (
+                      <div className="mb-3 p-2 bg-blue-50 border-l-4 border-blue-500 rounded">
+                        <span className="text-sm font-medium text-blue-700">Response: </span>
+                        <span className="text-sm text-blue-600">{getVerificationResponses(selectedInterview).lokSabha2024}</span>
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <label className="flex items-center space-x-2 cursor-pointer">
                         <input
@@ -3228,6 +3496,12 @@ const SurveyApprovals = () => {
                       6. Name of the Respondent Matching? (উত্তরদাতার নাম কি মিলে গেছে?)
                       <span className="text-red-500 ml-1">*</span>
                     </label>
+                    {selectedInterview && (
+                      <div className="mb-3 p-2 bg-blue-50 border-l-4 border-blue-500 rounded">
+                        <span className="text-sm font-medium text-blue-700">Response: </span>
+                        <span className="text-sm text-blue-600">{getVerificationResponses(selectedInterview).name}</span>
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <label className="flex items-center space-x-2 cursor-pointer">
                         <input
@@ -3282,6 +3556,12 @@ const SurveyApprovals = () => {
                       7. Is the Age matching? (বয়স কি মিলে গেছে?)
                       <span className="text-red-500 ml-1">*</span>
                     </label>
+                    {selectedInterview && (
+                      <div className="mb-3 p-2 bg-blue-50 border-l-4 border-blue-500 rounded">
+                        <span className="text-sm font-medium text-blue-700">Response: </span>
+                        <span className="text-sm text-blue-600">{getVerificationResponses(selectedInterview).age}</span>
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <label className="flex items-center space-x-2 cursor-pointer">
                         <input
