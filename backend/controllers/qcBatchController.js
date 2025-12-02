@@ -1,7 +1,8 @@
 const QCBatch = require('../models/QCBatch');
 const SurveyResponse = require('../models/SurveyResponse');
 const Survey = require('../models/Survey');
-const { processQCBatches } = require('../jobs/qcBatchProcessor');
+const QCBatchConfig = require('../models/QCBatchConfig');
+const { processQCBatches, processBatch } = require('../jobs/qcBatchProcessor');
 
 /**
  * @desc    Get all QC batches for a survey
@@ -29,6 +30,7 @@ const getBatchesBySurvey = async (req, res) => {
     // Get all batches for this survey, sorted by date (newest first)
     const batches = await QCBatch.find({ survey: surveyId })
       .populate('survey', 'surveyName')
+      .populate('interviewer', 'firstName lastName email')
       .sort({ batchDate: -1 });
     
     // Calculate stats for each batch
@@ -93,7 +95,8 @@ const getBatchById = async (req, res) => {
     const companyId = req.user.company;
     
     const batch = await QCBatch.findById(batchId)
-      .populate('survey', 'surveyName company');
+      .populate('survey', 'surveyName company')
+      .populate('interviewer', 'firstName lastName email');
     
     if (!batch) {
       return res.status(404).json({
@@ -211,9 +214,93 @@ const triggerBatchProcessing = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Manually send a batch to QC (premature completion)
+ * @route   POST /api/qc-batches/:batchId/send-to-qc
+ * @access  Private (Company Admin, Project Manager)
+ */
+const sendBatchToQC = async (req, res) => {
+  try {
+    const { batchId } = req.params;
+    const companyId = req.user.company;
+    
+    const batch = await QCBatch.findById(batchId)
+      .populate('survey', 'surveyName company');
+    
+    if (!batch) {
+      return res.status(404).json({
+        success: false,
+        message: 'QC batch not found'
+      });
+    }
+    
+    // Verify batch belongs to company
+    if (batch.survey.company.toString() !== companyId.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not authorized to process this batch'
+      });
+    }
+    
+    // Check if batch is in collecting status
+    if (batch.status !== 'collecting') {
+      return res.status(400).json({
+        success: false,
+        message: `Batch is already processed. Current status: ${batch.status}`
+      });
+    }
+    
+    // Check if batch has responses
+    if (batch.totalResponses === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot process batch with no responses'
+      });
+    }
+    
+    // Get active config for this survey
+    const config = await QCBatchConfig.getActiveConfig(
+      batch.survey._id || batch.survey,
+      batch.survey.company._id || batch.survey.company
+    );
+    
+    if (!config) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active QC batch configuration found for this survey'
+      });
+    }
+    
+    console.log(`🔄 Manually processing batch ${batchId} with ${batch.totalResponses} responses`);
+    
+    // Process the batch
+    await processBatch(batch, config);
+    
+    // Refresh batch to get updated status
+    await batch.populate('interviewer', 'firstName lastName email');
+    
+    res.json({
+      success: true,
+      message: `Batch processed successfully. ${batch.sampleSize} responses sent to QC.`,
+      data: {
+        batch: batch.toObject()
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error sending batch to QC:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process batch',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getBatchesBySurvey,
   getBatchById,
-  triggerBatchProcessing
+  triggerBatchProcessing,
+  sendBatchToQC
 };
 

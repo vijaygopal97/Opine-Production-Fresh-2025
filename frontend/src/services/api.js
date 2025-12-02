@@ -1009,6 +1009,16 @@ export const qcBatchAPI = {
     } catch (error) {
       throw error;
     }
+  },
+
+  // Manually send a batch to QC (premature completion)
+  sendBatchToQC: async (batchId) => {
+    try {
+      const response = await api.post(`/api/qc-batches/${batchId}/send-to-qc`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
   }
 };
 
@@ -1235,7 +1245,7 @@ export const catiInterviewAPI = {
   },
 
   // Complete CATI interview
-  completeCatiInterview: async (queueId, sessionId, responses, selectedAC, selectedPollingStation, totalTimeSpent, startTime, endTime, totalQuestions, answeredQuestions, completionPercentage) => {
+  completeCatiInterview: async (queueId, sessionId, responses, selectedAC, selectedPollingStation, totalTimeSpent, startTime, endTime, totalQuestions, answeredQuestions, completionPercentage, setNumber = null) => {
     try {
       const response = await api.post(`/api/cati-interview/complete/${queueId}`, {
         sessionId,

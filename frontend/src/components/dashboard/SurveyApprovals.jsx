@@ -494,24 +494,65 @@ const SurveyApprovals = () => {
     resetVerificationForm();
   };
 
+  // Helper function to check if a verification question should be shown
+  const shouldShowVerificationQuestion = (questionType, interview) => {
+    if (!interview) return true;
+    
+    // Phone number question should not be shown for CATI responses
+    if (questionType === 'phoneNumber' && interview.interviewMode === 'cati') {
+      return false;
+    }
+    
+    // Get verification responses to check if related response is skipped
+    const verificationResponses = getVerificationResponses(interview);
+    
+    // Check if related response is skipped
+    switch (questionType) {
+      case 'gender':
+        return !verificationResponses.genderResponse?.isSkipped;
+      case 'upcomingElection':
+        return !verificationResponses.upcomingElectionResponse?.isSkipped;
+      case 'assembly2021':
+        return !verificationResponses.assembly2021Response?.isSkipped;
+      case 'lokSabha2024':
+        return !verificationResponses.lokSabha2024Response?.isSkipped;
+      case 'name':
+        return !verificationResponses.nameResponse?.isSkipped;
+      case 'age':
+        return !verificationResponses.ageResponse?.isSkipped;
+      default:
+        return true;
+    }
+  };
+
   // Check if form is complete and valid
   const isVerificationFormValid = () => {
-    return verificationForm.audioStatus !== '' &&
-           verificationForm.genderMatching !== '' &&
-           verificationForm.upcomingElectionsMatching !== '' &&
-           verificationForm.previousElectionsMatching !== '' &&
-           verificationForm.previousLoksabhaElectionsMatching !== '' &&
-           verificationForm.nameMatching !== '' &&
-           verificationForm.ageMatching !== '' &&
-           verificationForm.phoneNumberAsked !== '';
+    if (!selectedInterview) return false;
+    
+    // Audio status is always required
+    if (verificationForm.audioStatus === '') return false;
+    
+    // Check each question only if it should be shown
+    if (shouldShowVerificationQuestion('gender', selectedInterview) && verificationForm.genderMatching === '') return false;
+    if (shouldShowVerificationQuestion('upcomingElection', selectedInterview) && verificationForm.upcomingElectionsMatching === '') return false;
+    if (shouldShowVerificationQuestion('assembly2021', selectedInterview) && verificationForm.previousElectionsMatching === '') return false;
+    if (shouldShowVerificationQuestion('lokSabha2024', selectedInterview) && verificationForm.previousLoksabhaElectionsMatching === '') return false;
+    if (shouldShowVerificationQuestion('name', selectedInterview) && verificationForm.nameMatching === '') return false;
+    if (shouldShowVerificationQuestion('age', selectedInterview) && verificationForm.ageMatching === '') return false;
+    if (shouldShowVerificationQuestion('phoneNumber', selectedInterview) && verificationForm.phoneNumberAsked === '') return false;
+    
+    return true;
   };
 
   // Determine approval status based on form responses
   const getApprovalStatus = () => {
+    if (!selectedInterview) return 'rejected';
+    
     // For approval, ALL fields must be either:
     // - Best case (option 1 for most fields, or 1/4 for audioStatus), OR
     // - "Cannot hear the response clearly" (option 3 for matching fields, or 7 for audioStatus)
     // If ANY field has "Not Matched" (2) or any other invalid value, reject
+    // Only check questions that should be shown
     
     // Q1: Audio Status - Accept only if "1" (best), "4" (best), or "7" (cannot hear)
     const audioStatus = verificationForm.audioStatus;
@@ -522,36 +563,49 @@ const SurveyApprovals = () => {
     // Q2: Gender Matching - Accept only if "1" (matched/best)
     // Note: Option "3" is "Male answering on behalf of female", NOT "cannot hear", so reject it
     // Reject if "2" (not matched), "3" (male answering), or any other value
-    if (verificationForm.genderMatching !== '1') {
-      return 'rejected';
+    if (shouldShowVerificationQuestion('gender', selectedInterview)) {
+      if (verificationForm.genderMatching !== '1') {
+        return 'rejected';
+      }
     }
     
     // Q3: Upcoming Elections Matching - Accept only if "1" (matched/best) or "3" (cannot hear)
-    if (verificationForm.upcomingElectionsMatching !== '1' && verificationForm.upcomingElectionsMatching !== '3') {
-      return 'rejected';
+    if (shouldShowVerificationQuestion('upcomingElection', selectedInterview)) {
+      if (verificationForm.upcomingElectionsMatching !== '1' && verificationForm.upcomingElectionsMatching !== '3') {
+        return 'rejected';
+      }
     }
     
     // Q4: Previous Elections Matching - Accept only if "1" (matched/best) or "3" (cannot hear)
-    if (verificationForm.previousElectionsMatching !== '1' && verificationForm.previousElectionsMatching !== '3') {
-      return 'rejected';
+    if (shouldShowVerificationQuestion('assembly2021', selectedInterview)) {
+      if (verificationForm.previousElectionsMatching !== '1' && verificationForm.previousElectionsMatching !== '3') {
+        return 'rejected';
+      }
     }
     
     // Q5: Previous Loksabha Elections Matching - Accept only if "1" (matched/best) or "3" (cannot hear)
-    if (verificationForm.previousLoksabhaElectionsMatching !== '1' && verificationForm.previousLoksabhaElectionsMatching !== '3') {
-      return 'rejected';
+    if (shouldShowVerificationQuestion('lokSabha2024', selectedInterview)) {
+      if (verificationForm.previousLoksabhaElectionsMatching !== '1' && verificationForm.previousLoksabhaElectionsMatching !== '3') {
+        return 'rejected';
+      }
     }
     
     // Q6: Name Matching - Accept only if "1" (matched/best) or "3" (cannot hear)
-    if (verificationForm.nameMatching !== '1' && verificationForm.nameMatching !== '3') {
-      return 'rejected';
+    if (shouldShowVerificationQuestion('name', selectedInterview)) {
+      if (verificationForm.nameMatching !== '1' && verificationForm.nameMatching !== '3') {
+        return 'rejected';
+      }
     }
     
     // Q7: Age Matching - Accept only if "1" (matched/best) or "3" (cannot hear)
-    if (verificationForm.ageMatching !== '1' && verificationForm.ageMatching !== '3') {
-      return 'rejected';
+    if (shouldShowVerificationQuestion('age', selectedInterview)) {
+      if (verificationForm.ageMatching !== '1' && verificationForm.ageMatching !== '3') {
+        return 'rejected';
+      }
     }
     
     // Q8: Phone Number Asked - No rejection logic (informational only)
+    // Already excluded for CATI in shouldShowVerificationQuestion
     
     // All criteria met = approve
     return 'approved';
@@ -622,20 +676,7 @@ const SurveyApprovals = () => {
   };
 
   // Helper function to get respondent info from responses
-  const getRespondentInfo = (responses) => {
-    const nameResponse = responses.find(r => 
-      r.questionText?.toLowerCase().includes('name') || 
-      r.questionText?.toLowerCase().includes('respondent')
-    );
-    const genderResponse = responses.find(r => 
-      r.questionText?.toLowerCase().includes('gender') || 
-      r.questionText?.toLowerCase().includes('sex')
-    );
-    const ageResponse = responses.find(r => 
-      r.questionText?.toLowerCase().includes('age') || 
-      r.questionText?.toLowerCase().includes('year')
-    );
-
+  const getRespondentInfo = (responses, surveyId = null) => {
     // Helper to extract value from response (handle arrays)
     const extractValue = (response) => {
       if (!response || response === null || response === undefined) return null;
@@ -645,6 +686,107 @@ const SurveyApprovals = () => {
       }
       return response;
     };
+
+    // Helper to find response by question text (ignoring translations)
+    const findResponseByQuestionText = (responses, searchTexts) => {
+      return responses.find(r => {
+        if (!r.questionText) return false;
+        const mainText = getMainText(r.questionText).toLowerCase();
+        return searchTexts.some(text => mainText.includes(text.toLowerCase()));
+      });
+    };
+
+    // Special handling for survey "68fd1915d41841da463f0d46"
+    if (surveyId === '68fd1915d41841da463f0d46') {
+      // Find name from name question
+      const nameResponse = findResponseByQuestionText(responses, [
+        'what is your full name',
+        'full name',
+        'name'
+      ]);
+      
+      // Find gender from "Please note the respondent's gender"
+      let genderResponse = findResponseByQuestionText(responses, [
+        'please note the respondent\'s gender',
+        'note the respondent\'s gender',
+        'respondent\'s gender',
+        'respondent gender',
+        'note the gender'
+      ]);
+      
+      // If not found, try broader search
+      if (!genderResponse) {
+        genderResponse = findResponseByQuestionText(responses, ['gender']);
+      }
+      
+      // If still not found, try to find by question ID or other patterns
+      if (!genderResponse) {
+        const genderResponseById = responses.find(r => 
+          r.questionId?.includes('gender') || 
+          r.questionId?.includes('respondent_gender')
+        );
+        if (genderResponseById) {
+          return {
+            name: extractValue(nameResponse?.response) || 'Not Available',
+            gender: extractValue(genderResponseById?.response) || 'Not Available',
+            age: extractValue(ageResponse?.response) || 'Not Available'
+          };
+        }
+      }
+      
+      // Last resort: try to find in survey structure if available
+      if (!genderResponse && fullSurveyData) {
+        // Find the gender question in the survey
+        let genderQuestion = null;
+        if (fullSurveyData.sections) {
+          for (const section of fullSurveyData.sections) {
+            if (section.questions) {
+              genderQuestion = section.questions.find(q => {
+                const qText = getMainText(q.text || '').toLowerCase();
+                return qText.includes('please note the respondent\'s gender') ||
+                       qText.includes('note the respondent\'s gender') ||
+                       qText.includes('respondent\'s gender');
+              });
+              if (genderQuestion) break;
+            }
+          }
+        }
+        
+        // If found, try to match by question ID
+        if (genderQuestion && genderQuestion.id) {
+          genderResponse = responses.find(r => r.questionId === genderQuestion.id);
+        }
+      }
+      
+      // Find age from age question
+      const ageResponse = findResponseByQuestionText(responses, [
+        'could you please tell me your age',
+        'your age in complete years',
+        'age in complete years',
+        'age'
+      ]);
+
+      return {
+        name: extractValue(nameResponse?.response) || 'Not Available',
+        gender: extractValue(genderResponse?.response) || 'Not Available',
+        age: extractValue(ageResponse?.response) || 'Not Available'
+      };
+    }
+
+    // Default behavior for other surveys
+    const nameResponse = findResponseByQuestionText(responses, [
+      'name',
+      'respondent',
+      'full name'
+    ]);
+    const genderResponse = findResponseByQuestionText(responses, [
+      'gender',
+      'sex'
+    ]);
+    const ageResponse = findResponseByQuestionText(responses, [
+      'age',
+      'year'
+    ]);
 
     return {
       name: extractValue(nameResponse?.response) || 'Not Available',
@@ -1302,25 +1444,52 @@ const SurveyApprovals = () => {
       : null;
     const assembly2021Question = assembly2021Response ? findQuestionByText(assembly2021Response.questionText, survey) : null;
     
-    // 2024 Lok Sabha election response (Q7) - But user wants to show Q6 (2021 AE Party Choice) response
-    // Match by finding "2021 AE Party Choice" question in survey first
-    let lokSabha2024Response = findResponseBySurveyQuestion([
-      '2021', 'ae party choice', 'assembly elections', 'mla'
-    ], responses, survey, false);
+    // 2024 Lok Sabha election response (Q6) - "2024 GE Party Choice"
+    // Match by finding "2024 GE Party Choice" question in survey first
+    // Use more specific keywords to avoid matching age or other questions
+    let lokSabha2024Response = null;
+    
+    // Strategy 1: Look for "ge party choice" with "2024" - require both
+    lokSabha2024Response = findResponseBySurveyQuestion([
+      'ge party choice', '2024'
+    ], responses, survey, true, ['age', 'বয়স', 'year', 'old', 'assembly', 'ae', '2021', '2025']);
+    
+    // Strategy 2: Look for responses with "2024" and "ge party choice" separately
     if (!lokSabha2024Response) {
       lokSabha2024Response = findResponseByKeywords(responses, [
-        '2021', 'ae party choice', 'assembly elections', 'mla'
-      ], false);
+        '2024', 'ge party choice'
+      ], true, ['age', 'বয়স', 'year', 'old', 'assembly', 'ae', '2021', '2025', 'preference']);
+    }
+    
+    // Strategy 3: Look for "ge party choice" (case-insensitive) with "2024" anywhere
+    if (!lokSabha2024Response) {
+      lokSabha2024Response = responses.find((r) => {
+        const questionText = getMainText(r.questionText || '').toLowerCase();
+        const has2024 = questionText.includes('2024');
+        const hasGePartyChoice = questionText.includes('ge party choice') || questionText.includes('ge party');
+        const hasExclude = questionText.includes('age') || questionText.includes('বয়স') || 
+                          questionText.includes('assembly') || questionText.includes('ae') ||
+                          questionText.includes('2021') || questionText.includes('2025') ||
+                          questionText.includes('preference');
+        return has2024 && hasGePartyChoice && !hasExclude;
+      });
     }
     const lokSabha2024Value = lokSabha2024Response?.response 
       ? (Array.isArray(lokSabha2024Response.response) ? lokSabha2024Response.response[0] : lokSabha2024Response.response)
       : null;
     const lokSabha2024Question = lokSabha2024Response ? findQuestionByText(lokSabha2024Response.questionText, survey) : null;
     
-    // Name response
-    let nameResponse = findResponseBySurveyQuestion(['name', 'respondent'], responses, survey, false);
+    // Name response - "Would You like to share your name with us?"
+    let nameResponse = findResponseBySurveyQuestion(['would you like to share your name', 'share your name', 'name with us'], responses, survey, false);
     if (!nameResponse) {
-      nameResponse = findResponseByKeywords(responses, ['name', 'respondent'], false);
+      nameResponse = findResponseByKeywords(responses, ['would you like to share your name', 'share your name', 'name with us'], false);
+    }
+    // Fallback to general name search
+    if (!nameResponse) {
+      nameResponse = findResponseBySurveyQuestion(['name', 'respondent'], responses, survey, false);
+      if (!nameResponse) {
+        nameResponse = findResponseByKeywords(responses, ['name', 'respondent'], false);
+      }
     }
     const nameValue = nameResponse?.response 
       ? (Array.isArray(nameResponse.response) ? nameResponse.response[0] : nameResponse.response)
@@ -1384,12 +1553,20 @@ const SurveyApprovals = () => {
       assembly2021: assembly2021Value ? formatResponseDisplay(assembly2021Value, assembly2021Question) : 'Not Available',
       lokSabha2024: lokSabha2024Value ? formatResponseDisplay(lokSabha2024Value, lokSabha2024Question) : 'Not Available',
       name: nameValue ? formatResponseDisplay(nameValue, nameQuestion) : 'Not Available',
-      age: ageValue ? formatResponseDisplay(ageValue, ageQuestion) : 'Not Available'
+      age: ageValue ? formatResponseDisplay(ageValue, ageQuestion) : 'Not Available',
+      // Include response objects to check if skipped
+      genderResponse,
+      upcomingElectionResponse,
+      assembly2021Response,
+      lokSabha2024Response,
+      nameResponse,
+      ageResponse
     };
   };
 
   const filteredInterviews = interviews.filter(interview => {
-    const respondentInfo = getRespondentInfo(interview.responses);
+    const surveyId = interview.survey?._id || interview.survey?.survey?._id || fullSurveyData?._id;
+    const respondentInfo = getRespondentInfo(interview.responses, surveyId);
     
     // Search filter - now includes respondent name
     const matchesSearch = !searchTerm || 
@@ -1833,7 +2010,7 @@ const SurveyApprovals = () => {
                 <div className="flex items-center gap-4 text-sm text-gray-600">
                   <span className="flex items-center gap-1">
                     <User className="w-4 h-4" />
-                    {getRespondentInfo(currentAssignment.responses).name}
+                    {getRespondentInfo(currentAssignment.responses, currentAssignment.survey?._id || currentAssignment.survey?.survey?._id || fullSurveyData?._id).name}
                   </span>
                   <span className="flex items-center gap-1">
                     <Clock className="w-4 h-4" />
@@ -1893,7 +2070,7 @@ const SurveyApprovals = () => {
                     <div className="flex items-center gap-4 text-sm text-gray-600">
                       <span className="flex items-center gap-1">
                         <User className="w-4 h-4" />
-                        {getRespondentInfo(currentAssignment.responses).name}
+                        {getRespondentInfo(currentAssignment.responses, currentAssignment.survey?._id || currentAssignment.survey?.survey?._id || fullSurveyData?._id).name}
                       </span>
                       <span className="flex items-center gap-1">
                         <Clock className="w-4 h-4" />
@@ -1961,7 +2138,8 @@ const SurveyApprovals = () => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {sortedInterviews.map((interview) => {
-                const respondentInfo = getRespondentInfo(interview.responses);
+                const surveyId = interview.survey?._id || interview.survey?.survey?._id || fullSurveyData?._id;
+                const respondentInfo = getRespondentInfo(interview.responses, surveyId);
                 return (
                   <tr key={interview._id} className="hover:bg-gray-50">
                         <td className="px-6 py-4" style={{width: '240px'}}>
@@ -3311,184 +3489,190 @@ const SurveyApprovals = () => {
                   </div>
 
                   {/* Question 3: Upcoming Elections Matching */}
-                  <div className="space-y-2">
-                    <label className="block text-sm font-medium text-gray-700">
-                      3. Is the Response Matching for the Upcoming Elections preference (Q9)? (উত্তরটি কি আসন্ন নির্বাচনের পছন্দ (প্রশ্ন ৯) এর সাথে মিলে যাচ্ছে?)
-                      <span className="text-red-500 ml-1">*</span>
-                    </label>
-                    {selectedInterview && (
-                      <div className="mb-3 p-2 bg-blue-50 border-l-4 border-blue-500 rounded">
-                        <span className="text-sm font-medium text-blue-700">Response: </span>
-                        <span className="text-sm text-blue-600">{getVerificationResponses(selectedInterview).upcomingElection}</span>
-                      </div>
-                    )}
+                  {shouldShowVerificationQuestion('upcomingElection', selectedInterview) && (
                     <div className="space-y-2">
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="upcomingElectionsMatching"
-                          value="1"
-                          checked={verificationForm.upcomingElectionsMatching === '1'}
-                          onChange={(e) => handleVerificationFormChange('upcomingElectionsMatching', e.target.value)}
-                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-gray-700">1 - Matched (মিলে গেছে)</span>
+                      <label className="block text-sm font-medium text-gray-700">
+                        3. Is the Response Matching for the Upcoming Elections preference (Q8)? (উত্তরটি কি আসন্ন নির্বাচনের পছন্দ (প্রশ্ন ৮) এর সাথে মিলে যাচ্ছে?)
+                        <span className="text-red-500 ml-1">*</span>
                       </label>
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="upcomingElectionsMatching"
-                          value="2"
-                          checked={verificationForm.upcomingElectionsMatching === '2'}
-                          onChange={(e) => handleVerificationFormChange('upcomingElectionsMatching', e.target.value)}
-                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-gray-700">2 - Not Matched (মেলেনি)</span>
-                      </label>
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="upcomingElectionsMatching"
-                          value="3"
-                          checked={verificationForm.upcomingElectionsMatching === '3'}
-                          onChange={(e) => handleVerificationFormChange('upcomingElectionsMatching', e.target.value)}
-                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-gray-700">3 - Cannot hear the response clearly (উত্তর স্পষ্টভাবে শোনা যাচ্ছে না)</span>
-                      </label>
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="upcomingElectionsMatching"
-                          value="4"
-                          checked={verificationForm.upcomingElectionsMatching === '4'}
-                          onChange={(e) => handleVerificationFormChange('upcomingElectionsMatching', e.target.value)}
-                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-gray-700">4 - Did not ask (জিজ্ঞাসা করা হয়নি)</span>
-                      </label>
+                      {selectedInterview && (
+                        <div className="mb-3 p-2 bg-blue-50 border-l-4 border-blue-500 rounded">
+                          <span className="text-sm font-medium text-blue-700">Response: </span>
+                          <span className="text-sm text-blue-600">{getVerificationResponses(selectedInterview).upcomingElection}</span>
+                        </div>
+                      )}
+                      <div className="space-y-2">
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="upcomingElectionsMatching"
+                            value="1"
+                            checked={verificationForm.upcomingElectionsMatching === '1'}
+                            onChange={(e) => handleVerificationFormChange('upcomingElectionsMatching', e.target.value)}
+                            className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">1 - Matched (মিলে গেছে)</span>
+                        </label>
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="upcomingElectionsMatching"
+                            value="2"
+                            checked={verificationForm.upcomingElectionsMatching === '2'}
+                            onChange={(e) => handleVerificationFormChange('upcomingElectionsMatching', e.target.value)}
+                            className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">2 - Not Matched (মেলেনি)</span>
+                        </label>
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="upcomingElectionsMatching"
+                            value="3"
+                            checked={verificationForm.upcomingElectionsMatching === '3'}
+                            onChange={(e) => handleVerificationFormChange('upcomingElectionsMatching', e.target.value)}
+                            className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">3 - Cannot hear the response clearly (উত্তর স্পষ্টভাবে শোনা যাচ্ছে না)</span>
+                        </label>
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="upcomingElectionsMatching"
+                            value="4"
+                            checked={verificationForm.upcomingElectionsMatching === '4'}
+                            onChange={(e) => handleVerificationFormChange('upcomingElectionsMatching', e.target.value)}
+                            className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">4 - Did not ask (জিজ্ঞাসা করা হয়নি)</span>
+                        </label>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Question 4: Previous Elections Matching */}
-                  <div className="space-y-2">
-                    <label className="block text-sm font-medium text-gray-700">
-                      4. Is the Response Matching for the Previous 2021 Assembly Election (Q6)? (উত্তরটি কি ২০২১ সালের পূর্ববর্তী বিধানসভা নির্বাচনের (প্রশ্ন ৬) সাথে মিলে যাচ্ছে?)
-                      <span className="text-red-500 ml-1">*</span>
-                    </label>
-                    {selectedInterview && (
-                      <div className="mb-3 p-2 bg-blue-50 border-l-4 border-blue-500 rounded">
-                        <span className="text-sm font-medium text-blue-700">Response: </span>
-                        <span className="text-sm text-blue-600">{getVerificationResponses(selectedInterview).assembly2021}</span>
-                      </div>
-                    )}
+                  {shouldShowVerificationQuestion('assembly2021', selectedInterview) && (
                     <div className="space-y-2">
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="previousElectionsMatching"
-                          value="1"
-                          checked={verificationForm.previousElectionsMatching === '1'}
-                          onChange={(e) => handleVerificationFormChange('previousElectionsMatching', e.target.value)}
-                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-gray-700">1 - Matched (মিলে গেছে)</span>
+                      <label className="block text-sm font-medium text-gray-700">
+                        4. Is the Response Matching for the Previous 2021 Assembly Election (Q5)? (উত্তরটি কি ২০২১ সালের পূর্ববর্তী বিধানসভা নির্বাচনের (প্রশ্ন ৫) সাথে মিলে যাচ্ছে?)
+                        <span className="text-red-500 ml-1">*</span>
                       </label>
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="previousElectionsMatching"
-                          value="2"
-                          checked={verificationForm.previousElectionsMatching === '2'}
-                          onChange={(e) => handleVerificationFormChange('previousElectionsMatching', e.target.value)}
-                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-gray-700">2 - Not Matched (মেলেনি)</span>
-                      </label>
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="previousElectionsMatching"
-                          value="3"
-                          checked={verificationForm.previousElectionsMatching === '3'}
-                          onChange={(e) => handleVerificationFormChange('previousElectionsMatching', e.target.value)}
-                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-gray-700">3 - Cannot hear the response clearly (উত্তর স্পষ্টভাবে শোনা যাচ্ছে না)</span>
-                      </label>
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="previousElectionsMatching"
-                          value="4"
-                          checked={verificationForm.previousElectionsMatching === '4'}
-                          onChange={(e) => handleVerificationFormChange('previousElectionsMatching', e.target.value)}
-                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-gray-700">4 - Did not ask (জিজ্ঞাসা করা হয়নি)</span>
-                      </label>
+                      {selectedInterview && (
+                        <div className="mb-3 p-2 bg-blue-50 border-l-4 border-blue-500 rounded">
+                          <span className="text-sm font-medium text-blue-700">Response: </span>
+                          <span className="text-sm text-blue-600">{getVerificationResponses(selectedInterview).assembly2021}</span>
+                        </div>
+                      )}
+                      <div className="space-y-2">
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="previousElectionsMatching"
+                            value="1"
+                            checked={verificationForm.previousElectionsMatching === '1'}
+                            onChange={(e) => handleVerificationFormChange('previousElectionsMatching', e.target.value)}
+                            className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">1 - Matched (মিলে গেছে)</span>
+                        </label>
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="previousElectionsMatching"
+                            value="2"
+                            checked={verificationForm.previousElectionsMatching === '2'}
+                            onChange={(e) => handleVerificationFormChange('previousElectionsMatching', e.target.value)}
+                            className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">2 - Not Matched (মেলেনি)</span>
+                        </label>
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="previousElectionsMatching"
+                            value="3"
+                            checked={verificationForm.previousElectionsMatching === '3'}
+                            onChange={(e) => handleVerificationFormChange('previousElectionsMatching', e.target.value)}
+                            className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">3 - Cannot hear the response clearly (উত্তর স্পষ্টভাবে শোনা যাচ্ছে না)</span>
+                        </label>
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="previousElectionsMatching"
+                            value="4"
+                            checked={verificationForm.previousElectionsMatching === '4'}
+                            onChange={(e) => handleVerificationFormChange('previousElectionsMatching', e.target.value)}
+                            className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">4 - Did not ask (জিজ্ঞাসা করা হয়নি)</span>
+                        </label>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Question 5: Previous Loksabha Elections Matching */}
-                  <div className="space-y-2">
-                    <label className="block text-sm font-medium text-gray-700">
-                      5. Is the Response Matching for the Previous 2024 Loksabha Election (Q7)? (উত্তরটি কি ২০২৪ সালের পূর্ববর্তী লোকসভা নির্বাচনের (প্রশ্ন ৭) সাথে মিলে যাচ্ছে?)
-                      <span className="text-red-500 ml-1">*</span>
-                    </label>
-                    {selectedInterview && (
-                      <div className="mb-3 p-2 bg-blue-50 border-l-4 border-blue-500 rounded">
-                        <span className="text-sm font-medium text-blue-700">Response: </span>
-                        <span className="text-sm text-blue-600">{getVerificationResponses(selectedInterview).lokSabha2024}</span>
-                      </div>
-                    )}
+                  {shouldShowVerificationQuestion('lokSabha2024', selectedInterview) && (
                     <div className="space-y-2">
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="previousLoksabhaElectionsMatching"
-                          value="1"
-                          checked={verificationForm.previousLoksabhaElectionsMatching === '1'}
-                          onChange={(e) => handleVerificationFormChange('previousLoksabhaElectionsMatching', e.target.value)}
-                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-gray-700">1 - Matched (মিলে গেছে)</span>
+                      <label className="block text-sm font-medium text-gray-700">
+                        5. Is the Response Matching for the Previous 2024 Loksabha Election (Q6)? (উত্তরটি কি ২০২৪ সালের পূর্ববর্তী লোকসভা নির্বাচনের (প্রশ্ন ৬) সাথে মিলে যাচ্ছে?)
+                        <span className="text-red-500 ml-1">*</span>
                       </label>
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="previousLoksabhaElectionsMatching"
-                          value="2"
-                          checked={verificationForm.previousLoksabhaElectionsMatching === '2'}
-                          onChange={(e) => handleVerificationFormChange('previousLoksabhaElectionsMatching', e.target.value)}
-                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-gray-700">2 - Not Matched (মেলেনি)</span>
-                      </label>
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="previousLoksabhaElectionsMatching"
-                          value="3"
-                          checked={verificationForm.previousLoksabhaElectionsMatching === '3'}
-                          onChange={(e) => handleVerificationFormChange('previousLoksabhaElectionsMatching', e.target.value)}
-                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-gray-700">3 - Cannot hear the response clearly (উত্তর স্পষ্টভাবে শোনা যাচ্ছে না)</span>
-                      </label>
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="previousLoksabhaElectionsMatching"
-                          value="4"
-                          checked={verificationForm.previousLoksabhaElectionsMatching === '4'}
-                          onChange={(e) => handleVerificationFormChange('previousLoksabhaElectionsMatching', e.target.value)}
-                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-gray-700">4 - Did not ask (জিজ্ঞাসা করা হয়নি)</span>
-                      </label>
+                      {selectedInterview && (
+                        <div className="mb-3 p-2 bg-blue-50 border-l-4 border-blue-500 rounded">
+                          <span className="text-sm font-medium text-blue-700">Response: </span>
+                          <span className="text-sm text-blue-600">{getVerificationResponses(selectedInterview).lokSabha2024}</span>
+                        </div>
+                      )}
+                      <div className="space-y-2">
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="previousLoksabhaElectionsMatching"
+                            value="1"
+                            checked={verificationForm.previousLoksabhaElectionsMatching === '1'}
+                            onChange={(e) => handleVerificationFormChange('previousLoksabhaElectionsMatching', e.target.value)}
+                            className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">1 - Matched (মিলে গেছে)</span>
+                        </label>
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="previousLoksabhaElectionsMatching"
+                            value="2"
+                            checked={verificationForm.previousLoksabhaElectionsMatching === '2'}
+                            onChange={(e) => handleVerificationFormChange('previousLoksabhaElectionsMatching', e.target.value)}
+                            className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">2 - Not Matched (মেলেনি)</span>
+                        </label>
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="previousLoksabhaElectionsMatching"
+                            value="3"
+                            checked={verificationForm.previousLoksabhaElectionsMatching === '3'}
+                            onChange={(e) => handleVerificationFormChange('previousLoksabhaElectionsMatching', e.target.value)}
+                            className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">3 - Cannot hear the response clearly (উত্তর স্পষ্টভাবে শোনা যাচ্ছে না)</span>
+                        </label>
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="previousLoksabhaElectionsMatching"
+                            value="4"
+                            checked={verificationForm.previousLoksabhaElectionsMatching === '4'}
+                            onChange={(e) => handleVerificationFormChange('previousLoksabhaElectionsMatching', e.target.value)}
+                            className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">4 - Did not ask (জিজ্ঞাসা করা হয়নি)</span>
+                        </label>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Question 6: Name Matching */}
                   <div className="space-y-2">
@@ -3551,72 +3735,75 @@ const SurveyApprovals = () => {
                   </div>
 
                   {/* Question 7: Age Matching */}
-                  <div className="space-y-2">
-                    <label className="block text-sm font-medium text-gray-700">
-                      7. Is the Age matching? (বয়স কি মিলে গেছে?)
-                      <span className="text-red-500 ml-1">*</span>
-                    </label>
-                    {selectedInterview && (
-                      <div className="mb-3 p-2 bg-blue-50 border-l-4 border-blue-500 rounded">
-                        <span className="text-sm font-medium text-blue-700">Response: </span>
-                        <span className="text-sm text-blue-600">{getVerificationResponses(selectedInterview).age}</span>
-                      </div>
-                    )}
+                  {shouldShowVerificationQuestion('age', selectedInterview) && (
                     <div className="space-y-2">
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="ageMatching"
-                          value="1"
-                          checked={verificationForm.ageMatching === '1'}
-                          onChange={(e) => handleVerificationFormChange('ageMatching', e.target.value)}
-                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-gray-700">1 - Matched (মিলে গেছে)</span>
+                      <label className="block text-sm font-medium text-gray-700">
+                        7. Is the Age matching? (বয়স কি মিলে গেছে?)
+                        <span className="text-red-500 ml-1">*</span>
                       </label>
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="ageMatching"
-                          value="2"
-                          checked={verificationForm.ageMatching === '2'}
-                          onChange={(e) => handleVerificationFormChange('ageMatching', e.target.value)}
-                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-gray-700">2 - Not Matched (মেলেনি)</span>
-                      </label>
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="ageMatching"
-                          value="3"
-                          checked={verificationForm.ageMatching === '3'}
-                          onChange={(e) => handleVerificationFormChange('ageMatching', e.target.value)}
-                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-gray-700">3 - Cannot hear the response clearly (উত্তর স্পষ্টভাবে শোনা যাচ্ছে না)</span>
-                      </label>
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="ageMatching"
-                          value="4"
-                          checked={verificationForm.ageMatching === '4'}
-                          onChange={(e) => handleVerificationFormChange('ageMatching', e.target.value)}
-                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-gray-700">4 - Did not ask (জিজ্ঞাসা করা হয়নি)</span>
-                      </label>
+                      {selectedInterview && (
+                        <div className="mb-3 p-2 bg-blue-50 border-l-4 border-blue-500 rounded">
+                          <span className="text-sm font-medium text-blue-700">Response: </span>
+                          <span className="text-sm text-blue-600">{getVerificationResponses(selectedInterview).age}</span>
+                        </div>
+                      )}
+                      <div className="space-y-2">
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="ageMatching"
+                            value="1"
+                            checked={verificationForm.ageMatching === '1'}
+                            onChange={(e) => handleVerificationFormChange('ageMatching', e.target.value)}
+                            className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">1 - Matched (মিলে গেছে)</span>
+                        </label>
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="ageMatching"
+                            value="2"
+                            checked={verificationForm.ageMatching === '2'}
+                            onChange={(e) => handleVerificationFormChange('ageMatching', e.target.value)}
+                            className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">2 - Not Matched (মেলেনি)</span>
+                        </label>
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="ageMatching"
+                            value="3"
+                            checked={verificationForm.ageMatching === '3'}
+                            onChange={(e) => handleVerificationFormChange('ageMatching', e.target.value)}
+                            className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">3 - Cannot hear the response clearly (উত্তর স্পষ্টভাবে শোনা যাচ্ছে না)</span>
+                        </label>
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="ageMatching"
+                            value="4"
+                            checked={verificationForm.ageMatching === '4'}
+                            onChange={(e) => handleVerificationFormChange('ageMatching', e.target.value)}
+                            className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">4 - Did not ask (জিজ্ঞাসা করা হয়নি)</span>
+                        </label>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Question 8: Phone Number Asked */}
-                  <div className="space-y-2">
-                    <label className="block text-sm font-medium text-gray-700">
-                      8. Did the interviewer ask the phone number of the respondent? (সাক্ষাৎকারগ্রহণকারী কি উত্তরদাতার ফোন নম্বর জিজ্ঞাসা করেছিলেন?)
-                      <span className="text-red-500 ml-1">*</span>
-                    </label>
+                  {shouldShowVerificationQuestion('phoneNumber', selectedInterview) && (
                     <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-700">
+                        8. Did the interviewer ask the phone number of the respondent? (সাক্ষাৎকারগ্রহণকারী কি উত্তরদাতার ফোন নম্বর জিজ্ঞাসা করেছিলেন?)
+                        <span className="text-red-500 ml-1">*</span>
+                      </label>
+                      <div className="space-y-2">
                       <label className="flex items-center space-x-2 cursor-pointer">
                         <input
                           type="radio"
@@ -3650,8 +3837,9 @@ const SurveyApprovals = () => {
                         />
                         <span className="text-sm text-gray-700">3 - Did not ask (জিজ্ঞাসা করা হয়নি)</span>
                       </label>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Custom Feedback */}
                   <div className="space-y-2">

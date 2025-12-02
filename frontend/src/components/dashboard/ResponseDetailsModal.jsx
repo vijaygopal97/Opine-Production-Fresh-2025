@@ -5,6 +5,7 @@ import api from '../../services/api';
 import { useToast } from '../../contexts/ToastContext';
 import assemblyConstituencies from '../../data/assemblyConstituencies.json';
 import { renderWithTranslationProfessional, parseTranslation, getMainText } from '../../utils/translations';
+import { findGenderResponse, normalizeGenderResponse } from '../../utils/genderUtils';
 
 const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }) => {
   const [showRejectForm, setShowRejectForm] = useState(false);
@@ -279,16 +280,53 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
       return response;
     };
 
-    const nameResponse = responses.find(r => 
-      r.questionText?.toLowerCase().includes('name') || 
-      r.questionText?.toLowerCase().includes('respondent') ||
-      r.questionText?.toLowerCase().includes('full name')
-    );
+    // Helper to find response by question text (ignoring translations)
+    const findResponseByQuestionText = (searchTexts) => {
+      return responses.find(r => {
+        if (!r.questionText) return false;
+        const mainText = getMainText(r.questionText).toLowerCase();
+        return searchTexts.some(text => mainText.includes(text.toLowerCase()));
+      });
+    };
+
+    // Get survey ID
+    const surveyId = responseData?.survey?._id || survey?._id || null;
+
+    // Special handling for survey "68fd1915d41841da463f0d46"
+    let nameResponse = null;
+    if (surveyId === '68fd1915d41841da463f0d46') {
+      // Find name from "Would You like to share your name with us?" question
+      nameResponse = findResponseByQuestionText([
+        'would you like to share your name',
+        'share your name',
+        'name with us'
+      ]);
+      // Fallback to general name search
+      if (!nameResponse) {
+        nameResponse = findResponseByQuestionText([
+          'what is your full name',
+          'full name',
+          'name'
+        ]);
+      }
+    } else {
+      // For other surveys, use general name search
+      nameResponse = findResponseByQuestionText([
+        'what is your full name',
+        'full name',
+        'name',
+        'respondent'
+      ]);
+    }
     
-    const genderResponse = responses.find(r => 
-      r.questionText?.toLowerCase().includes('gender') || 
-      r.questionText?.toLowerCase().includes('sex')
+    // Find gender response using genderUtils
+    const genderResponse = findGenderResponse(responses, survey) || responses.find(r => 
+      getMainText(r.questionText || '').toLowerCase().includes('gender') || 
+      getMainText(r.questionText || '').toLowerCase().includes('sex')
     );
+    // Normalize gender response to handle translations
+    const genderValue = genderResponse?.response ? normalizeGenderResponse(genderResponse.response) : null;
+    const genderDisplay = genderValue === 'male' ? 'Male' : (genderValue === 'female' ? 'Female' : (genderResponse?.response || 'N/A'));
     
     const ageResponse = responses.find(r => 
       r.questionText?.toLowerCase().includes('age') || 

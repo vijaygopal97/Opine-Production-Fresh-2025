@@ -51,7 +51,7 @@ export const FIXED_QUESTIONS = [
   },
   {
     id: 'fixed_respondent_age',
-    type: 'text',
+    type: 'numeric',
     text: 'Could you please tell me your age in complete years?',
     description: 'Please enter your age in years.',
     required: true,
@@ -66,8 +66,7 @@ export const FIXED_QUESTIONS = [
     },
     validation: {
       minValue: 13,
-      maxValue: 120,
-      pattern: '^[0-9]+$'
+      maxValue: 120
     }
   }
 ];

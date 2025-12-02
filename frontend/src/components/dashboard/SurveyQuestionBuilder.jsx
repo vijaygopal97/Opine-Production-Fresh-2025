@@ -42,10 +42,31 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
     return prefix ? `${prefix}_${baseId}_${randomSuffix}` : `${baseId}_${randomSuffix}`;
   };
   
+  // Check if this is the specific survey that should not have protected questions
+  // Check multiple possible sources for the survey ID
+  const surveyId = surveyData?._id || surveyData?.id;
+  const isSpecialSurvey = surveyId === '68fd1915d41841da463f0d46';
+  
+  // Debug log to verify survey detection
+  if (surveyId) {
+    console.log('🔍 SurveyQuestionBuilder - Survey ID:', surveyId, 'isSpecialSurvey:', isSpecialSurvey);
+  }
+  
   const [sections, setSections] = useState(() => {
     if (initialData && initialData.length > 0) {
+      // For the special survey, don't add fixed questions
+      if (isSpecialSurvey) {
+        return initialData;
+      }
       return ensureFixedQuestionsInSurvey(initialData);
     } else {
+      if (isSpecialSurvey) {
+        return [{
+          id: 1,
+          title: 'Respondent Information',
+          questions: []
+        }];
+      }
       return ensureFixedQuestionsInSurvey([
         {
           id: 1,
@@ -65,6 +86,9 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
   const [previewResponses, setPreviewResponses] = useState({});
   const [showDeleteSectionModal, setShowDeleteSectionModal] = useState(false);
   const [sectionToDelete, setSectionToDelete] = useState(null);
+  const [editingQuestionNumber, setEditingQuestionNumber] = useState(null); // {sectionIndex, questionIndex}
+  const [editingQuestionNumberValue, setEditingQuestionNumberValue] = useState('');
+  const [draggedQuestion, setDraggedQuestion] = useState(null); // {sectionIndex, questionIndex}
   const hasInitialized = useRef(false);
 
   // Update sections when initialData changes (for edit mode)
@@ -72,8 +96,10 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
     if (initialData && Array.isArray(initialData) && initialData.length > 0 && !hasInitialized.current) {
       hasInitialized.current = true;
       
-      // Ensure fixed questions are included
-      const sectionsWithFixedQuestions = ensureFixedQuestionsInSurvey(initialData);
+      // For the special survey, don't add fixed questions
+      const sectionsWithFixedQuestions = isSpecialSurvey 
+        ? initialData 
+        : ensureFixedQuestionsInSurvey(initialData);
       
       // Ensure all questions have proper order numbers and preserve settings
       let globalOrder = 0;
@@ -94,9 +120,13 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
             });
           }
           
+          // Ensure question has questionNumber (auto-generate if missing)
+          const questionNumber = question.questionNumber || generateAutoQuestionNumber(sectionIndex, questionIndex);
+          
           const updatedQuestion = {
             ...question,
             order: question.order !== undefined ? question.order : globalOrder,
+            questionNumber: questionNumber,
             settings: preservedSettings
           };
           globalOrder++;
@@ -245,6 +275,11 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
       description: '',
       required: true,
       order: globalOrder, // Add order number
+      questionNumber: generateAutoQuestionNumber(currentSection, updatedSections[currentSection].questions.length),
+      enabledForCAPI: true, // Default: enabled for CAPI
+      enabledForCATI: true, // Default: enabled for CATI
+      setsForThisQuestion: false, // Default: not a sets question
+      setNumber: null, // Default: no set number
       options: type === 'multiple_choice' || type === 'dropdown' ? [
         { id: `${questionId}_opt_1`, text: 'Option 1', value: 'option1', code: '1' },
         { id: `${questionId}_opt_2`, text: 'Option 2', value: 'option2', code: '2' }
@@ -359,8 +394,8 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
       return;
     }
 
-    // Prevent duplication of fixed questions
-    if (question.isFixed || isFixedQuestion(question.id)) {
+    // Prevent duplication of fixed questions (unless it's the special survey)
+    if (!isSpecialSurvey && (question.isFixed || isFixedQuestion(question.id))) {
       console.warn('Cannot duplicate fixed questions');
       return;
     }
@@ -385,6 +420,31 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
     onUpdate(updatedSections);
   };
 
+  // Helper function to auto-generate question number based on position
+  const generateAutoQuestionNumber = (sectionIndex, questionIndex) => {
+    // If question already has a custom number, don't auto-generate
+    // Auto-generate format: sectionIndex + 1 . questionIndex + 1
+    return `${sectionIndex + 1}.${questionIndex + 1}`;
+  };
+
+  // Helper function to update question numbers after reordering
+  const updateQuestionNumbers = (updatedSections) => {
+    return updatedSections.map((section, sectionIndex) => ({
+      ...section,
+      questions: section.questions.map((question, questionIndex) => {
+        // Only auto-generate if question doesn't have a custom number
+        // or if it's a new question without a number
+        if (!question.questionNumber) {
+          return {
+            ...question,
+            questionNumber: generateAutoQuestionNumber(sectionIndex, questionIndex)
+          };
+        }
+        return question;
+      })
+    }));
+  };
+
   const moveQuestion = (fromSection, fromIndex, toSection, toIndex) => {
     const updatedSections = [...sections];
     const question = updatedSections[fromSection].questions[fromIndex];
@@ -392,17 +452,119 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
     updatedSections[fromSection].questions.splice(fromIndex, 1);
     updatedSections[toSection].questions.splice(toIndex, 0, question);
     
+    // Update question numbers after moving (only auto-generate for questions without custom numbers)
+    const sectionsWithNumbers = updateQuestionNumbers(updatedSections);
+    
     // Update order numbers for all questions
     let globalOrder = 0;
-    updatedSections.forEach((section, sectionIndex) => {
-      section.questions.forEach((q, questionIndex) => {
+    sectionsWithNumbers.forEach((section) => {
+      section.questions.forEach((q) => {
         q.order = globalOrder;
         globalOrder++;
       });
     });
     
+    setSections(sectionsWithNumbers);
+    onUpdate(sectionsWithNumbers);
+  };
+
+  // Drag and drop handlers
+  const handleDragStart = (e, sectionIndex, questionIndex) => {
+    setDraggedQuestion({ sectionIndex, questionIndex });
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', e.target);
+    e.target.style.opacity = '0.5';
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDragEnd = (e) => {
+    e.target.style.opacity = '1';
+    setDraggedQuestion(null);
+  };
+
+  const handleDrop = (e, targetSectionIndex, targetQuestionIndex) => {
+    e.preventDefault();
+    
+    if (!draggedQuestion) return;
+    
+    const { sectionIndex: sourceSectionIndex, questionIndex: sourceQuestionIndex } = draggedQuestion;
+    
+    // Don't do anything if dropped on itself
+    if (sourceSectionIndex === targetSectionIndex && sourceQuestionIndex === targetQuestionIndex) {
+      return;
+    }
+    
+    // Move the question
+    moveQuestion(sourceSectionIndex, sourceQuestionIndex, targetSectionIndex, targetQuestionIndex);
+    
+    // Update current selection
+    setCurrentSection(targetSectionIndex);
+    setCurrentQuestion(targetQuestionIndex);
+    
+    setDraggedQuestion(null);
+  };
+
+  // Handle double-click to edit question number
+  const handleQuestionNumberDoubleClick = (e, sectionIndex, questionIndex) => {
+    e.stopPropagation();
+    const question = sections[sectionIndex].questions[questionIndex];
+    setEditingQuestionNumber({ sectionIndex, questionIndex });
+    setEditingQuestionNumberValue(question.questionNumber || generateAutoQuestionNumber(sectionIndex, questionIndex));
+  };
+
+  // Handle question number change
+  const handleQuestionNumberChange = (e) => {
+    const newValue = e.target.value;
+    setEditingQuestionNumberValue(newValue);
+  };
+
+  // Handle question number save
+  const handleQuestionNumberSave = () => {
+    if (!editingQuestionNumber) return;
+    const { sectionIndex, questionIndex } = editingQuestionNumber;
+    
+    // Deep clone sections to ensure proper update
+    const updatedSections = sections.map((section, sIdx) => {
+      if (sIdx === sectionIndex) {
+        return {
+          ...section,
+          questions: section.questions.map((question, qIdx) => {
+            if (qIdx === questionIndex) {
+              const newNumber = editingQuestionNumberValue.trim();
+              return {
+                ...question,
+                questionNumber: newNumber || null
+              };
+            }
+            return question;
+          })
+        };
+      }
+      return section;
+    });
+    
     setSections(updatedSections);
+    setEditingQuestionNumber(null);
+    setEditingQuestionNumberValue('');
     onUpdate(updatedSections);
+  };
+
+  // Handle question number cancel
+  const handleQuestionNumberCancel = () => {
+    setEditingQuestionNumber(null);
+    setEditingQuestionNumberValue('');
+  };
+
+  // Get display question number
+  const getDisplayQuestionNumber = (question, sectionIndex, questionIndex) => {
+    if (question.questionNumber) {
+      return question.questionNumber;
+    }
+    return generateAutoQuestionNumber(sectionIndex, questionIndex);
   };
 
   const getQuestionIcon = (type) => {
@@ -630,7 +792,12 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
                 {sections.map((section, sectionIndex) => (
                   <div 
                     key={section.id} 
-                    onClick={() => setCurrentSection(sectionIndex)}
+                    onClick={(e) => {
+                      // Only navigate if click is not on a child element that should handle its own clicks
+                      if (!e.target.closest('.question-number-area') && !e.target.closest('.question-item')) {
+                        setCurrentSection(sectionIndex);
+                      }
+                    }}
                     className={`border rounded-lg p-3 cursor-pointer transition-colors ${
                       currentSection === sectionIndex
                         ? 'border-blue-300 bg-blue-50'
@@ -660,7 +827,7 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
                           <Trash2 className="w-4 h-4" />
                         </button>
                       )}
-                      {sectionIndex === 0 && (
+                      {sectionIndex === 0 && !isSpecialSurvey && (
                         <div className="flex items-center text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
                           <Shield className="w-3 h-3 mr-1" />
                           Protected
@@ -668,7 +835,7 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
                       )}
                     </div>
                     
-                    {sectionIndex === 0 && (
+                    {sectionIndex === 0 && !isSpecialSurvey && (
                       <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-md">
                         <p className="text-xs text-blue-700">
                           <Shield className="w-3 h-3 inline mr-1" />
@@ -678,32 +845,101 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
                     )}
                     
                     <div className="space-y-2">
-                      {section.questions.filter(question => question && question.id).map((question, questionIndex) => (
-                        <div
-                          key={question.id}
-                          onClick={(e) => {
-                            e.stopPropagation(); // Prevent section selection when clicking question
-                            setCurrentSection(sectionIndex);
-                            setCurrentQuestion(questionIndex);
-                          }}
-                          className={`flex items-center space-x-2 p-2 rounded cursor-pointer transition-colors ${
-                            currentSection === sectionIndex && currentQuestion === questionIndex
-                              ? 'bg-blue-50 text-blue-700'
-                              : 'hover:bg-gray-50'
-                          }`}
-                        >
-                          <span className="text-xs font-medium text-gray-500 w-6 flex-shrink-0">
-                            {sectionIndex + 1}.{questionIndex + 1}
-                          </span>
-                          {question.type && React.createElement(getQuestionIcon(question.type), {
-                            className: `w-4 h-4 text-${getQuestionColor(question.type)}-600`
-                          })}
-                          <span className="text-sm truncate flex-1">{question.text || question.title}</span>
-                          {question.conditions && question.conditions.length > 0 && (
-                            <Zap className="w-3 h-3 text-yellow-600" title="Conditional question" />
-                          )}
-                        </div>
-                      ))}
+                      {section.questions.filter(question => question && question.id).map((question, questionIndex) => {
+                        // For special survey, ignore isFixed flag
+                        const isFixed = isSpecialSurvey ? false : (question.isFixed || isFixedQuestion(question.id));
+                        const isEditing = editingQuestionNumber?.sectionIndex === sectionIndex && editingQuestionNumber?.questionIndex === questionIndex;
+                        const displayNumber = getDisplayQuestionNumber(question, sectionIndex, questionIndex);
+                        const isDragging = draggedQuestion?.sectionIndex === sectionIndex && draggedQuestion?.questionIndex === questionIndex;
+                        
+                        return (
+                          <div
+                            key={question.id}
+                            className="question-item"
+                            draggable={!isEditing}
+                            onDragStart={(e) => {
+                              if (!isEditing) {
+                                handleDragStart(e, sectionIndex, questionIndex);
+                              } else {
+                                e.preventDefault();
+                              }
+                            }}
+                            onDragOver={handleDragOver}
+                            onDragEnd={handleDragEnd}
+                            onDrop={(e) => handleDrop(e, sectionIndex, questionIndex)}
+                            onClick={(e) => {
+                              // Don't navigate if clicking on question number area
+                              if (e.target.closest('.question-number-area')) {
+                                e.stopPropagation();
+                                return;
+                              }
+                              if (!isEditing) {
+                                e.stopPropagation(); // Prevent section selection when clicking question
+                                setCurrentSection(sectionIndex);
+                                setCurrentQuestion(questionIndex);
+                              }
+                            }}
+                            className={`flex items-center space-x-2 p-2 rounded transition-colors ${
+                              isEditing ? 'cursor-default' : 'cursor-move'
+                            } ${
+                              currentSection === sectionIndex && currentQuestion === questionIndex
+                                ? 'bg-blue-50 text-blue-700'
+                                : 'hover:bg-gray-50'
+                            } ${isDragging ? 'opacity-50' : ''}`}
+                          >
+                            <GripVertical className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                value={editingQuestionNumberValue}
+                                onChange={handleQuestionNumberChange}
+                                onBlur={handleQuestionNumberSave}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleQuestionNumberSave();
+                                  } else if (e.key === 'Escape') {
+                                    e.preventDefault();
+                                    handleQuestionNumberCancel();
+                                  }
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                className="text-xs font-medium text-gray-700 w-16 px-1 py-0.5 border-2 border-blue-400 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white z-10"
+                                autoFocus
+                              />
+                            ) : (
+                              <span 
+                                className="question-number-area text-xs font-medium text-gray-500 w-12 flex-shrink-0 cursor-text hover:text-blue-600 hover:bg-blue-50 px-1 py-0.5 rounded transition-colors select-none"
+                                onClick={(e) => {
+                                  // Stop all propagation to prevent section navigation
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                }}
+                                onDoubleClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleQuestionNumberDoubleClick(e, sectionIndex, questionIndex);
+                                }}
+                                onMouseDown={(e) => {
+                                  // Stop propagation on mouse down to prevent any navigation
+                                  e.stopPropagation();
+                                }}
+                                title="Double-click to edit question number"
+                              >
+                                {displayNumber}
+                              </span>
+                            )}
+                            {question.type && React.createElement(getQuestionIcon(question.type), {
+                              className: `w-4 h-4 text-${getQuestionColor(question.type)}-600 flex-shrink-0`
+                            })}
+                            <span className="text-sm truncate flex-1">{question.text || question.title}</span>
+                            {question.conditions && question.conditions.length > 0 && (
+                              <Zap className="w-3 h-3 text-yellow-600 flex-shrink-0" title="Conditional question" />
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                     
                     <button
@@ -777,14 +1013,43 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
                     {/* Questions */}
                     <div className="space-y-6">
                       {sections[currentSection].questions.filter(question => question && question.id).map((question, questionIndex) => {
-                        const isFixed = question.isFixed || isFixedQuestion(question.id);
+                        // For special survey, ignore isFixed flag
+                        const isFixed = isSpecialSurvey ? false : (question.isFixed || isFixedQuestion(question.id));
                         return (
                         <div key={question.id} className={`border rounded-lg p-6 ${isFixed ? 'border-blue-200 bg-blue-50/30' : 'border-gray-200'}`}>
                           <div className="flex items-start justify-between mb-4">
                             <div className="flex items-center space-x-3">
-                            <span className={`text-sm font-bold px-2 py-1 rounded ${isFixed ? 'text-blue-700 bg-blue-200' : 'text-blue-600 bg-blue-100'}`}>
-                              Q{currentSection + 1}.{questionIndex + 1}
-                            </span>
+                            {editingQuestionNumber?.sectionIndex === currentSection && editingQuestionNumber?.questionIndex === questionIndex ? (
+                              <input
+                                type="text"
+                                value={editingQuestionNumberValue}
+                                onChange={handleQuestionNumberChange}
+                                onBlur={handleQuestionNumberSave}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleQuestionNumberSave();
+                                  } else if (e.key === 'Escape') {
+                                    e.preventDefault();
+                                    handleQuestionNumberCancel();
+                                  }
+                                }}
+                                className="text-sm font-bold px-2 py-1 rounded border border-blue-300 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                autoFocus
+                              />
+                            ) : (
+                              <span 
+                                className={`text-sm font-bold px-2 py-1 rounded cursor-text hover:bg-blue-200 transition-colors ${isFixed ? 'text-blue-700 bg-blue-200' : 'text-blue-600 bg-blue-100'}`}
+                                onDoubleClick={(e) => {
+                                  e.stopPropagation();
+                                  handleQuestionNumberDoubleClick(e, currentSection, questionIndex);
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                title="Double-click to edit question number"
+                              >
+                                Q{getDisplayQuestionNumber(question, currentSection, questionIndex)}
+                              </span>
+                            )}
                               {question.type && React.createElement(getQuestionIcon(question.type), {
                                 className: `w-5 h-5 text-${getQuestionColor(question.type)}-600`
                               })}
@@ -982,6 +1247,67 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
                                 />
                                 <span className={`text-sm ${isFixed ? 'text-gray-500' : 'text-gray-700'}`}>Required</span>
                               </label>
+                              
+                              {/* CAPI/CATI Visibility Settings */}
+                              <div className="ml-4 pl-4 border-l border-gray-300">
+                                <div className="space-y-2">
+                                  <label className="flex items-center space-x-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={question.enabledForCAPI !== false} // Default to true
+                                      onChange={(e) => !isFixed && updateQuestion(currentSection, questionIndex, { enabledForCAPI: e.target.checked })}
+                                      className={`w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 ${isFixed ? 'cursor-not-allowed opacity-50' : ''}`}
+                                      disabled={isFixed}
+                                    />
+                                    <span className={`text-xs ${isFixed ? 'text-gray-500' : 'text-gray-700'}`}>CAPI</span>
+                                  </label>
+                                  <label className="flex items-center space-x-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={question.enabledForCATI !== false} // Default to true
+                                      onChange={(e) => !isFixed && updateQuestion(currentSection, questionIndex, { enabledForCATI: e.target.checked })}
+                                      className={`w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 ${isFixed ? 'cursor-not-allowed opacity-50' : ''}`}
+                                      disabled={isFixed}
+                                    />
+                                    <span className={`text-xs ${isFixed ? 'text-gray-500' : 'text-gray-700'}`}>CATI</span>
+                                  </label>
+                                      <label className="flex items-center space-x-2">
+                                        <input
+                                          type="checkbox"
+                                          checked={question.setsForThisQuestion || false}
+                                          onChange={(e) => {
+                                            if (!isFixed) {
+                                              const updates = { 
+                                                setsForThisQuestion: e.target.checked,
+                                                // Clear setNumber if unchecking Sets
+                                                setNumber: e.target.checked ? (question.setNumber || 1) : null
+                                              };
+                                              updateQuestion(currentSection, questionIndex, updates);
+                                            }
+                                          }}
+                                          className={`w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 ${isFixed ? 'cursor-not-allowed opacity-50' : ''}`}
+                                          disabled={isFixed}
+                                        />
+                                        <span className={`text-xs ${isFixed ? 'text-gray-500' : 'text-gray-700'}`}>Sets</span>
+                                      </label>
+                                      {question.setsForThisQuestion && (
+                                        <div className="flex items-center space-x-2 ml-6">
+                                          <label className="text-xs text-gray-700">Set Number:</label>
+                                          <input
+                                            type="number"
+                                            min="1"
+                                            value={question.setNumber || 1}
+                                            onChange={(e) => !isFixed && updateQuestion(currentSection, questionIndex, { 
+                                              setNumber: parseInt(e.target.value) || 1 
+                                            })}
+                                            className={`w-16 px-2 py-1 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${isFixed ? 'border-gray-200 bg-gray-50 text-gray-600 cursor-not-allowed' : 'border-gray-300'}`}
+                                            disabled={isFixed}
+                                            placeholder="1"
+                                          />
+                                        </div>
+                                      )}
+                                </div>
+                              </div>
                               
                               {question.type === 'multiple_choice' && (
                                 <div className="space-y-3">

@@ -42,6 +42,7 @@ const SurveyBuilder = ({ onClose, onSave, editingSurvey }) => {
     template: null,
     questions: [],
     respondentContacts: [],
+    sets: [],
     // Separate AC settings for each step
     interviewerACSettings: {
       assignACs: false,
@@ -191,6 +192,7 @@ const SurveyBuilder = ({ onClose, onSave, editingSurvey }) => {
       });
       
       setSurveyData({
+        _id: editingSurvey._id || editingSurvey.id, // Include survey ID for special survey detection
         mode: editingSurvey.mode || '',
         modes: editingSurvey.modes || [],
         modeAllocation: editingSurvey.modeAllocation || {},
@@ -272,6 +274,7 @@ const SurveyBuilder = ({ onClose, onSave, editingSurvey }) => {
         template: editingSurvey.template || null,
         questions: editingSurvey.sections || editingSurvey.questions || [],
         respondentContacts: editingSurvey.respondentContacts || [],
+        sets: editingSurvey.sets || [],
         // Initialize separate AC settings for each step
         // For backward compatibility, check if any interviewer has ACs assigned
         interviewerACSettings: {
@@ -671,7 +674,8 @@ const SurveyBuilder = ({ onClose, onSave, editingSurvey }) => {
                            surveyData.capiACSettings?.selectedState || 
                            surveyData.catiACSettings?.selectedState || 
                            surveyData.qualityAgentACSettings?.selectedState || '',
-        respondentContacts: surveyData.respondentContacts || []
+        respondentContacts: surveyData.respondentContacts || [],
+        sets: surveyData.sets || []
       };
 
       // Only add fields if they have values (for draft)
@@ -1060,7 +1064,8 @@ const SurveyBuilder = ({ onClose, onSave, editingSurvey }) => {
                            surveyData.capiACSettings?.selectedState || 
                            surveyData.catiACSettings?.selectedState || 
                            surveyData.qualityAgentACSettings?.selectedState || '',
-        respondentContacts: surveyData.respondentContacts || []
+        respondentContacts: surveyData.respondentContacts || [],
+        sets: surveyData.sets || []
       };
 
       // Debug: Log the survey payload
@@ -1455,7 +1460,7 @@ const SurveyBuilder = ({ onClose, onSave, editingSurvey }) => {
             <SurveyQuestionBuilder 
               onUpdate={(data) => updateSurveyData('questions', data)}
               initialData={surveyData.questions}
-              surveyData={surveyData}
+              surveyData={{ ...surveyData, _id: editingSurvey?._id || surveyData._id }}
             />
           );
         default:
@@ -1662,7 +1667,7 @@ const SurveyBuilder = ({ onClose, onSave, editingSurvey }) => {
             <SurveyQuestionBuilder 
               onUpdate={(data) => updateSurveyData('questions', data)}
               initialData={surveyData.questions}
-              surveyData={surveyData}
+              surveyData={{ ...surveyData, _id: editingSurvey?._id || surveyData._id }}
             />
           );
         }
@@ -1688,7 +1693,7 @@ const SurveyBuilder = ({ onClose, onSave, editingSurvey }) => {
             <SurveyQuestionBuilder 
               onUpdate={(data) => updateSurveyData('questions', data)}
               initialData={surveyData.questions}
-              surveyData={surveyData}
+              surveyData={{ ...surveyData, _id: editingSurvey?._id || surveyData._id }}
             />
           );
         }

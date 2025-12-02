@@ -4,29 +4,24 @@ const SurveyResponse = require('../models/SurveyResponse');
 const { processPreviousBatch } = require('../jobs/qcBatchProcessor');
 
 /**
- * Get or create a QC batch for a specific survey and date
+ * Get or create a QC batch for a specific survey and interviewer
  * @param {String} surveyId - Survey ID
- * @param {Date} date - Date for the batch (defaults to today)
+ * @param {String} interviewerId - Interviewer ID
  * @returns {Promise<QCBatch>}
  */
-const getOrCreateBatch = async (surveyId, date = null) => {
-  // Use provided date or today's date (start of day)
-  const batchDate = date ? new Date(date) : new Date();
-  batchDate.setHours(0, 0, 0, 0);
+const getOrCreateBatch = async (surveyId, interviewerId) => {
+  if (!interviewerId) {
+    throw new Error('Interviewer ID is required to create a batch');
+  }
   
-  // End of day for query
-  const endOfDay = new Date(batchDate);
-  endOfDay.setHours(23, 59, 59, 999);
-  
-  // Find existing batch for this date
+  // Find existing batch for this survey and interviewer that is still collecting
+  // Only look for batches with less than 100 responses
   let batch = await QCBatch.findOne({
     survey: surveyId,
-    batchDate: {
-      $gte: batchDate,
-      $lte: endOfDay
-    },
-    status: { $in: ['collecting', 'processing', 'qc_in_progress'] }
-  });
+    interviewer: interviewerId,
+    status: 'collecting',
+    totalResponses: { $lt: 100 }
+  }).sort({ batchDate: -1 }); // Get the most recent collecting batch
   
   // If no batch exists, create a new one
   if (!batch) {
@@ -40,7 +35,8 @@ const getOrCreateBatch = async (surveyId, date = null) => {
     
     batch = new QCBatch({
       survey: surveyId,
-      batchDate: batchDate,
+      interviewer: interviewerId,
+      batchDate: new Date(),
       status: 'collecting',
       responses: [],
       totalResponses: 0,
@@ -71,19 +67,15 @@ const getOrCreateBatch = async (surveyId, date = null) => {
     });
     
     await batch.save();
-    console.log(`✅ Created new QC batch for survey ${surveyId} on ${batchDate.toISOString().split('T')[0]}`);
+    console.log(`✅ Created new QC batch for survey ${surveyId} and interviewer ${interviewerId}`);
     
-    // Trigger processing of previous batch when new batch is created
-    // This happens immediately when a new batch is created
+    // Check if any batches in progress can have decisions made
     try {
-      await processPreviousBatch(surveyId);
-      
-      // Also check if any batches in progress can have decisions made
       const { checkBatchesInProgress } = require('../jobs/qcBatchProcessor');
       await checkBatchesInProgress();
     } catch (error) {
-      console.error('⚠️  Error processing previous batch (non-critical):', error);
-      // Don't throw - batch creation should succeed even if previous batch processing fails
+      console.error('⚠️  Error checking batches in progress (non-critical):', error);
+      // Don't throw - batch creation should succeed even if check fails
     }
   }
   
@@ -94,12 +86,23 @@ const getOrCreateBatch = async (surveyId, date = null) => {
  * Add a response to a batch
  * @param {String} responseId - SurveyResponse ID
  * @param {String} surveyId - Survey ID
+ * @param {String} interviewerId - Interviewer ID
  * @returns {Promise<QCBatch>}
  */
-const addResponseToBatch = async (responseId, surveyId) => {
+const addResponseToBatch = async (responseId, surveyId, interviewerId) => {
   try {
-    // Get or create batch for today
-    const batch = await getOrCreateBatch(surveyId);
+    if (!interviewerId) {
+      // Try to get interviewer from the response
+      const response = await SurveyResponse.findById(responseId).select('interviewer');
+      if (response && response.interviewer) {
+        interviewerId = response.interviewer.toString();
+      } else {
+        throw new Error('Interviewer ID is required to add response to batch');
+      }
+    }
+    
+    // Get or create batch for this interviewer
+    let batch = await getOrCreateBatch(surveyId, interviewerId);
     
     // Add response to batch if not already added
     if (!batch.responses.includes(responseId)) {
@@ -113,7 +116,25 @@ const addResponseToBatch = async (responseId, surveyId) => {
         isSampleResponse: false
       });
       
-      console.log(`✅ Added response ${responseId} to batch ${batch._id}`);
+      console.log(`✅ Added response ${responseId} to batch ${batch._id} (${batch.totalResponses}/100)`);
+      
+      // If batch reaches 100 responses, automatically process it
+      if (batch.totalResponses >= 100) {
+        console.log(`📦 Batch ${batch._id} reached 100 responses, processing automatically...`);
+        
+        // Get active config for processing
+        const Survey = require('../models/Survey');
+        const survey = await Survey.findById(surveyId).populate('company');
+        const config = survey ? await QCBatchConfig.getActiveConfig(surveyId, survey.company._id || survey.company) : null;
+        
+        if (config) {
+          const { processBatch } = require('../jobs/qcBatchProcessor');
+          await processBatch(batch, config);
+          console.log(`✅ Batch ${batch._id} processed automatically at 100 responses`);
+        } else {
+          console.warn(`⚠️  No config found for survey ${surveyId}, batch will be processed later`);
+        }
+      }
     }
     
     return batch;

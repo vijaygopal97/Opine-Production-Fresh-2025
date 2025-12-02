@@ -15,6 +15,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { surveyResponseAPI, catiInterviewAPI, pollingStationAPI } from '../../services/api';
 import { getApiUrl } from '../../utils/config';
 import { parseTranslation, renderWithTranslation, getMainText } from '../../utils/translations';
+import { isGenderQuestion, normalizeGenderResponse, isAgeQuestion } from '../../utils/genderUtils';
 
 const InterviewInterface = ({ survey, onClose, onComplete }) => {
   const { showSuccess, showError } = useToast();
@@ -730,9 +731,67 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
     }
   }, [survey._id]);
 
+  // State to track which Set is being shown in this interview
+  const [selectedSetNumber, setSelectedSetNumber] = useState(null);
+
+  // Helper function to determine which Set to show for this interview
+  const determineSetNumber = (sessionId, survey) => {
+    if (!sessionId || !survey) return null;
+    
+    // Find all unique set numbers in the survey
+    const setNumbers = new Set();
+    survey.sections?.forEach(section => {
+      section.questions?.forEach(question => {
+        if (question.setsForThisQuestion && question.setNumber !== null && question.setNumber !== undefined) {
+          setNumbers.add(question.setNumber);
+        }
+      });
+    });
+    
+    if (setNumbers.size === 0) return null;
+    
+    // Use sessionId as seed to deterministically select a Set
+    const seed = parseInt(sessionId.slice(-8), 16) || 0;
+    const setArray = Array.from(setNumbers).sort((a, b) => a - b);
+    const selectedIndex = seed % setArray.length;
+    return setArray[selectedIndex];
+  };
+
+  // Helper function to check if question should be shown based on interview mode and sets logic
+  const shouldShowQuestion = (question, interviewMode, currentSetNumber) => {
+    // Check CAPI/CATI visibility
+    if (interviewMode === 'capi' && question.enabledForCAPI === false) {
+      return false;
+    }
+    if (interviewMode === 'cati' && question.enabledForCATI === false) {
+      return false;
+    }
+    
+    // Check "Sets for this Question" logic
+    if (question.setsForThisQuestion) {
+      // If question has a set number, only show if it matches the selected set
+      if (question.setNumber !== null && question.setNumber !== undefined) {
+        // If no set is selected yet, we'll determine it
+        if (currentSetNumber === null) {
+          return false; // Don't show until set is determined
+        }
+        // Only show questions from the selected set
+        return question.setNumber === currentSetNumber;
+      }
+      // If setsForThisQuestion is true but no setNumber, treat as always show (backward compatibility)
+      return true;
+    }
+    
+    // Questions without Sets appear in all surveys
+    return true;
+  };
+
   // Get all questions from all sections
   const getAllQuestions = () => {
     const allQuestions = [];
+    
+    // Determine current interview mode
+    const interviewMode = survey.mode === 'multi_mode' ? (survey.assignedMode || 'capi') : (survey.mode || 'capi');
     
     // Check if AC selection is required
     const requiresACSelection = sessionData?.requiresACSelection && 
@@ -791,16 +850,28 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
       }
     }
     
-    // Add regular survey questions
+    // Determine which Set to show for this interview (if sets are used)
+    let currentSetNumber = selectedSetNumber;
+    if (currentSetNumber === null && sessionId) {
+      currentSetNumber = determineSetNumber(sessionId, survey);
+      if (currentSetNumber !== null) {
+        setSelectedSetNumber(currentSetNumber);
+      }
+    }
+    
+    // Add regular survey questions (filtered by CAPI/CATI and sets logic)
     survey.sections?.forEach((section, sectionIndex) => {
       section.questions?.forEach((question, questionIndex) => {
-        allQuestions.push({
-          ...question,
-          sectionIndex,
-          questionIndex,
-          sectionId: section.id,
-          sectionTitle: section.title
-        });
+        // Check if question should be shown
+        if (shouldShowQuestion(question, interviewMode, currentSetNumber)) {
+          allQuestions.push({
+            ...question,
+            sectionIndex,
+            questionIndex,
+            sectionId: section.id,
+            sectionTitle: section.title
+          });
+        }
       });
     });
     return allQuestions;
@@ -817,8 +888,12 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
     availableGroups, 
     availablePollingStations,
     selectedGroupName,
-    selectedStationName
+    selectedStationName,
+    sessionId, // Include sessionId for sets logic
+    selectedSetNumber // Include selectedSetNumber for sets logic
   ]);
+
+  // Use utility functions for gender detection (imported from genderUtils)
 
   // Helper function to get display text based on translation toggle
   const getDisplayText = (text) => {
@@ -984,10 +1059,15 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
 
   // Validate fixed questions against target audience
   const validateFixedQuestion = (questionId, response) => {
-    if (questionId === 'fixed_respondent_age') {
+    const question = allQuestionsRef.current.find(q => q.id === questionId);
+    
+    // Check if it's an age question (by ID or by text, ignoring translations)
+    if (questionId === 'fixed_respondent_age' || isAgeQuestion(question)) {
       return validateAge(response);
-    } else if (questionId === 'fixed_respondent_gender') {
-      return validateGender(response);
+    } else if (questionId === 'fixed_respondent_gender' || isGenderQuestion(question)) {
+      // Normalize gender response to handle translations
+      const normalizedGender = normalizeGenderResponse(response);
+      return validateGender(normalizedGender);
     }
     return null; // No validation for other questions
   };
@@ -1046,14 +1126,43 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
     }
 
       const results = question.conditions.map((condition, index) => {
-      const response = responsesRef.current[condition.questionId];
+      // Find the target question
+      let targetQuestion = allQuestionsRef.current.find(q => q.id === condition.questionId);
+      
+      // If target question is a gender question, also check for registered voter question (equivalent)
+      let response = responsesRef.current[condition.questionId];
+      let equivalentResponse = null;
+      
+      if (targetQuestion && isGenderQuestion(targetQuestion)) {
+        // Find registered voter question as equivalent
+        const registeredVoterQuestion = allQuestionsRef.current.find(q => {
+          const qText = getMainText(q.text || '').toLowerCase();
+          return qText.includes('are you a registered voter') || 
+                 qText.includes('registered voter') ||
+                 qText.includes('নিবন্ধিত ভোটার') ||
+                 qText.includes('বিধানসভা কেন্দ্র');
+        });
+        
+        if (registeredVoterQuestion) {
+          equivalentResponse = responsesRef.current[registeredVoterQuestion.id];
+        }
+      }
+      
+      // Use equivalent response if main response is not available
+      if ((response === undefined || response === null) && equivalentResponse !== null && equivalentResponse !== undefined) {
+        response = equivalentResponse;
+        targetQuestion = allQuestionsRef.current.find(q => {
+          const qText = getMainText(q.text || '').toLowerCase();
+          return qText.includes('are you a registered voter') || 
+                 qText.includes('registered voter') ||
+                 qText.includes('নিবন্ধিত ভোটার') ||
+                 qText.includes('বিধানসভা কেন্দ্র');
+        });
+      }
       
       if (response === undefined || response === null) {
         return false;
       }
-
-      // Find the target question to get its options for proper comparison
-      const targetQuestion = allQuestionsRef.current.find(q => q.id === condition.questionId);
       
       // Helper function to get main text (without translation) for comparison
       const getComparisonValue = (val) => {
@@ -1287,7 +1396,7 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
       });
 
       // Refresh gender quotas if gender question is answered
-      if (questionId === 'fixed_respondent_gender') {
+      if (questionId === 'fixed_respondent_gender' || isGenderQuestion(allQuestionsRef.current.find(q => q.id === questionId))) {
         // Small delay to allow backend to process the response
         setTimeout(() => {
           fetchGenderQuotas();
@@ -1992,7 +2101,8 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
           totalQuestions: allQuestions.length,
           answeredQuestions: finalResponses.filter(r => hasResponseContent(r.response)).length,
           skippedQuestions: finalResponses.filter(r => !hasResponseContent(r.response)).length,
-          completionPercentage: Math.round((finalResponses.filter(r => hasResponseContent(r.response)).length / allQuestions.length) * 100)
+          completionPercentage: Math.round((finalResponses.filter(r => hasResponseContent(r.response)).length / allQuestions.length) * 100),
+          setNumber: selectedSetNumber // Save which Set was shown in this interview
         }
       );
       }
@@ -2428,7 +2538,7 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
         const allowMultiple = currentQuestion.settings?.allowMultiple || false;
         const maxSelections = currentQuestion.settings?.maxSelections;
         const currentSelections = Array.isArray(currentResponse) ? currentResponse.length : 0;
-        const isGenderQuestion = currentQuestion.id === 'fixed_respondent_gender';
+        const isGenderQuestionCheck = isGenderQuestion(currentQuestion);
         
         // Check if "None" option exists
         const noneOption = displayOptions.find((opt) => {
@@ -2476,13 +2586,15 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
               
               // Get quota information for gender question
               let quotaInfo = null;
-              if (isGenderQuestion && genderQuotas) {
+              if (isGenderQuestionCheck && genderQuotas) {
+                // Normalize option value to handle translations (Male {পুরুষ}, Female {মহিলা})
+                const normalizedOptionValue = normalizeGenderResponse(optionValue);
                 const genderMapping = {
                   'male': 'Male',
                   'female': 'Female', 
                   'non_binary': 'Non-binary'
                 };
-                const mappedGender = genderMapping[optionValue];
+                const mappedGender = genderMapping[normalizedOptionValue];
                 if (mappedGender && genderQuotas[mappedGender]) {
                   const quota = genderQuotas[mappedGender];
                   quotaInfo = quota;
@@ -3206,7 +3318,13 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                     >
                       <div className="flex items-center space-x-3">
                         <span className="text-sm font-medium">
-                          {question.sectionIndex + 1}.{question.questionIndex + 1}
+                          {(() => {
+                            // Use custom questionNumber if available, otherwise use position
+                            if (question.questionNumber) {
+                              return `Q${question.questionNumber}`;
+                            }
+                            return `${question.sectionIndex + 1}.${question.questionIndex + 1}`;
+                          })()}
                         </span>
                         {hasResponse && !hasTargetAudienceError && <CheckCircle className="w-4 h-4" />}
                         {hasTargetAudienceError && <span className="text-red-600 text-lg">⚠️</span>}
@@ -3305,10 +3423,48 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                     ? 'text-red-600 border-l-4 border-red-500 pl-4' 
                     : 'text-gray-800'
                 }`}>
+                  {(() => {
+                    // Get question number - use custom questionNumber if available, otherwise generate from position
+                    let questionNumber = currentQuestion.questionNumber;
+                    if (!questionNumber && currentQuestion.sectionIndex !== undefined && currentQuestion.questionIndex !== undefined) {
+                      questionNumber = `${currentQuestion.sectionIndex + 1}.${currentQuestion.questionIndex + 1}`;
+                    } else if (!questionNumber) {
+                      // Fallback: find question in allQuestions to get position
+                      const questionPos = allQuestions.findIndex(q => q.id === currentQuestion.id);
+                      if (questionPos !== -1) {
+                        // Try to find section and question index
+                        let sectionIdx = 0;
+                        let qIdx = 0;
+                        let count = 0;
+                        if (survey && survey.sections) {
+                          for (let s = 0; s < survey.sections.length; s++) {
+                            for (let q = 0; q < survey.sections[s].questions.length; q++) {
+                              if (count === questionPos) {
+                                sectionIdx = s;
+                                qIdx = q;
+                                break;
+                              }
+                              count++;
+                            }
+                            if (count === questionPos) break;
+                          }
+                          questionNumber = `${sectionIdx + 1}.${qIdx + 1}`;
+                        } else {
+                          questionNumber = `Q${questionPos + 1}`;
+                        }
+                      }
+                    }
+                    return questionNumber ? <span className="text-blue-600 mr-3">Q{questionNumber}:</span> : null;
+                  })()}
                   {renderDisplayText(currentQuestion.text, {
                     className: ''
                   })}
                   {currentQuestion.required && <span className="text-red-500 ml-2">*</span>}
+                  {currentQuestion.type === 'multiple_choice' && currentQuestion.settings?.allowMultiple && (
+                    <span className="ml-3 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      Multiple selections
+                    </span>
+                  )}
                 </h2>
                 {currentQuestion.description && (
                   <p className="text-xl text-gray-600 leading-relaxed">{currentQuestion.description}</p>

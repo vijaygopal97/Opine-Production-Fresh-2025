@@ -396,20 +396,124 @@ const ViewResponsesPage = () => {
       return { name: 'N/A', gender: 'N/A', age: 'N/A', city: 'N/A', district: 'N/A', ac: 'N/A', lokSabha: 'N/A', state: 'N/A' };
     }
 
+    // Use getMainText from translations (already imported at top)
+    
+    // Helper to find response by question text (ignoring translations)
+    const findResponseByQuestionText = (responses, searchTexts) => {
+      return responses.find(r => {
+        if (!r.questionText) return false;
+        const mainText = getMainText(r.questionText).toLowerCase();
+        return searchTexts.some(text => mainText.includes(text.toLowerCase()));
+      });
+    };
+
+    // Get survey ID
+    const surveyId = responseData?.survey?._id || responseData?.survey?._id || null;
+
+    // Special handling for survey "68fd1915d41841da463f0d46"
+    if (surveyId === '68fd1915d41841da463f0d46') {
+      // Find name from "Would You like to share your name with us?" question
+      let nameResponse = findResponseByQuestionText(responses, [
+        'would you like to share your name',
+        'share your name',
+        'name with us'
+      ]);
+      // Fallback to general name search
+      if (!nameResponse) {
+        nameResponse = findResponseByQuestionText(responses, [
+          'what is your full name',
+          'full name',
+          'name'
+        ]);
+      }
+      
+      // Find gender from "Please note the respondent's gender"
+      let genderResponse = findResponseByQuestionText(responses, [
+        'please note the respondent\'s gender',
+        'note the respondent\'s gender',
+        'respondent\'s gender',
+        'respondent gender',
+        'note the gender'
+      ]);
+      
+      // If not found, try broader search
+      if (!genderResponse) {
+        genderResponse = findResponseByQuestionText(responses, ['gender']);
+      }
+      
+      // If still not found, try to find by question ID
+      if (!genderResponse) {
+        const genderResponseById = responses.find(r => 
+          r.questionId?.includes('gender') || 
+          r.questionId?.includes('respondent_gender')
+        );
+        if (genderResponseById) {
+          genderResponse = genderResponseById;
+        }
+      }
+      
+      // Find age from age question
+      const ageResponse = findResponseByQuestionText(responses, [
+        'could you please tell me your age',
+        'your age in complete years',
+        'age in complete years',
+        'age'
+      ]);
+
+      const acResponse = responses.find(r => 
+        getMainText(r.questionText || '').toLowerCase().includes('assembly') ||
+        getMainText(r.questionText || '').toLowerCase().includes('constituency')
+      );
+
+      // Get city from GPS location if available, otherwise from responses
+      let city = 'N/A';
+      if (responseData?.location?.city) {
+        city = responseData.location.city;
+      } else {
+        const cityResponse = findResponseByQuestionText(responses, [
+          'city',
+          'location'
+        ]);
+        city = cityResponse?.response || 'N/A';
+      }
+
+      // Get district from AC using assemblyConstituencies.json
+      const acName = acResponse?.response || 'N/A';
+      const district = getDistrictFromAC(acName);
+
+      // Get Lok Sabha from AC using assemblyConstituencies.json
+      const lokSabha = getLokSabhaFromAC(acName);
+
+      // Get state from GPS location
+      const state = getStateFromGPS(responseData?.location);
+
+      return {
+        name: nameResponse?.response || 'N/A',
+        gender: genderResponse?.response || 'N/A',
+        age: ageResponse?.response || 'N/A',
+        city: city,
+        district: district,
+        ac: acName,
+        lokSabha: lokSabha,
+        state: state
+      };
+    }
+
+    // Default behavior for other surveys
     const nameResponse = responses.find(r => 
-      r.questionText.toLowerCase().includes('name') || 
-      r.questionText.toLowerCase().includes('respondent') ||
-      r.questionText.toLowerCase().includes('full name')
+      getMainText(r.questionText || '').toLowerCase().includes('name') || 
+      getMainText(r.questionText || '').toLowerCase().includes('respondent') ||
+      getMainText(r.questionText || '').toLowerCase().includes('full name')
     );
     
     const genderResponse = responses.find(r => 
-      r.questionText.toLowerCase().includes('gender') || 
-      r.questionText.toLowerCase().includes('sex')
+      getMainText(r.questionText || '').toLowerCase().includes('gender') || 
+      getMainText(r.questionText || '').toLowerCase().includes('sex')
     );
     
     const ageResponse = responses.find(r => 
-      r.questionText.toLowerCase().includes('age') || 
-      r.questionText.toLowerCase().includes('year')
+      getMainText(r.questionText || '').toLowerCase().includes('age') || 
+      getMainText(r.questionText || '').toLowerCase().includes('year')
     );
 
     const acResponse = responses.find(r => 

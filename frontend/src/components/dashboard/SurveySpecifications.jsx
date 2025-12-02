@@ -183,8 +183,8 @@ const SurveySpecifications = ({ onUpdate, initialData, mode }) => {
     }
     if (!formData.sampleSize) {
       newErrors.sampleSize = 'Sample size is required';
-    } else if (parseInt(formData.sampleSize) > 100000) {
-      newErrors.sampleSize = 'Sample size cannot exceed 100,000';
+    } else if (parseInt(formData.sampleSize) > 10000000) {
+      newErrors.sampleSize = 'Sample size cannot exceed 10,000,000';
     } else if (parseInt(formData.sampleSize) < 1) {
       newErrors.sampleSize = 'Sample size must be at least 1';
     }

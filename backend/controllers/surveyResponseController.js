@@ -487,10 +487,12 @@ const completeInterview = async (req, res) => {
     
     // Check for auto-rejection conditions
     const { checkAutoRejection, applyAutoRejection } = require('../utils/autoRejectionHelper');
+    let wasAutoRejected = false;
     try {
       const rejectionInfo = await checkAutoRejection(surveyResponse, responses, session.survey._id);
       if (rejectionInfo) {
         await applyAutoRejection(surveyResponse, rejectionInfo);
+        wasAutoRejected = true;
         // Refresh the response to get updated status
         await surveyResponse.populate('survey');
       }
@@ -499,13 +501,15 @@ const completeInterview = async (req, res) => {
       // Continue even if auto-rejection check fails
     }
     
-    // Add response to QC batch instead of queuing immediately
-    // Note: Even if auto-rejected, we still add to batch for tracking
-    try {
-      await addResponseToBatch(surveyResponse._id, session.survey._id);
-    } catch (batchError) {
-      console.error('Error adding response to batch:', batchError);
-      // Continue even if batch addition fails - response is still saved
+    // Add response to QC batch only if NOT auto-rejected
+    // Auto-rejected responses are already decided and don't need QC processing
+    if (!wasAutoRejected) {
+      try {
+        await addResponseToBatch(surveyResponse._id, session.survey._id, session.interviewer.toString());
+      } catch (batchError) {
+        console.error('Error adding response to batch:', batchError);
+        // Continue even if batch addition fails - response is still saved
+      }
     }
 
     // Mark session as abandoned (cleanup)
@@ -623,33 +627,24 @@ const getGenderResponseCounts = async (req, res) => {
     }
 
     // Get gender response counts from completed responses
-    const genderCounts = await SurveyResponse.aggregate([
-      {
-        $match: {
-          survey: survey._id,
-          status: { $in: ['Pending_Approval', 'Approved', 'completed'] }
-        }
-      },
-      {
-        $unwind: '$responses'
-      },
-      {
-        $match: {
-          'responses.questionId': 'fixed_respondent_gender'
-        }
-      },
-      {
-        $group: {
-          _id: '$responses.response',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-
-    // Convert to object format
+    // Use genderUtils to find gender responses (including registered voter question equivalence)
+    const { findGenderResponse, normalizeGenderResponse } = require('../utils/genderUtils');
+    
+    const allResponses = await SurveyResponse.find({
+      survey: survey._id,
+      status: { $in: ['Pending_Approval', 'Approved', 'completed'] }
+    }).select('responses survey').populate('survey');
+    
+    // Count gender responses using normalized values
     const genderResponseCounts = {};
-    genderCounts.forEach(item => {
-      genderResponseCounts[item._id] = item.count;
+    allResponses.forEach(response => {
+      const genderResp = findGenderResponse(response.responses, response.survey);
+      if (genderResp && genderResp.response) {
+        const normalizedGender = normalizeGenderResponse(genderResp.response);
+        // Map normalized values to standard format
+        const genderKey = normalizedGender === 'male' ? 'male' : (normalizedGender === 'female' ? 'female' : normalizedGender);
+        genderResponseCounts[genderKey] = (genderResponseCounts[genderKey] || 0) + 1;
+      }
     });
 
     // Get target audience gender requirements
@@ -2768,11 +2763,12 @@ const getACPerformanceStats = async (req, res) => {
       responses.forEach(response => {
         const responseData = response.responses || [];
 
-        // Female count
-        const genderResponse = findQuestionResponse(responseData, ['gender', 'sex']);
+        // Female count - use genderUtils to find and normalize gender response
+        const { findGenderResponse, normalizeGenderResponse } = require('../utils/genderUtils');
+        const genderResponse = findGenderResponse(responseData, survey) || findQuestionResponse(responseData, ['gender', 'sex']);
         if (genderResponse?.response) {
-          const genderValue = getMainTextValue(String(genderResponse.response)).toLowerCase();
-          if (genderValue.includes('female') || genderValue.includes('woman') || genderValue.includes('f')) {
+          const normalizedGender = normalizeGenderResponse(genderResponse.response);
+          if (normalizedGender === 'female') {
             femaleCount += 1;
           }
         }
@@ -3033,11 +3029,12 @@ const getInterviewerPerformanceStats = async (req, res) => {
       responses.forEach(response => {
         const responseData = response.responses || [];
 
-        // Female count
-        const genderResponse = findQuestionResponse(responseData, ['gender', 'sex']);
+        // Female count - use genderUtils to find and normalize gender response
+        const { findGenderResponse, normalizeGenderResponse } = require('../utils/genderUtils');
+        const genderResponse = findGenderResponse(responseData, survey) || findQuestionResponse(responseData, ['gender', 'sex']);
         if (genderResponse?.response) {
-          const genderValue = getMainTextValue(String(genderResponse.response)).toLowerCase();
-          if (genderValue.includes('female') || genderValue.includes('woman') || genderValue.includes('f')) {
+          const normalizedGender = normalizeGenderResponse(genderResponse.response);
+          if (normalizedGender === 'female') {
             femaleCount += 1;
           }
         }

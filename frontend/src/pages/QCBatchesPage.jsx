@@ -407,13 +407,41 @@ const QCBatchesPage = () => {
                               {formatDate(batch.batchDate)}
                             </span>
                           </div>
-                          <p className="text-sm text-gray-600 mt-1">
-                            Batch ID: {batch._id ? (typeof batch._id === 'string' ? batch._id.slice(-8) : batch._id.toString().slice(-8)) : 'N/A'}
-                          </p>
+                          <div className="flex items-center space-x-4 mt-1">
+                            <p className="text-sm text-gray-600">
+                              Batch ID: {batch._id ? (typeof batch._id === 'string' ? batch._id.slice(-8) : batch._id.toString().slice(-8)) : 'N/A'}
+                            </p>
+                            {batch.interviewer && (
+                              <p className="text-sm text-gray-600">
+                                Interviewer: {batch.interviewer.firstName} {batch.interviewer.lastName}
+                              </p>
+                            )}
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center space-x-4">
                         {getStatusBadge(batch.status)}
+                        {batch.status === 'collecting' && (
+                          <button
+                            onClick={async () => {
+                              if (window.confirm(`Send this batch to QC now? This will process ${batch.totalResponses} responses immediately.`)) {
+                                try {
+                                  const response = await qcBatchAPI.sendBatchToQC(batch._id);
+                                  if (response.success) {
+                                    showSuccess(response.message || 'Batch sent to QC successfully');
+                                    await fetchData();
+                                  }
+                                } catch (error) {
+                                  showError(error.response?.data?.message || 'Failed to send batch to QC');
+                                }
+                              }
+                            }}
+                            className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                          >
+                            <FileText className="w-4 h-4" />
+                            <span>Send to QC</span>
+                          </button>
+                        )}
                         <button
                           onClick={() => handleViewBatch(batch._id)}
                           className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -599,16 +627,20 @@ const QCBatchesPage = () => {
                     {batch.status === 'collecting' && (() => {
                       const samplePercentage = batch.batchConfig?.samplePercentage || batch.config?.samplePercentage || 40;
                       const is100Percent = samplePercentage >= 100;
+                      const remainingTo100 = 100 - batch.totalResponses;
                       
                       return (
                         <div className="mt-4 p-3 bg-blue-50 rounded-lg">
                           <p className="text-sm font-medium text-blue-900">
-                            Batch Status: Collecting Responses
+                            Batch Status: Collecting Responses ({batch.totalResponses}/100)
                           </p>
                           <p className="text-sm text-blue-700 mt-1">
-                            {is100Percent 
-                              ? `This batch will be processed tomorrow. All ${samplePercentage}% of responses will be sent to QC queue.`
-                              : `This batch will be processed tomorrow. ${samplePercentage}% of responses will be randomly selected and sent to QC queue.`
+                            {batch.totalResponses >= 100 
+                              ? 'Batch has reached 100 responses and will be processed automatically.'
+                              : `This batch will automatically process when it reaches 100 responses (${remainingTo100} remaining). ${is100Percent 
+                                ? `All ${samplePercentage}% of responses will be sent to QC queue.`
+                                : `${samplePercentage}% of responses will be randomly selected and sent to QC queue.`
+                              }`
                             }
                           </p>
                         </div>
@@ -632,9 +664,16 @@ const QCBatchesPage = () => {
                 <h2 className="text-xl font-semibold text-gray-900">
                   Batch Details - {formatDate(selectedBatch.batchDate)}
                 </h2>
-                <p className="text-sm text-gray-600 mt-1">
-                  {selectedBatch.totalResponses} responses
-                </p>
+                <div className="flex items-center space-x-4 mt-1">
+                  <p className="text-sm text-gray-600">
+                    {selectedBatch.totalResponses} responses
+                  </p>
+                  {selectedBatch.interviewer && (
+                    <p className="text-sm text-gray-600">
+                      Interviewer: {selectedBatch.interviewer.firstName} {selectedBatch.interviewer.lastName}
+                    </p>
+                  )}
+                </div>
               </div>
               <button
                 onClick={() => {

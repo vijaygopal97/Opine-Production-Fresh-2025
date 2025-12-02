@@ -41,7 +41,8 @@ exports.createSurvey = async (req, res) => {
       modeAllocation,
       modeQuotas,
       modeGigWorkers,
-      respondentContacts
+      respondentContacts,
+      sets
     } = req.body;
 
     console.log('🔍 Backend received mode:', mode, 'type:', typeof mode);
@@ -155,7 +156,8 @@ exports.createSurvey = async (req, res) => {
       assignACs: assignACs || false,
       acAssignmentCountry: acAssignmentCountry || '',
       acAssignmentState: acAssignmentState || '',
-      respondentContacts: respondentContacts || []
+      respondentContacts: respondentContacts || [],
+      sets: sets || []
     };
 
     // Create the survey
@@ -950,7 +952,8 @@ exports.updateSurvey = async (req, res) => {
       modeAllocation,
       modeQuotas,
       modeGigWorkers,
-      respondentContacts
+      respondentContacts,
+      sets
     } = req.body;
 
     // Find the survey
@@ -1089,6 +1092,7 @@ exports.updateSurvey = async (req, res) => {
       acAssignmentCountry: assignACs ? acAssignmentCountry : '',
       acAssignmentState: assignACs ? acAssignmentState : '',
       respondentContacts: respondentContacts !== undefined ? respondentContacts : survey.respondentContacts,
+      sets: sets !== undefined ? sets : survey.sets,
       updatedAt: new Date()
     };
 

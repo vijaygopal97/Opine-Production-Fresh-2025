@@ -127,7 +127,7 @@ const surveySchema = new mongoose.Schema({
     type: Number,
     required: [true, 'Sample size is required'],
     min: [1, 'Sample size must be at least 1'],
-    max: [100000, 'Sample size cannot exceed 100,000']
+    max: [10000000, 'Sample size cannot exceed 10,000,000']
   },
   targetAudience: {
     // Selected categories (boolean flags)
@@ -382,6 +382,7 @@ const surveySchema = new mongoose.Schema({
       description: { type: String },
       required: { type: Boolean, default: false },
       order: { type: Number, default: 0 },
+      questionNumber: { type: String, default: null }, // Custom question number (e.g., "1", "2", "1.a", "1.b")
       options: [{
         id: { type: String, required: true },
         text: { type: String, required: true },
@@ -416,7 +417,12 @@ const surveySchema = new mongoose.Schema({
         default: {}
       },
       isFixed: { type: Boolean, default: false },
-      isLocked: { type: Boolean, default: false }
+      isLocked: { type: Boolean, default: false },
+      // CAPI/CATI visibility settings
+      enabledForCAPI: { type: Boolean, default: true }, // Default: enabled for CAPI
+      enabledForCATI: { type: Boolean, default: true }, // Default: enabled for CATI
+      setsForThisQuestion: { type: Boolean, default: false }, // If true, question belongs to a set
+      setNumber: { type: Number, default: null } // Set number (1, 2, 3, etc.) - null means question appears in all surveys
     }]
   }],
 
@@ -571,6 +577,9 @@ const surveySchema = new mongoose.Schema({
       default: 'weekly'
     }
   },
+
+  // Sets configuration
+  sets: [{ type: String }],
 
   // Timestamps
   createdAt: { type: Date, default: Date.now },

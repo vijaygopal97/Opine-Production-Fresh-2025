@@ -9,11 +9,20 @@ const qcBatchSchema = new mongoose.Schema({
     index: true
   },
   
-  // Batch date (date when responses were collected)
+  // Interviewer reference (batches are now per interviewer)
+  interviewer: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true
+  },
+  
+  // Batch date (date when batch was created/started)
   batchDate: {
     type: Date,
     required: true,
-    index: true
+    index: true,
+    default: Date.now
   },
   
   // Batch status
@@ -152,8 +161,10 @@ const qcBatchSchema = new mongoose.Schema({
 });
 
 // Indexes for efficient querying
-qcBatchSchema.index({ survey: 1, batchDate: -1 });
+qcBatchSchema.index({ survey: 1, interviewer: 1, batchDate: -1 });
+qcBatchSchema.index({ survey: 1, interviewer: 1, status: 1 });
 qcBatchSchema.index({ survey: 1, status: 1 });
+qcBatchSchema.index({ interviewer: 1, status: 1 });
 qcBatchSchema.index({ status: 1, batchDate: -1 });
 
 // Method to calculate and update QC stats

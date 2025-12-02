@@ -4,7 +4,8 @@ const { protect } = require('../middleware/auth');
 const {
   getBatchesBySurvey,
   getBatchById,
-  triggerBatchProcessing
+  triggerBatchProcessing,
+  sendBatchToQC
 } = require('../controllers/qcBatchController');
 
 // All routes require authentication
@@ -15,6 +16,9 @@ router.get('/survey/:surveyId', getBatchesBySurvey);
 
 // Get a single batch
 router.get('/:batchId', getBatchById);
+
+// Manually send a batch to QC (premature completion)
+router.post('/:batchId/send-to-qc', sendBatchToQC);
 
 // Manually trigger batch processing
 router.post('/process', triggerBatchProcessing);

@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 import { surveyResponseAPI, surveyAPI } from '../services/api';
 import { useToast } from '../contexts/ToastContext';
+import { findGenderResponse, normalizeGenderResponse } from '../utils/genderUtils';
+import { getMainText } from '../utils/translations';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -377,20 +379,130 @@ const SurveyReportsPage = () => {
       return { name: 'N/A', gender: 'N/A', age: 'N/A', city: 'N/A', district: 'N/A', ac: 'N/A', lokSabha: 'N/A', state: 'N/A' };
     }
 
+    // Helper to find response by question text (ignoring translations)
+    const findResponseByQuestionText = (responses, searchTexts) => {
+      return responses.find(r => {
+        if (!r.questionText) return false;
+        const mainText = getMainText(r.questionText).toLowerCase();
+        return searchTexts.some(text => mainText.includes(text.toLowerCase()));
+      });
+    };
+
+    // Get survey ID
+    const surveyId = responseData?.survey?._id || responseData?.survey?._id || survey?._id || null;
+
+    // Special handling for survey "68fd1915d41841da463f0d46"
+    if (surveyId === '68fd1915d41841da463f0d46') {
+      // Find name from name question
+      const nameResponse = findResponseByQuestionText(responses, [
+        'what is your full name',
+        'full name',
+        'name'
+      ]);
+      
+      // Find gender from "Please note the respondent's gender"
+      let genderResponse = findResponseByQuestionText(responses, [
+        'please note the respondent\'s gender',
+        'note the respondent\'s gender',
+        'respondent\'s gender',
+        'respondent gender',
+        'note the gender'
+      ]);
+      
+      // If not found, try broader search
+      if (!genderResponse) {
+        genderResponse = findResponseByQuestionText(responses, ['gender']);
+      }
+      
+      // If still not found, try to find by question ID
+      if (!genderResponse) {
+        const genderResponseById = responses.find(r => 
+          r.questionId?.includes('gender') || 
+          r.questionId?.includes('respondent_gender')
+        );
+        if (genderResponseById) {
+          genderResponse = genderResponseById;
+        }
+      }
+      
+      // Last resort: try to find in survey structure if available
+      if (!genderResponse && survey) {
+        // Find the gender question in the survey
+        let genderQuestion = null;
+        if (survey.sections) {
+          for (const section of survey.sections) {
+            if (section.questions) {
+              genderQuestion = section.questions.find(q => {
+                const qText = getMainText(q.text || '').toLowerCase();
+                return qText.includes('please note the respondent\'s gender') ||
+                       qText.includes('note the respondent\'s gender') ||
+                       qText.includes('respondent\'s gender');
+              });
+              if (genderQuestion) break;
+            }
+          }
+        }
+        
+        // If found, try to match by question ID
+        if (genderQuestion && genderQuestion.id) {
+          genderResponse = responses.find(r => r.questionId === genderQuestion.id);
+        }
+      }
+      
+      // Find age from age question
+      const ageResponse = findResponseByQuestionText(responses, [
+        'could you please tell me your age',
+        'your age in complete years',
+        'age in complete years',
+        'age'
+      ]);
+
+      const acResponse = responses.find(r => 
+        getMainText(r.questionText || '').toLowerCase().includes('assembly') ||
+        getMainText(r.questionText || '').toLowerCase().includes('constituency')
+      );
+
+      let city = 'N/A';
+      if (responseData?.location?.city) {
+        city = responseData.location.city;
+      } else {
+        const cityResponse = findResponseByQuestionText(responses, [
+          'city',
+          'location'
+        ]);
+        city = cityResponse?.response || 'N/A';
+      }
+
+      const acName = acResponse?.response || 'N/A';
+      const district = getDistrictFromAC(acName);
+      const lokSabha = getLokSabhaFromAC(acName);
+      const state = getStateFromGPS(responseData?.location);
+
+      return {
+        name: nameResponse?.response || 'N/A',
+        gender: genderResponse?.response || 'N/A',
+        age: ageResponse?.response || 'N/A',
+        city: city,
+        district: district,
+        ac: acName,
+        lokSabha: lokSabha,
+        state: state
+      };
+    }
+
+    // Default behavior for other surveys
     const nameResponse = responses.find(r => 
-      r.questionText.toLowerCase().includes('name') || 
-      r.questionText.toLowerCase().includes('respondent') ||
-      r.questionText.toLowerCase().includes('full name')
+      getMainText(r.questionText || '').toLowerCase().includes('name') || 
+      getMainText(r.questionText || '').toLowerCase().includes('respondent') ||
+      getMainText(r.questionText || '').toLowerCase().includes('full name')
     );
     
-    const genderResponse = responses.find(r => 
-      r.questionText.toLowerCase().includes('gender') || 
-      r.questionText.toLowerCase().includes('sex')
-    );
+    // Find gender response (checks both gender and registered voter questions)
+    const genderResponse = findGenderResponse(responses, responseData?.survey);
     
     const ageResponse = responses.find(r => 
-      r.questionText.toLowerCase().includes('age') || 
-      r.questionText.toLowerCase().includes('year')
+      getMainText(r.questionText || '').toLowerCase().includes('age') || 
+      getMainText(r.questionText || '').toLowerCase().includes('year')
     );
 
     const acResponse = responses.find(r => 
@@ -414,9 +526,14 @@ const SurveyReportsPage = () => {
     const lokSabha = getLokSabhaFromAC(acName);
     const state = getStateFromGPS(responseData?.location);
 
+    // Normalize gender response to handle translations
+    const genderValue = genderResponse?.response ? normalizeGenderResponse(genderResponse.response) : 'N/A';
+    // Convert normalized value back to display format
+    const genderDisplay = genderValue === 'male' ? 'Male' : (genderValue === 'female' ? 'Female' : (genderResponse?.response || 'N/A'));
+
     return {
       name: nameResponse?.response || 'N/A',
-      gender: genderResponse?.response || 'N/A',
+      gender: genderDisplay,
       age: ageResponse?.response || 'N/A',
       city: city,
       district: district,

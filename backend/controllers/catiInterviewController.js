@@ -742,11 +742,13 @@ const completeCatiInterview = async (req, res) => {
         // Continue even if auto-rejection check fails
       }
       
-      // Add response to QC batch if not already in one
-      if (!surveyResponse.qcBatch) {
+      // Add response to QC batch only if NOT auto-rejected and not already in one
+      // Auto-rejected responses are already decided and don't need QC processing
+      const isAutoRejected = surveyResponse.verificationData?.autoRejected || false;
+      if (!surveyResponse.qcBatch && !isAutoRejected) {
         try {
           const { addResponseToBatch } = require('../utils/qcBatchHelper');
-          await addResponseToBatch(surveyResponse._id, queueEntry.survey._id);
+          await addResponseToBatch(surveyResponse._id, queueEntry.survey._id, interviewerId.toString());
         } catch (batchError) {
           console.error('Error adding existing CATI response to batch:', batchError);
         }
@@ -828,8 +830,17 @@ const completeCatiInterview = async (req, res) => {
     
     // Add response to QC batch instead of queuing immediately
     try {
-      const { addResponseToBatch } = require('../utils/qcBatchHelper');
-      await addResponseToBatch(surveyResponse._id, queueEntry.survey._id);
+      // Check if response was auto-rejected before adding to batch
+      const isAutoRejected = surveyResponse.verificationData?.autoRejected || false;
+      
+      // Only add to batch if NOT auto-rejected
+      // Auto-rejected responses are already decided and don't need QC processing
+      if (!isAutoRejected) {
+        const { addResponseToBatch } = require('../utils/qcBatchHelper');
+        await addResponseToBatch(surveyResponse._id, queueEntry.survey._id, interviewerId.toString());
+      } else {
+        console.log(`⏭️  Skipping batch addition for auto-rejected response ${surveyResponse._id}`);
+      }
     } catch (batchError) {
       console.error('Error adding CATI response to batch:', batchError);
       // Continue even if batch addition fails - response is still saved
