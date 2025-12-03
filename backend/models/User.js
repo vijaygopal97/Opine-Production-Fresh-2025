@@ -30,6 +30,16 @@ const userSchema = new mongoose.Schema({
     match: [/^[\+]?[0-9][\d]{0,15}$/, 'Please enter a valid phone number']
   },
 
+  // Member ID (for Interviewers and Quality Agents)
+  memberId: {
+    type: String,
+    unique: true,
+    sparse: true, // Allow null values but ensure uniqueness when present
+    trim: true,
+    match: [/^\d{6}$/, 'Member ID must be exactly 6 digits'],
+    index: true
+  },
+
   // Authentication
   password: {
     type: String,
@@ -95,6 +105,28 @@ const userSchema = new mongoose.Schema({
     trim: true,
     uppercase: true
   },
+
+  // Assigned Team Members (for Project Managers)
+  assignedTeamMembers: [{
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    },
+    userType: {
+      type: String,
+      enum: ['interviewer', 'quality_agent'],
+      required: true
+    },
+    assignedAt: {
+      type: Date,
+      default: Date.now
+    },
+    assignedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  }],
 
   // Profile Information
   profile: {

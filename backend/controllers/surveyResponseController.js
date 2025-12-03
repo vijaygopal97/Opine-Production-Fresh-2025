@@ -2622,10 +2622,36 @@ const getSurveyResponseById = async (req, res) => {
 const getSurveyResponses = async (req, res) => {
   try {
     const { surveyId } = req.params;
-    const { page = 1, limit = 10, status, gender, ageMin, ageMax, ac, city, district, lokSabha } = req.query;
+    const { page = 1, limit = 10, status, gender, ageMin, ageMax, ac, city, district, lokSabha, interviewerIds } = req.query;
     
     // Build filter object
     const filter = { survey: surveyId };
+    
+    // For project managers: if interviewerIds not provided, get from assignedTeamMembers
+    let finalInterviewerIds = interviewerIds;
+    if (!finalInterviewerIds) {
+      const currentUser = await User.findById(req.user.id);
+      if (currentUser && currentUser.userType === 'project_manager') {
+        if (currentUser.assignedTeamMembers && currentUser.assignedTeamMembers.length > 0) {
+          const assignedInterviewers = currentUser.assignedTeamMembers
+            .filter(tm => tm.userType === 'interviewer')
+            .map(tm => tm.user.toString());
+          if (assignedInterviewers.length > 0) {
+            finalInterviewerIds = assignedInterviewers.join(',');
+          }
+        }
+      }
+    }
+    
+    // Filter by interviewer IDs (for project managers)
+    if (finalInterviewerIds) {
+      const interviewerIdArray = Array.isArray(finalInterviewerIds) 
+        ? finalInterviewerIds 
+        : finalInterviewerIds.split(',').filter(id => id.trim());
+      if (interviewerIdArray.length > 0) {
+        filter.interviewer = { $in: interviewerIdArray.map(id => new mongoose.Types.ObjectId(id.trim())) };
+      }
+    }
     
     // Handle status filter: 'all' or undefined/null means both Approved and Rejected, otherwise filter by specific status
     if (status && status !== 'all' && status !== '') {

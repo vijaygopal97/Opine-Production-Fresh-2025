@@ -16,6 +16,32 @@ const generateVerificationToken = () => {
   return crypto.randomBytes(32).toString('hex');
 };
 
+// Generate unique 6-digit member ID for interviewers and quality agents
+const generateMemberId = async () => {
+  let memberId;
+  let isUnique = false;
+  let attempts = 0;
+  const maxAttempts = 100;
+
+  while (!isUnique && attempts < maxAttempts) {
+    // Generate a random 6-digit number (100000 to 999999)
+    memberId = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Check if this memberId already exists
+    const existingUser = await User.findOne({ memberId });
+    if (!existingUser) {
+      isUnique = true;
+    }
+    attempts++;
+  }
+
+  if (!isUnique) {
+    throw new Error('Failed to generate unique member ID after multiple attempts');
+  }
+
+  return memberId;
+};
+
 // @desc    Register new user
 // @route   POST /api/auth/register
 // @access  Public
@@ -177,6 +203,19 @@ exports.register = async (req, res) => {
       userData.canSelectMode = canSelectMode || false;
     }
 
+    // Generate memberId for interviewers and quality agents
+    if (userType === 'interviewer' || userType === 'quality_agent') {
+      try {
+        userData.memberId = await generateMemberId();
+      } catch (error) {
+        console.error('Error generating member ID:', error);
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to generate member ID. Please try again.'
+        });
+      }
+    }
+
     // Create user
     const user = await User.create(userData);
 
@@ -197,6 +236,7 @@ exports.register = async (req, res) => {
       email: user.email,
       phone: user.phone,
       userType: user.userType,
+      memberId: user.memberId, // Include memberId in response
       company: user.company,
       companyCode: user.companyCode,
       status: user.status,
@@ -254,17 +294,24 @@ exports.register = async (req, res) => {
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    const loginIdentifier = email; // Can be email or memberId
 
     // Validate required fields
-    if (!email || !password) {
+    if (!loginIdentifier || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide email and password'
+        message: 'Please provide email/member ID and password'
       });
     }
 
-    // Find user and include password
-    const user = await User.findOne({ email }).select('+password').populate('company', 'companyName companyCode status');
+    // Find user by email or memberId and include password
+    // Check if it's a 6-digit number (memberId) or email
+    const isMemberId = /^\d{6}$/.test(loginIdentifier);
+    const query = isMemberId 
+      ? { memberId: loginIdentifier }
+      : { email: loginIdentifier.toLowerCase() };
+    
+    const user = await User.findOne(query).select('+password').populate('company', 'companyName companyCode status');
 
     if (!user) {
       return res.status(401).json({
@@ -1278,7 +1325,8 @@ exports.registerCompanyUser = async (req, res) => {
       status,
       gig_enabled,
       interviewModes,
-      canSelectMode
+      canSelectMode,
+      assignedTeamMembers
     } = req.body;
 
     // Validate required fields
@@ -1348,6 +1396,19 @@ exports.registerCompanyUser = async (req, res) => {
       userData.canSelectMode = canSelectMode || false;
     }
 
+    // Generate memberId for interviewers and quality agents
+    if (userType === 'interviewer' || userType === 'quality_agent') {
+      try {
+        userData.memberId = await generateMemberId();
+      } catch (error) {
+        console.error('Error generating member ID:', error);
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to generate member ID. Please try again.'
+        });
+      }
+    }
+
     // Create user
     const user = await User.create(userData);
 
@@ -1362,6 +1423,7 @@ exports.registerCompanyUser = async (req, res) => {
       email: user.email,
       phone: user.phone,
       userType: user.userType,
+      memberId: user.memberId, // Include memberId in response
       company: user.company,
       companyCode: user.companyCode,
       status: user.status,

@@ -9,7 +9,7 @@ const Login = () => {
   const navigate = useNavigate();
   const { login, isAuthenticated, getDashboardPath } = useAuth();
   const [formData, setFormData] = useState({
-    email: '',
+    email: '', // Can be email or memberId
     password: ''
   });
 
@@ -40,13 +40,17 @@ const Login = () => {
     const errors = [];
 
     if (!formData.email.trim()) {
-      errors.push('Email is required');
+      errors.push('Email or Member ID is required');
     }
 
+    // Validate email format only if it's not a 6-digit number (memberId)
     if (formData.email.trim()) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(formData.email.trim())) {
-        errors.push('Please provide a valid email address');
+      const isMemberId = /^\d{6}$/.test(formData.email.trim());
+      if (!isMemberId) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(formData.email.trim())) {
+          errors.push('Please provide a valid email address or 6-digit Member ID');
+        }
       }
     }
 
@@ -157,18 +161,21 @@ const Login = () => {
             <form onSubmit={handleSubmit} className="space-y-6">
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                  Email Address <span className="text-red-500">*</span>
+                  Email or Member ID <span className="text-red-500">*</span>
                 </label>
                 <input
-                  type="email"
+                  type="text"
                   id="email"
                   name="email"
                   value={formData.email}
                   onChange={handleChange}
                   className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="john.doe@example.com"
+                  placeholder="your.email@example.com or 123456"
                   required
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Enter your email address or 6-digit Member ID
+                </p>
               </div>
 
               <div>

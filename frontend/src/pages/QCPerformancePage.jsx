@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { 
   ArrowLeft,
   Filter, 
@@ -8,11 +8,14 @@ import {
   Calendar,
   ChevronUp,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   X,
   TrendingUp,
   CheckCircle,
   XCircle,
-  BarChart3
+  BarChart3,
+  Users
 } from 'lucide-react';
 import { performanceAPI, surveyAPI } from '../services/api';
 import { useToast } from '../contexts/ToastContext';
@@ -44,6 +47,11 @@ ChartJS.register(
 const QCPerformancePage = () => {
   const { surveyId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  
+  // Determine if we're in project manager route
+  const isProjectManagerRoute = location.pathname.includes('/project-manager/');
+  const backPath = isProjectManagerRoute ? '/project-manager/survey-reports' : '/company/surveys';
   const [survey, setSurvey] = useState(null);
   const [qualityAgents, setQualityAgents] = useState([]);
   const [trendsData, setTrendsData] = useState(null);
@@ -59,9 +67,14 @@ const QCPerformancePage = () => {
     sortOrder: 'desc' // asc, desc
   });
 
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
   const [showFilters, setShowFilters] = useState(true);
 
-  // Add CSS to ensure full width (must be before any conditional returns)
+  // Add CSS to ensure full width and responsive layout
+  // Add CSS to ensure full width and break out of DashboardLayout padding
   useEffect(() => {
     const style = document.createElement('style');
     style.textContent = `
@@ -136,13 +149,15 @@ const QCPerformancePage = () => {
   const filteredAndSortedData = useMemo(() => {
     let data = [...qualityAgents];
 
-    // Apply search filter
+    // Apply search filter (name, email, or memberId)
     if (filters.search && filters.search.trim()) {
-      const searchLower = filters.search.toLowerCase();
-      data = data.filter(qa => 
-        qa.name.toLowerCase().includes(searchLower) ||
-        qa.email.toLowerCase().includes(searchLower)
-      );
+      const searchLower = filters.search.toLowerCase().trim();
+      data = data.filter(qa => {
+        const nameMatch = qa.name?.toLowerCase().includes(searchLower) || false;
+        const emailMatch = qa.email?.toLowerCase().includes(searchLower) || false;
+        const memberIdMatch = qa.memberId?.toString().includes(searchLower) || false;
+        return nameMatch || emailMatch || memberIdMatch;
+      });
     }
 
     // Apply sorting
@@ -178,12 +193,31 @@ const QCPerformancePage = () => {
       }
     });
 
-    // Update serial numbers after sorting
-    return data.map((qa, index) => ({
-      ...qa,
-      serialNumber: index + 1
-    }));
+    return data;
   }, [qualityAgents, filters.search, filters.sortBy, filters.sortOrder]);
+
+  // Paginated data
+  const paginatedData = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const paginated = filteredAndSortedData.slice(startIndex, endIndex);
+    
+    // Update serial numbers based on current page
+    return paginated.map((qa, index) => ({
+      ...qa,
+      serialNumber: startIndex + index + 1
+    }));
+  }, [filteredAndSortedData, currentPage, pageSize]);
+
+  // Pagination info
+  const totalPages = Math.ceil(filteredAndSortedData.length / pageSize);
+  const hasNext = currentPage < totalPages;
+  const hasPrev = currentPage > 1;
+
+  // Reset to first page when search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters.search]);
 
   // Handle filter changes
   const handleFilterChange = (key, value) => {
@@ -364,7 +398,7 @@ const QCPerformancePage = () => {
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-4 flex-1 min-w-0">
               <button
-                onClick={() => navigate('/company/surveys')}
+                onClick={() => navigate(backPath)}
                 className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors flex-shrink-0"
               >
                 <ArrowLeft className="w-5 h-5" />
@@ -427,7 +461,7 @@ const QCPerformancePage = () => {
                     type="text"
                     value={filters.search}
                     onChange={(e) => handleFilterChange('search', e.target.value)}
-                    placeholder="Search by name or email..."
+                    placeholder="Search by name, email, or Member ID..."
                     className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
@@ -557,103 +591,208 @@ const QCPerformancePage = () => {
           </div>
         )}
 
-        {/* Quality Agents Table */}
-        {filteredAndSortedData.length > 0 ? (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      S.No
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Name
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Phone
-                    </th>
-                    <th 
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                      onClick={() => handleSort('assigned')}
+        {/* Quality Agents Section */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 w-full">
+          {/* Section Header */}
+          <div className="px-6 py-4 border-b border-gray-200">
+            <div className="flex flex-col space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-purple-100 rounded-lg">
+                    <Users className="h-5 w-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">Quality Agents Performance</h3>
+                    <p className="text-sm text-gray-600">
+                      Showing {paginatedData.length} of {filteredAndSortedData.length} quality agent{filteredAndSortedData.length !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Search within Section */}
+              <div className="max-w-md">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Search Quality Agent
+                </label>
+                <div className="relative">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    value={filters.search}
+                    onChange={(e) => handleFilterChange('search', e.target.value)}
+                    placeholder="Search by name, email, or Member ID..."
+                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                  {filters.search && (
+                    <button
+                      onClick={() => handleFilterChange('search', '')}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
                     >
-                      <div className="flex items-center">
-                        Assigned
-                        {getSortIcon('assigned')}
-                      </div>
-                    </th>
-                    <th 
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                      onClick={() => handleSort('totalReviews')}
-                    >
-                      <div className="flex items-center">
-                        Total Reviews
-                        {getSortIcon('totalReviews')}
-                      </div>
-                    </th>
-                    <th 
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                      onClick={() => handleSort('approvedResponses')}
-                    >
-                      <div className="flex items-center">
-                        Approved Responses
-                        {getSortIcon('approvedResponses')}
-                      </div>
-                    </th>
-                    <th 
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                      onClick={() => handleSort('rejectedResponses')}
-                    >
-                      <div className="flex items-center">
-                        Rejected Responses
-                        {getSortIcon('rejectedResponses')}
-                      </div>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredAndSortedData.map((qa) => (
-                    <tr key={qa._id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {qa.serialNumber}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">{qa.name}</div>
-                          <div className="text-sm text-gray-500">{qa.email}</div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {qa.phone}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
-                        {qa.assigned || 0}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
-                        {qa.totalReviews}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
-                        {qa.approvedResponses}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">
-                        {qa.rejectedResponses}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
-        ) : (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
-            <p className="text-gray-500 text-lg">No quality agents found</p>
-            <p className="text-gray-400 text-sm mt-2">
-              {filters.search || filters.startDate || filters.endDate
-                ? 'Try adjusting your filters'
-                : 'No quality agents have reviewed responses for this survey yet'}
-            </p>
-          </div>
-        )}
+
+          {/* Quality Agents List */}
+          {filteredAndSortedData.length > 0 ? (
+            <>
+              <div className="divide-y divide-gray-200">
+                {paginatedData.map((qa) => (
+                  <div key={qa._id} className="px-6 py-4 hover:bg-gray-50 transition-colors">
+                    <div className="flex items-center justify-between">
+                      {/* Left: Agent Info */}
+                      <div className="flex items-center space-x-4 flex-1 min-w-0">
+                        <div className="flex-shrink-0">
+                          <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-semibold text-sm">
+                            {qa.name?.charAt(0)?.toUpperCase() || 'Q'}
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center space-x-2">
+                            <h4 className="text-sm font-semibold text-gray-900 truncate">{qa.name}</h4>
+                            {qa.memberId && (
+                              <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded-full">
+                                ID: {qa.memberId}
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-1 flex items-center space-x-3 text-xs text-gray-500">
+                            <span className="truncate">{qa.email}</span>
+                            {qa.phone && qa.phone !== 'N/A' && (
+                              <>
+                                <span>•</span>
+                                <span>{qa.phone}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right: Stats */}
+                      <div className="flex items-center space-x-6 ml-4">
+                        <div className="text-center">
+                          <div className="text-xs text-gray-500 mb-1">Assigned</div>
+                          <div className="text-sm font-semibold text-gray-900">{qa.assigned || 0}</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-xs text-gray-500 mb-1">Total Reviews</div>
+                          <div className="text-sm font-semibold text-gray-900">{qa.totalReviews}</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-xs text-gray-500 mb-1">Approved</div>
+                          <div className="text-sm font-semibold text-green-600">{qa.approvedResponses}</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-xs text-gray-500 mb-1">Rejected</div>
+                          <div className="text-sm font-semibold text-red-600">{qa.rejectedResponses}</div>
+                        </div>
+                        {qa.totalReviews > 0 && (
+                          <div className="text-center">
+                            <div className="text-xs text-gray-500 mb-1">Approval Rate</div>
+                            <div className="text-sm font-semibold text-blue-600">
+                              {((qa.approvedResponses / qa.totalReviews) * 100).toFixed(1)}%
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-4">
+                      <span className="text-sm text-gray-700">
+                        Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, filteredAndSortedData.length)} of {filteredAndSortedData.length} quality agents
+                      </span>
+                      <select
+                        value={pageSize}
+                        onChange={(e) => {
+                          setPageSize(Number(e.target.value));
+                          setCurrentPage(1);
+                        }}
+                        className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        <option value={5}>5 per page</option>
+                        <option value={10}>10 per page</option>
+                        <option value={25}>25 per page</option>
+                        <option value={50}>50 per page</option>
+                        <option value={100}>100 per page</option>
+                      </select>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                        disabled={!hasPrev}
+                        className="px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white transition-colors"
+                        title="Previous page"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      
+                      {/* Page Numbers */}
+                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                        let pageNum;
+                        if (totalPages <= 5) {
+                          pageNum = i + 1;
+                        } else if (currentPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (currentPage >= totalPages - 2) {
+                          pageNum = totalPages - 4 + i;
+                        } else {
+                          pageNum = currentPage - 2 + i;
+                        }
+                        
+                        if (pageNum < 1 || pageNum > totalPages) return null;
+                        
+                        return (
+                          <button
+                            key={pageNum}
+                            onClick={() => setCurrentPage(pageNum)}
+                            className={`px-3 py-2 min-w-[2.5rem] border rounded-lg transition-colors ${
+                              pageNum === currentPage
+                                ? 'bg-blue-600 text-white border-blue-600'
+                                : 'border-gray-300 hover:bg-white'
+                            }`}
+                          >
+                            {pageNum}
+                          </button>
+                        );
+                      })}
+                      
+                      <button
+                        onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                        disabled={!hasNext}
+                        className="px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white transition-colors"
+                        title="Next page"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="p-12 text-center">
+              <Users className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-500 text-lg font-medium">No quality agents found</p>
+              <p className="text-gray-400 text-sm mt-2">
+                {filters.search || filters.startDate || filters.endDate
+                  ? 'Try adjusting your filters'
+                  : 'No quality agents have reviewed responses for this survey yet'}
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

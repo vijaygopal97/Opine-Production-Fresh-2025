@@ -114,12 +114,9 @@ function App() {
             <Route path="/company/surveys/:surveyId/qc-batches" element={<QCBatchesPage />} />
             
             {/* Project Manager routes */}
-            <Route path="/project-manager/dashboard" element={<AdminDashboard />} />
-            <Route path="/project-manager/surveys" element={<AdminDashboard />} />
-            <Route path="/project-manager/survey-approvals" element={<AdminDashboard />} />
-            <Route path="/project-manager/performance" element={<AdminDashboard />} />
-            <Route path="/project-manager/payment-settings" element={<AdminDashboard />} />
-            <Route path="/project-manager/profile" element={<AdminDashboard />} />
+            <Route path="/project-manager/survey-reports" element={<AdminDashboard />} />
+            <Route path="/project-manager/surveys/:surveyId/reports" element={<AdminDashboard />} />
+            <Route path="/project-manager/surveys/:surveyId/qc-performance" element={<AdminDashboard />} />
             
             {/* Interviewer routes */}
             <Route path="/interviewer/dashboard" element={<AdminDashboard />} />

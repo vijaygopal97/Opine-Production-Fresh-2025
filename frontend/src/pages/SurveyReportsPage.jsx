@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { 
   ArrowLeft,
   Download, 
@@ -19,7 +19,11 @@ import {
   Activity,
   Award,
   Zap,
-  X
+  X,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  Phone
 } from 'lucide-react';
 import { surveyResponseAPI, surveyAPI } from '../services/api';
 import { useToast } from '../contexts/ToastContext';
@@ -55,6 +59,11 @@ ChartJS.register(
 const SurveyReportsPage = () => {
   const { surveyId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  
+  // Determine if we're in project manager route
+  const isProjectManagerRoute = location.pathname.includes('/project-manager/');
+  const backPath = isProjectManagerRoute ? '/project-manager/survey-reports' : '/company/surveys';
   const [survey, setSurvey] = useState(null);
   const [responses, setResponses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -67,6 +76,14 @@ const SurveyReportsPage = () => {
   const [acPerformanceStats, setAcPerformanceStats] = useState(null);
   const [interviewerPerformanceStats, setInterviewerPerformanceStats] = useState(null);
   const { showError } = useToast();
+
+  // Call Records filter and pagination states
+  const [callRecordsFilters, setCallRecordsFilters] = useState({
+    search: '', // Search by from number, to number, or interviewer name
+    status: '' // Filter by call status
+  });
+  const [callRecordsPage, setCallRecordsPage] = useState(1);
+  const [callRecordsPageSize, setCallRecordsPageSize] = useState(10);
 
   // Filter states
   const [filters, setFilters] = useState({
@@ -191,7 +208,7 @@ const SurveyReportsPage = () => {
     return acNames;
   };
 
-  // Add CSS to ensure full width
+  // Add CSS to ensure full width and responsive behavior
   useEffect(() => {
     const style = document.createElement('style');
     style.textContent = `
@@ -206,6 +223,10 @@ const SurveyReportsPage = () => {
       }
     `;
     document.head.appendChild(style);
+    
+    return () => {
+      document.head.removeChild(style);
+    };
     
     return () => {
       document.head.removeChild(style);
@@ -774,6 +795,56 @@ const SurveyReportsPage = () => {
     }
   };
 
+  // Helper function to get option text from option value/code
+  const getOptionTextFromValue = (value, question) => {
+    if (!question || !question.options || !value) {
+      return value;
+    }
+    
+    // Handle array values
+    if (Array.isArray(value)) {
+      value = value[0];
+    }
+    
+    // Find the option that matches the value
+    const option = question.options.find(opt => 
+      opt.value === value || 
+      opt.value?.toString() === value?.toString() ||
+      opt.code === value ||
+      opt.code?.toString() === value?.toString()
+    );
+    
+    if (option) {
+      // Return main text without translation
+      return getMainText(option.text || option.value || value);
+    }
+    
+    // If not found, return the value as is
+    return value;
+  };
+
+  // Helper function to find gender question in survey
+  const findGenderQuestionInSurvey = (survey) => {
+    if (!survey || !survey.sections) return null;
+    
+    for (const section of survey.sections) {
+      if (section.questions) {
+        for (const question of section.questions) {
+          const qText = getMainText(question.text || '').toLowerCase();
+          if (qText.includes('please note the respondent\'s gender') ||
+              qText.includes('note the respondent\'s gender') ||
+              qText.includes('respondent\'s gender') ||
+              qText.includes('gender') ||
+              question.id?.includes('gender') ||
+              question.id?.includes('respondent_gender')) {
+            return question;
+          }
+        }
+      }
+    }
+    return null;
+  };
+
   // Analytics calculations
   const analytics = useMemo(() => {
     if (!filteredResponses || filteredResponses.length === 0) {
@@ -917,10 +988,23 @@ const SurveyReportsPage = () => {
         interviewerMap.set(interviewerName, currentCount);
       }
 
-      // Gender stats
+      // Gender stats - convert option code to option text
       const gender = respondentInfo.gender;
       if (gender && gender !== 'N/A') {
-        genderMap.set(gender, (genderMap.get(gender) || 0) + 1);
+        // Find the gender question in the survey
+        const genderQuestion = findGenderQuestionInSurvey(survey);
+        let genderText = gender;
+        
+        // If we found the gender question, try to get the option text
+        if (genderQuestion) {
+          genderText = getOptionTextFromValue(gender, genderQuestion);
+        } else {
+          // Fallback: try to normalize using getMainText if it contains translations
+          genderText = getMainText(gender);
+        }
+        
+        // Use the text (without translations) as the key
+        genderMap.set(genderText, (genderMap.get(genderText) || 0) + 1);
       }
 
       // Age stats
@@ -1075,6 +1159,52 @@ const SurveyReportsPage = () => {
       catiPerformance: catiPerformanceData
     };
   }, [filteredResponses, survey, catiStats]);
+
+  // Filter and paginate call records
+  const filteredAndPaginatedCallRecords = useMemo(() => {
+    if (!catiStats?.callRecords) return { filtered: [], paginated: [], totalPages: 0, hasNext: false, hasPrev: false };
+
+    // Apply filters
+    let filtered = [...catiStats.callRecords];
+
+    // Search filter (from number, to number, or interviewer name)
+    if (callRecordsFilters.search && callRecordsFilters.search.trim()) {
+      const searchLower = callRecordsFilters.search.toLowerCase().trim();
+      filtered = filtered.filter(call => {
+        const fromMatch = call.fromNumber?.toLowerCase().includes(searchLower) || false;
+        const toMatch = call.toNumber?.toLowerCase().includes(searchLower) || false;
+        const interviewerMatch = call.interviewer?.name?.toLowerCase().includes(searchLower) || false;
+        return fromMatch || toMatch || interviewerMatch;
+      });
+    }
+
+    // Status filter
+    if (callRecordsFilters.status) {
+      filtered = filtered.filter(call => {
+        const status = call.callStatus?.toLowerCase() || '';
+        return status === callRecordsFilters.status.toLowerCase();
+      });
+    }
+
+    // Pagination
+    const totalPages = Math.ceil(filtered.length / callRecordsPageSize);
+    const startIndex = (callRecordsPage - 1) * callRecordsPageSize;
+    const endIndex = startIndex + callRecordsPageSize;
+    const paginated = filtered.slice(startIndex, endIndex);
+
+    return {
+      filtered,
+      paginated,
+      totalPages,
+      hasNext: callRecordsPage < totalPages,
+      hasPrev: callRecordsPage > 1
+    };
+  }, [catiStats?.callRecords, callRecordsFilters, callRecordsPage, callRecordsPageSize]);
+
+  // Reset call records page when filters change
+  useEffect(() => {
+    setCallRecordsPage(1);
+  }, [callRecordsFilters.search, callRecordsFilters.status]);
 
   // Filter options
   const filterOptions = useMemo(() => {
@@ -1232,7 +1362,7 @@ const SurveyReportsPage = () => {
             <div className="flex items-center justify-between h-16">
               <div className="flex items-center space-x-4 flex-1 min-w-0">
                 <button
-                  onClick={() => navigate('/company/surveys')}
+                  onClick={() => navigate(backPath)}
                   className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors flex-shrink-0"
                 >
                   <ArrowLeft className="w-5 h-5" />
@@ -1357,7 +1487,7 @@ const SurveyReportsPage = () => {
         )}
 
         {/* Main Content */}
-        <div className="w-full py-6 px-4 sm:px-6 lg:px-8">
+        <div className="w-full py-6 px-4 sm:px-6 lg:px-8 max-w-full overflow-x-hidden">
         {/* Overview Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
@@ -1752,69 +1882,214 @@ const SurveyReportsPage = () => {
           {catiStats?.callRecords && catiStats.callRecords.length > 0 && (
             <div className="mt-8">
               <div className="flex items-center justify-between mb-4">
-                <h4 className="text-md font-semibold text-gray-800">Call Records</h4>
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <Phone className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <h4 className="text-md font-semibold text-gray-800">Call Records</h4>
+                    <p className="text-xs text-gray-600">
+                      {filteredAndPaginatedCallRecords.filtered.length} of {catiStats.callRecords.length} call{catiStats.callRecords.length !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                </div>
                 <button
                   onClick={() => setShowCallRecords(!showCallRecords)}
                   className="text-sm text-blue-600 hover:text-blue-800 font-medium"
                 >
-                  {showCallRecords ? 'Hide' : 'Show'} Call Records ({catiStats.callRecords.length})
+                  {showCallRecords ? 'Hide' : 'Show'} Call Records
                 </button>
               </div>
               
               {showCallRecords && (
                 <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                  {/* Filters */}
+                  <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Search */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Search Calls
+                        </label>
+                        <div className="relative">
+                          <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                          <input
+                            type="text"
+                            value={callRecordsFilters.search}
+                            onChange={(e) => setCallRecordsFilters(prev => ({ ...prev, search: e.target.value }))}
+                            placeholder="Search by From, To, or Interviewer..."
+                            className="w-full pl-10 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                          {callRecordsFilters.search && (
+                            <button
+                              onClick={() => setCallRecordsFilters(prev => ({ ...prev, search: '' }))}
+                              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Status Filter */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Call Status
+                        </label>
+                        <select
+                          value={callRecordsFilters.status}
+                          onChange={(e) => setCallRecordsFilters(prev => ({ ...prev, status: e.target.value }))}
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          <option value="">All Statuses</option>
+                          <option value="answered">Answered</option>
+                          <option value="completed">Completed</option>
+                          <option value="no-answer">No Answer</option>
+                          <option value="failed">Failed</option>
+                          <option value="busy">Busy</option>
+                          <option value="canceled">Canceled</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Table */}
                   <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
+                    <table className="w-full divide-y divide-gray-200">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Call ID</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">From</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">To</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Interviewer</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Talk Time</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                          <th className="px-3 sm:px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Call ID</th>
+                          <th className="px-3 sm:px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">From</th>
+                          <th className="px-3 sm:px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">To</th>
+                          <th className="px-3 sm:px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Interviewer</th>
+                          <th className="px-3 sm:px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                          <th className="px-3 sm:px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
+                          <th className="px-3 sm:px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Talk Time</th>
+                          <th className="px-3 sm:px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
-                        {catiStats.callRecords.map((call) => (
-                          <tr key={call._id} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 whitespace-nowrap text-sm font-mono text-gray-900">
-                              {call.callId?.substring(0, 20)}...
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{call.fromNumber}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{call.toNumber}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                              {call.interviewer ? call.interviewer.name : 'N/A'}
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap">
-                              <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
-                                call.callStatus === 'answered' || call.callStatus === 'completed' 
-                                  ? 'bg-green-100 text-green-800'
-                                  : call.callStatus === 'no-answer'
-                                  ? 'bg-yellow-100 text-yellow-800'
-                                  : call.callStatus === 'failed'
-                                  ? 'bg-red-100 text-red-800'
-                                  : 'bg-gray-100 text-gray-800'
-                              }`}>
-                                {call.callStatusDescription || call.callStatus}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                              {call.callDuration ? `${Math.floor(call.callDuration / 60)}:${(call.callDuration % 60).toString().padStart(2, '0')}` : 'N/A'}
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                              {call.talkDuration ? `${Math.floor(call.talkDuration / 60)}:${(call.talkDuration % 60).toString().padStart(2, '0')}` : 'N/A'}
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                              {call.callStartTime ? new Date(call.callStartTime).toLocaleDateString() : 'N/A'}
+                        {filteredAndPaginatedCallRecords.paginated.length > 0 ? (
+                          filteredAndPaginatedCallRecords.paginated.map((call) => (
+                            <tr key={call._id} className="hover:bg-gray-50">
+                              <td className="px-3 sm:px-4 md:px-6 py-3 whitespace-nowrap text-sm font-mono text-gray-900">
+                                {call.callId?.substring(0, 20)}...
+                              </td>
+                              <td className="px-3 sm:px-4 md:px-6 py-3 whitespace-nowrap text-sm text-gray-900">{call.fromNumber}</td>
+                              <td className="px-3 sm:px-4 md:px-6 py-3 whitespace-nowrap text-sm text-gray-900">{call.toNumber}</td>
+                              <td className="px-3 sm:px-4 md:px-6 py-3 whitespace-nowrap text-sm text-gray-900">
+                                {call.interviewer ? call.interviewer.name : 'N/A'}
+                              </td>
+                              <td className="px-3 sm:px-4 md:px-6 py-3 whitespace-nowrap">
+                                <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                                  call.callStatus === 'answered' || call.callStatus === 'completed' 
+                                    ? 'bg-green-100 text-green-800'
+                                    : call.callStatus === 'no-answer'
+                                    ? 'bg-yellow-100 text-yellow-800'
+                                    : call.callStatus === 'failed'
+                                    ? 'bg-red-100 text-red-800'
+                                    : 'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {call.callStatusDescription || call.callStatus}
+                                </span>
+                              </td>
+                              <td className="px-3 sm:px-4 md:px-6 py-3 whitespace-nowrap text-sm text-gray-900">
+                                {call.callDuration ? `${Math.floor(call.callDuration / 60)}:${(call.callDuration % 60).toString().padStart(2, '0')}` : 'N/A'}
+                              </td>
+                              <td className="px-3 sm:px-4 md:px-6 py-3 whitespace-nowrap text-sm text-gray-900">
+                                {call.talkDuration ? `${Math.floor(call.talkDuration / 60)}:${(call.talkDuration % 60).toString().padStart(2, '0')}` : 'N/A'}
+                              </td>
+                              <td className="px-3 sm:px-4 md:px-6 py-3 whitespace-nowrap text-sm text-gray-500">
+                                {call.callStartTime ? new Date(call.callStartTime).toLocaleDateString() : 'N/A'}
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan="8" className="px-6 py-8 text-center text-sm text-gray-500">
+                              No call records found matching your filters
                             </td>
                           </tr>
-                        ))}
+                        )}
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Pagination */}
+                  {filteredAndPaginatedCallRecords.totalPages > 1 && (
+                    <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-4">
+                          <span className="text-sm text-gray-700">
+                            Showing {((callRecordsPage - 1) * callRecordsPageSize) + 1} to {Math.min(callRecordsPage * callRecordsPageSize, filteredAndPaginatedCallRecords.filtered.length)} of {filteredAndPaginatedCallRecords.filtered.length} calls
+                          </span>
+                          <select
+                            value={callRecordsPageSize}
+                            onChange={(e) => {
+                              setCallRecordsPageSize(Number(e.target.value));
+                              setCallRecordsPage(1);
+                            }}
+                            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          >
+                            <option value={10}>10 per page</option>
+                            <option value={25}>25 per page</option>
+                            <option value={50}>50 per page</option>
+                            <option value={100}>100 per page</option>
+                          </select>
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => setCallRecordsPage(prev => Math.max(1, prev - 1))}
+                            disabled={!filteredAndPaginatedCallRecords.hasPrev}
+                            className="px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white transition-colors"
+                            title="Previous page"
+                          >
+                            <ChevronLeft className="w-4 h-4" />
+                          </button>
+                          
+                          {/* Page Numbers */}
+                          {Array.from({ length: Math.min(5, filteredAndPaginatedCallRecords.totalPages) }, (_, i) => {
+                            let pageNum;
+                            if (filteredAndPaginatedCallRecords.totalPages <= 5) {
+                              pageNum = i + 1;
+                            } else if (callRecordsPage <= 3) {
+                              pageNum = i + 1;
+                            } else if (callRecordsPage >= filteredAndPaginatedCallRecords.totalPages - 2) {
+                              pageNum = filteredAndPaginatedCallRecords.totalPages - 4 + i;
+                            } else {
+                              pageNum = callRecordsPage - 2 + i;
+                            }
+                            
+                            if (pageNum < 1 || pageNum > filteredAndPaginatedCallRecords.totalPages) return null;
+                            
+                            return (
+                              <button
+                                key={pageNum}
+                                onClick={() => setCallRecordsPage(pageNum)}
+                                className={`px-3 py-2 min-w-[2.5rem] border rounded-lg transition-colors ${
+                                  pageNum === callRecordsPage
+                                    ? 'bg-blue-600 text-white border-blue-600'
+                                    : 'border-gray-300 hover:bg-white'
+                                }`}
+                              >
+                                {pageNum}
+                              </button>
+                            );
+                          })}
+                          
+                          <button
+                            onClick={() => setCallRecordsPage(prev => Math.min(filteredAndPaginatedCallRecords.totalPages, prev + 1))}
+                            disabled={!filteredAndPaginatedCallRecords.hasNext}
+                            className="px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white transition-colors"
+                            title="Next page"
+                          >
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1824,9 +2099,9 @@ const SurveyReportsPage = () => {
 
         {/* AC Performance Modal */}
         {showACModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 max-w-7xl w-full mx-4 max-h-[80vh] overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl p-6 w-full max-w-[95vw] max-h-[90vh] overflow-y-auto">
+              <div className="flex items-start justify-between mb-4">
                 <h3 className="text-xl font-semibold text-gray-900">
                   Assembly Constituency Performance
                   {survey?.acAssignmentState && (
@@ -1835,7 +2110,7 @@ const SurveyReportsPage = () => {
                     </span>
                   )}
                 </h3>
-                <div className="flex items-center space-x-3">
+                <div className="flex flex-col items-end space-y-2 ml-4">
                   <button
                     onClick={() => {
                       const statsToUse = acPerformanceStats || analytics.acStats;
@@ -2003,11 +2278,11 @@ const SurveyReportsPage = () => {
 
         {/* Interviewer Performance Modal */}
         {showInterviewerModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 max-w-7xl w-full mx-4 max-h-[80vh] overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl p-6 w-full max-w-[95vw] max-h-[90vh] overflow-y-auto">
+              <div className="flex items-start justify-between mb-4">
                 <h3 className="text-xl font-semibold text-gray-900">Interviewer Performance</h3>
-                <div className="flex items-center space-x-3">
+                <div className="flex flex-col items-end space-y-2 ml-4">
                   <button
                     onClick={() => {
                       const statsToUse = interviewerPerformanceStats || analytics.interviewerStats;
@@ -2173,11 +2448,11 @@ const SurveyReportsPage = () => {
 
         {/* Daily Trends Modal */}
         {showDailyTrendsModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl p-6 w-full max-w-[95vw] max-h-[90vh] overflow-y-auto">
+              <div className="flex items-start justify-between mb-4">
                 <h3 className="text-xl font-semibold text-gray-900">Daily Response Trends</h3>
-                <div className="flex items-center space-x-3">
+                <div className="flex flex-col items-end space-y-2 ml-4">
                   <button
                     onClick={() => {
                       const csvData = analytics.dailyStats.map(stat => ({

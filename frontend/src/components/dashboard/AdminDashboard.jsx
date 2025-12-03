@@ -4,6 +4,9 @@ import DashboardLayout from './DashboardLayout';
 import SuperAdminDashboard from './SuperAdminDashboard';
 import CompanyAdminDashboard from './CompanyAdminDashboard';
 import ProjectManagerDashboard from './ProjectManagerDashboard';
+import ProjectManagerSurveyReports from './ProjectManagerSurveyReports';
+import ProjectManagerSurveyReportsPage from './ProjectManagerSurveyReportsPage';
+import ProjectManagerQCPerformancePage from './ProjectManagerQCPerformancePage';
 import InterviewerDashboard from './InterviewerDashboard';
 import QualityAgentDashboard from './QualityAgentDashboard';
 import DataAnalystDashboard from './DataAnalystDashboard';
@@ -106,25 +109,17 @@ const AdminDashboard = () => {
     
     // Project Manager routes
     if (user?.userType === 'project_manager') {
-      if (path === '/project-manager/dashboard') {
-        return <ProjectManagerDashboard />;
+      if (path === '/project-manager/survey-reports') {
+        return <ProjectManagerSurveyReports />;
       }
-      if (path === '/project-manager/surveys') {
-        return <ComingSoon title="Survey Management" description="Create and manage survey projects" features={["Create Surveys", "Project Templates", "Survey Builder", "Project Analytics"]} />;
+      if (path.startsWith('/project-manager/surveys/') && path.endsWith('/reports')) {
+        return <ProjectManagerSurveyReportsPage />;
       }
-      if (path === '/project-manager/survey-approvals') {
-        return <ComingSoon title="Survey Approvals" description="Review and approve survey submissions" features={["Pending Reviews", "Quality Assessment", "Approval Workflow", "Feedback Management"]} />;
+      if (path.startsWith('/project-manager/surveys/') && path.endsWith('/qc-performance')) {
+        return <ProjectManagerQCPerformancePage />;
       }
-      if (path === '/project-manager/performance') {
-        return <ComingSoon title="Performance Monitoring" description="Track project and team performance" features={["Project Metrics", "Team Performance", "Quality Analytics", "Progress Reports"]} />;
-      }
-      if (path === '/project-manager/payment-settings') {
-        return <ComingSoon title="Payment Settings" description="Configure payment and billing settings" features={["Payment Methods", "Billing Information", "Payment History", "Financial Reports"]} />;
-      }
-      if (path === '/project-manager/profile') {
-        return <ComingSoon title="Profile Settings" description="Manage your profile and preferences" features={["Personal Information", "Contact Details", "Notification Settings", "Account Security"]} />;
-      }
-      return <ProjectManagerDashboard />;
+      // Default to survey reports
+      return <ProjectManagerSurveyReports />;
     }
     
     // Interviewer routes

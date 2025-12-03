@@ -212,12 +212,7 @@ const DashboardSidebar = ({ sidebarOpen, userType }) => {
       return items;
     } else if (userType === 'project_manager') {
       return [
-        { icon: Home, label: 'Dashboard', path: '/project-manager/dashboard' },
-        { icon: ClipboardCheck, label: 'Surveys', path: '/project-manager/surveys' },
-        { icon: Target, label: 'Survey Approvals', path: '/project-manager/survey-approvals' },
-        { icon: BarChart3, label: 'Performance Monitoring', path: '/project-manager/performance' },
-        { icon: DollarSign, label: 'Payment Settings', path: '/project-manager/payment-settings' },
-        { icon: User, label: 'Profile Settings', path: '/project-manager/profile' }
+        { icon: BarChart3, label: 'Survey Reports', path: '/project-manager/survey-reports' }
       ];
     } else if (userType === 'interviewer') {
       return [

@@ -11,7 +11,9 @@ import {
   CheckCircle, 
   XCircle,
   UserPlus,
-  Brain
+  Brain,
+  Search,
+  X
 } from 'lucide-react';
 import { authAPI } from '../../services/api';
 import { useToast } from '../../contexts/ToastContext';
@@ -45,6 +47,8 @@ const AddCompanyUser = ({ onUserCreated }) => {
     // Interview Mode Settings (for Interviewer and Quality Agent users)
     interviewModes: 'Both',
     canSelectMode: false,
+    // Assigned Team Members (for Project Managers)
+    assignedTeamMembers: [],
   });
 
   const [formStatus, setFormStatus] = useState({
@@ -55,6 +59,18 @@ const AddCompanyUser = ({ onUserCreated }) => {
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  
+  // Team member selection states (for Project Managers)
+  const [availableInterviewers, setAvailableInterviewers] = useState([]);
+  const [availableQualityAgents, setAvailableQualityAgents] = useState([]);
+  const [loadingTeamMembers, setLoadingTeamMembers] = useState(false);
+  const [selectedInterviewers, setSelectedInterviewers] = useState([]);
+  const [selectedQualityAgents, setSelectedQualityAgents] = useState([]);
+  const [showTeamMemberSelector, setShowTeamMemberSelector] = useState(false);
+  
+  // Search states for team members
+  const [interviewerSearch, setInterviewerSearch] = useState('');
+  const [qualityAgentSearch, setQualityAgentSearch] = useState('');
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -67,8 +83,68 @@ const AddCompanyUser = ({ onUserCreated }) => {
   const handleUserTypeChange = (userType) => {
     setFormData(prev => ({
       ...prev,
-      userType
+      userType,
+      assignedTeamMembers: [] // Reset team members when changing user type
     }));
+    setSelectedInterviewers([]);
+    setSelectedQualityAgents([]);
+    setInterviewerSearch('');
+    setQualityAgentSearch('');
+    
+    // Load team members if project manager is selected
+    if (userType === 'project_manager') {
+      loadTeamMembers();
+    }
+  };
+
+  // Load available interviewers and quality agents from company
+  const loadTeamMembers = async () => {
+    try {
+      setLoadingTeamMembers(true);
+      
+      // Fetch interviewers - don't filter by status, get all
+      const interviewerParams = {
+        page: 1,
+        limit: 1000, // Get all users
+        userType: 'interviewer'
+        // Don't filter by status - include all interviewers
+      };
+      
+      // Fetch quality agents - don't filter by status, get all
+      const qualityAgentParams = {
+        page: 1,
+        limit: 1000, // Get all users
+        userType: 'quality_agent'
+        // Don't filter by status - include all quality agents
+      };
+      
+      // Fetch both in parallel
+      const [interviewerResponse, qualityAgentResponse] = await Promise.all([
+        authAPI.getCompanyUsers(interviewerParams),
+        authAPI.getCompanyUsers(qualityAgentParams)
+      ]);
+      
+      if (interviewerResponse.success) {
+        const interviewers = interviewerResponse.data?.users || [];
+        setAvailableInterviewers(interviewers);
+      } else {
+        setAvailableInterviewers([]);
+      }
+      
+      if (qualityAgentResponse.success) {
+        const qualityAgents = qualityAgentResponse.data?.users || [];
+        setAvailableQualityAgents(qualityAgents);
+      } else {
+        setAvailableQualityAgents([]);
+      }
+    } catch (error) {
+      console.error('Error loading team members:', error);
+      showError('Failed to load team members', error.response?.data?.message || error.message || 'Please try again');
+      setAvailableInterviewers([]);
+      setAvailableQualityAgents([]);
+    } finally {
+      setLoadingTeamMembers(false);
+    }
   };
 
   const validateForm = () => {
@@ -161,6 +237,19 @@ const AddCompanyUser = ({ onUserCreated }) => {
       } else if (formData.userType === 'quality_agent') {
         registrationData.interviewModes = formData.interviewModes;
         // Quality agents don't have canSelectMode option
+      } else if (formData.userType === 'project_manager') {
+        // Add assigned team members for project managers
+        const assignedTeamMembers = [
+          ...selectedInterviewers.map(id => ({
+            user: id,
+            userType: 'interviewer'
+          })),
+          ...selectedQualityAgents.map(id => ({
+            user: id,
+            userType: 'quality_agent'
+          }))
+        ];
+        registrationData.assignedTeamMembers = assignedTeamMembers;
       }
 
       const response = await authAPI.registerCompanyUser(registrationData);
@@ -182,7 +271,10 @@ const AddCompanyUser = ({ onUserCreated }) => {
           gig_enabled: false,
           interviewModes: 'Both',
           canSelectMode: false,
+          assignedTeamMembers: [],
         });
+        setSelectedInterviewers([]);
+        setSelectedQualityAgents([]);
         
         // Call callback if provided
         if (onUserCreated) {
@@ -510,6 +602,202 @@ const AddCompanyUser = ({ onUserCreated }) => {
               </div>
             </div>
           </div>
+
+          {/* Team Member Assignment (for Project Managers) */}
+          {formData.userType === 'project_manager' && (
+            <div className="space-y-6 border-t border-gray-200 pt-6">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Assign Team Members</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Select interviewers and quality agents that this project manager will manage.
+                </p>
+              </div>
+
+              {/* Interviewers Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Interviewers {selectedInterviewers.length > 0 && (
+                    <span className="text-blue-600 font-normal">({selectedInterviewers.length} selected)</span>
+                  )}
+                </label>
+                {loadingTeamMembers ? (
+                  <div className="text-sm text-gray-500">Loading interviewers...</div>
+                ) : (
+                  <div className="space-y-2">
+                    {/* Search Input */}
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                      <input
+                        type="text"
+                        placeholder="Search by name, email, or member ID..."
+                        value={interviewerSearch}
+                        onChange={(e) => setInterviewerSearch(e.target.value)}
+                        className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      {interviewerSearch && (
+                        <button
+                          onClick={() => setInterviewerSearch('')}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                    
+                    {/* Filtered Interviewers List */}
+                    <div className="border border-gray-300 rounded-lg p-3 max-h-64 overflow-y-auto bg-gray-50">
+                      {availableInterviewers.length === 0 ? (
+                        <p className="text-sm text-gray-500">No interviewers available in your company</p>
+                      ) : (() => {
+                        const filtered = availableInterviewers.filter(interviewer => {
+                          if (!interviewerSearch) return true;
+                          const searchLower = interviewerSearch.toLowerCase();
+                          const fullName = `${interviewer.firstName} ${interviewer.lastName}`.toLowerCase();
+                          const email = (interviewer.email || '').toLowerCase();
+                          const memberId = (interviewer.memberId || '').toLowerCase();
+                          return fullName.includes(searchLower) || 
+                                 email.includes(searchLower) || 
+                                 memberId.includes(searchLower);
+                        });
+                        
+                        if (filtered.length === 0) {
+                          return <p className="text-sm text-gray-500">No interviewers found matching your search</p>;
+                        }
+                        
+                        return filtered.map((interviewer) => {
+                          const isSelected = selectedInterviewers.includes(interviewer._id);
+                          return (
+                            <label
+                              key={interviewer._id}
+                              className="flex items-center space-x-3 p-2 hover:bg-white rounded cursor-pointer transition-colors"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedInterviewers([...selectedInterviewers, interviewer._id]);
+                                  } else {
+                                    setSelectedInterviewers(selectedInterviewers.filter(id => id !== interviewer._id));
+                                  }
+                                }}
+                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium text-gray-900">
+                                    {interviewer.firstName} {interviewer.lastName}
+                                  </span>
+                                  {interviewer.memberId && (
+                                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-mono">
+                                      ID: {interviewer.memberId}
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-xs text-gray-500">{interviewer.email}</span>
+                              </div>
+                            </label>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Quality Agents Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Quality Agents {selectedQualityAgents.length > 0 && (
+                    <span className="text-purple-600 font-normal">({selectedQualityAgents.length} selected)</span>
+                  )}
+                </label>
+                {loadingTeamMembers ? (
+                  <div className="text-sm text-gray-500">Loading quality agents...</div>
+                ) : (
+                  <div className="space-y-2">
+                    {/* Search Input */}
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                      <input
+                        type="text"
+                        placeholder="Search by name, email, or member ID..."
+                        value={qualityAgentSearch}
+                        onChange={(e) => setQualityAgentSearch(e.target.value)}
+                        className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                      />
+                      {qualityAgentSearch && (
+                        <button
+                          onClick={() => setQualityAgentSearch('')}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                    
+                    {/* Filtered Quality Agents List */}
+                    <div className="border border-gray-300 rounded-lg p-3 max-h-64 overflow-y-auto bg-gray-50">
+                      {availableQualityAgents.length === 0 ? (
+                        <p className="text-sm text-gray-500">No quality agents available in your company</p>
+                      ) : (() => {
+                        const filtered = availableQualityAgents.filter(agent => {
+                          if (!qualityAgentSearch) return true;
+                          const searchLower = qualityAgentSearch.toLowerCase();
+                          const fullName = `${agent.firstName} ${agent.lastName}`.toLowerCase();
+                          const email = (agent.email || '').toLowerCase();
+                          const memberId = (agent.memberId || '').toLowerCase();
+                          return fullName.includes(searchLower) || 
+                                 email.includes(searchLower) || 
+                                 memberId.includes(searchLower);
+                        });
+                        
+                        if (filtered.length === 0) {
+                          return <p className="text-sm text-gray-500">No quality agents found matching your search</p>;
+                        }
+                        
+                        return filtered.map((agent) => {
+                          const isSelected = selectedQualityAgents.includes(agent._id);
+                          return (
+                            <label
+                              key={agent._id}
+                              className="flex items-center space-x-3 p-2 hover:bg-white rounded cursor-pointer transition-colors"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedQualityAgents([...selectedQualityAgents, agent._id]);
+                                  } else {
+                                    setSelectedQualityAgents(selectedQualityAgents.filter(id => id !== agent._id));
+                                  }
+                                }}
+                                className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium text-gray-900">
+                                    {agent.firstName} {agent.lastName}
+                                  </span>
+                                  {agent.memberId && (
+                                    <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded font-mono">
+                                      ID: {agent.memberId}
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-xs text-gray-500">{agent.email}</span>
+                              </div>
+                            </label>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           <button
             type="submit"

@@ -12,7 +12,8 @@ exports.getQCPerformanceBySurvey = async (req, res) => {
     const { 
       startDate, 
       endDate,
-      search 
+      search,
+      qualityAgentIds // Filter by quality agent IDs (for project managers)
     } = req.query;
 
     // Verify the survey belongs to the company
@@ -103,12 +104,39 @@ exports.getQCPerformanceBySurvey = async (req, res) => {
     });
 
     // Get all assigned quality agents details
+    // For project managers: filter by assigned quality agents if they have any
+    let targetQualityAgentIds = [];
+    if (qualityAgentIds) {
+      targetQualityAgentIds = Array.isArray(qualityAgentIds)
+        ? qualityAgentIds
+        : qualityAgentIds.split(',').filter(id => id.trim());
+    }
+
     let assignedQualityAgents = [];
     if (assignedQualityAgentIds.length > 0) {
-      assignedQualityAgents = await User.find({
+      const filterQuery = {
         _id: { $in: assignedQualityAgentIds },
         company: currentUser.company._id
-      }).select('firstName lastName email phone userType');
+      };
+      
+      // If project manager has assigned quality agents, further filter
+      if (targetQualityAgentIds.length > 0 && currentUser.userType === 'project_manager') {
+        filterQuery._id = { 
+          $in: assignedQualityAgentIds.filter(id => 
+            targetQualityAgentIds.some(qaId => id.toString() === qaId.toString())
+          )
+        };
+      }
+      
+      assignedQualityAgents = await User.find(filterQuery)
+        .select('firstName lastName email phone userType memberId');
+    } else if (targetQualityAgentIds.length > 0 && currentUser.userType === 'project_manager') {
+      // If survey has no assigned quality agents but project manager has assigned ones, show those
+      assignedQualityAgents = await User.find({
+        _id: { $in: targetQualityAgentIds.map(id => new mongoose.Types.ObjectId(id.trim())) },
+        company: currentUser.company._id,
+        userType: 'quality_agent'
+      }).select('firstName lastName email phone userType memberId');
     }
 
     // Also get any reviewers who reviewed but might not be in assigned list (company admins or other reviewers)
@@ -134,7 +162,7 @@ exports.getQCPerformanceBySurvey = async (req, res) => {
           { userType: 'company_admin' }
         ],
         company: currentUser.company._id
-      }).select('firstName lastName email phone userType');
+      }).select('firstName lastName email phone userType memberId');
     }
 
     // Combine all reviewers
@@ -230,6 +258,7 @@ exports.getQCPerformanceBySurvey = async (req, res) => {
           name: `${reviewer.firstName || ''} ${reviewer.lastName || ''}`.trim() || reviewer.email || 'Unknown',
           email: reviewer.email || 'N/A',
           phone: reviewer.phone || 'N/A',
+          memberId: reviewer.memberId || null,
           assigned: 0, // Additional reviewers don't have assigned ACs, so assigned count is 0
           totalReviews: performance.totalReviews,
           approvedResponses: performance.approvedResponses,
@@ -241,13 +270,15 @@ exports.getQCPerformanceBySurvey = async (req, res) => {
     // Sort by total reviews (descending) by default
     combinedData.sort((a, b) => b.totalReviews - a.totalReviews);
 
-    // Apply search filter if provided
+    // Apply search filter if provided (name, email, or memberId)
     if (search && search.trim()) {
-      const searchLower = search.toLowerCase();
-      combinedData = combinedData.filter(qa => 
-        qa.name.toLowerCase().includes(searchLower) ||
-        qa.email.toLowerCase().includes(searchLower)
-      );
+      const searchLower = search.toLowerCase().trim();
+      combinedData = combinedData.filter(qa => {
+        const nameMatch = qa.name?.toLowerCase().includes(searchLower) || false;
+        const emailMatch = qa.email?.toLowerCase().includes(searchLower) || false;
+        const memberIdMatch = qa.memberId?.toString().includes(searchLower) || false;
+        return nameMatch || emailMatch || memberIdMatch;
+      });
     }
 
     res.status(200).json({
@@ -284,7 +315,8 @@ exports.getQCPerformanceTrends = async (req, res) => {
     const { surveyId } = req.params;
     const { 
       startDate, 
-      endDate
+      endDate,
+      qualityAgentIds // Filter by quality agent IDs (for project managers)
     } = req.query;
 
     // Verify the survey belongs to the company
