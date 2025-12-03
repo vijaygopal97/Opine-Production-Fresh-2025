@@ -1242,13 +1242,14 @@ exports.getCompanyUsers = async (req, res) => {
       userType: { $ne: 'super_admin' } // Exclude super admins
     };
 
-    // Add search filter
+    // Add search filter (includes memberId for interviewers and quality agents)
     if (search) {
       query.$or = [
         { firstName: { $regex: search, $options: 'i' } },
         { lastName: { $regex: search, $options: 'i' } },
         { email: { $regex: search, $options: 'i' } },
-        { phone: { $regex: search, $options: 'i' } }
+        { phone: { $regex: search, $options: 'i' } },
+        { memberId: { $regex: search, $options: 'i' } } // Include memberId in search
       ];
     }
 
@@ -1265,6 +1266,7 @@ exports.getCompanyUsers = async (req, res) => {
     // Get users with pagination
     const users = await User.find(query)
       .populate('company', 'companyName companyCode')
+      .populate('assignedTeamMembers.user', 'firstName lastName email memberId userType')
       .select('-password -emailVerificationToken -phoneVerificationToken')
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -1532,12 +1534,57 @@ exports.updateCompanyUser = async (req, res) => {
       delete updateData.canSelectMode;
     }
 
+    // Handle assignedTeamMembers for project managers
+    if (updateData.assignedTeamMembers && Array.isArray(updateData.assignedTeamMembers)) {
+      // Validate assigned team members
+      for (const assignment of updateData.assignedTeamMembers) {
+        if (!assignment.user || !assignment.userType) {
+          return res.status(400).json({
+            success: false,
+            message: 'Each assigned team member must have a user ID and userType'
+          });
+        }
+
+        // Validate userType
+        if (!['interviewer', 'quality_agent'].includes(assignment.userType)) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid userType for assigned team member. Must be interviewer or quality_agent'
+          });
+        }
+
+        // Check if the assigned user exists and belongs to the same company
+        const assignedUser = await User.findById(assignment.user);
+        if (!assignedUser) {
+          return res.status(400).json({
+            success: false,
+            message: `Assigned ${assignment.userType} with ID ${assignment.user} not found`
+          });
+        }
+
+        if (assignedUser.company.toString() !== currentUser.company._id.toString()) {
+          return res.status(400).json({
+            success: false,
+            message: `Assigned ${assignment.userType} must belong to the same company`
+          });
+        }
+
+        if (assignedUser.userType !== assignment.userType) {
+          return res.status(400).json({
+            success: false,
+            message: `User type mismatch for assigned ${assignment.userType}`
+          });
+        }
+      }
+    }
+
     // Update the user
     const updatedUser = await User.findByIdAndUpdate(
       id,
       updateData,
       { new: true, runValidators: true }
     ).populate('company', 'companyName companyCode')
+    .populate('assignedTeamMembers.user', 'firstName lastName email memberId userType')
     .select('-password -emailVerificationToken -phoneVerificationToken');
 
     res.status(200).json({

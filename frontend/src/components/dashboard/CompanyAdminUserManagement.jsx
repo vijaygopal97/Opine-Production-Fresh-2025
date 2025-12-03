@@ -335,7 +335,7 @@ const CompanyAdminUserManagement = () => {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
               <input
                 type="text"
-                placeholder="Search team members by name, email, or phone..."
+                placeholder="Search by name, email, phone, or Member ID..."
                 value={searchTerm}
                 onChange={handleSearch}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -470,8 +470,15 @@ const CompanyAdminUserManagement = () => {
                           {user.firstName.charAt(0)}{user.lastName.charAt(0)}
                         </div>
                         <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900">
-                            {user.firstName} {user.lastName}
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-gray-900">
+                              {user.firstName} {user.lastName}
+                            </span>
+                            {(user.userType === 'interviewer' || user.userType === 'quality_agent') && user.memberId && (
+                              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-mono">
+                                ID: {user.memberId}
+                              </span>
+                            )}
                           </div>
                           <div className="text-sm text-gray-500">{user.email}</div>
                         </div>

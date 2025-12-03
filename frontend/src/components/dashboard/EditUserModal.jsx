@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, User, Mail, Phone, Building2, Shield, Crown, UserCheck, BarChart3, Lock, Eye, EyeOff, Key } from 'lucide-react';
+import { X, Save, User, Mail, Phone, Building2, Shield, Crown, UserCheck, BarChart3, Lock, Eye, EyeOff, Key, Search, Users } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
+import { authAPI } from '../../services/api';
 
 const EditUserModal = ({ user, onSave, onCancel }) => {
   const { showSuccess, showError } = useToast();
@@ -15,6 +16,52 @@ const EditUserModal = ({ user, onSave, onCancel }) => {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // Team member assignment states (for Project Managers)
+  const [availableInterviewers, setAvailableInterviewers] = useState([]);
+  const [availableQualityAgents, setAvailableQualityAgents] = useState([]);
+  const [loadingTeamMembers, setLoadingTeamMembers] = useState(false);
+  const [selectedInterviewers, setSelectedInterviewers] = useState([]);
+  const [selectedQualityAgents, setSelectedQualityAgents] = useState([]);
+  const [interviewerSearch, setInterviewerSearch] = useState('');
+  const [qualityAgentSearch, setQualityAgentSearch] = useState('');
+
+  // Load team members for project managers
+  const loadTeamMembers = async () => {
+    try {
+      setLoadingTeamMembers(true);
+      
+      const interviewerParams = {
+        page: 1,
+        limit: 1000,
+        userType: 'interviewer'
+      };
+      
+      const qualityAgentParams = {
+        page: 1,
+        limit: 1000,
+        userType: 'quality_agent'
+      };
+      
+      const [interviewerResponse, qualityAgentResponse] = await Promise.all([
+        authAPI.getCompanyUsers(interviewerParams),
+        authAPI.getCompanyUsers(qualityAgentParams)
+      ]);
+      
+      if (interviewerResponse.success) {
+        setAvailableInterviewers(interviewerResponse.data?.users || []);
+      }
+      
+      if (qualityAgentResponse.success) {
+        setAvailableQualityAgents(qualityAgentResponse.data?.users || []);
+      }
+    } catch (error) {
+      console.error('Error loading team members:', error);
+      showError('Failed to load team members');
+    } finally {
+      setLoadingTeamMembers(false);
+    }
+  };
 
   useEffect(() => {
     if (user) {
@@ -46,6 +93,22 @@ const EditUserModal = ({ user, onSave, onCancel }) => {
         country: user.profile?.address?.country || '',
         postalCode: user.profile?.address?.postalCode || '',
       });
+
+      // Initialize team member assignments for project managers
+      if (user.userType === 'project_manager' && user.assignedTeamMembers) {
+        const interviewerIds = user.assignedTeamMembers
+          .filter(member => member.userType === 'interviewer')
+          .map(member => typeof member.user === 'object' ? member.user._id : member.user);
+        const qualityAgentIds = user.assignedTeamMembers
+          .filter(member => member.userType === 'quality_agent')
+          .map(member => typeof member.user === 'object' ? member.user._id : member.user);
+        
+        setSelectedInterviewers(interviewerIds);
+        setSelectedQualityAgents(qualityAgentIds);
+        loadTeamMembers();
+      } else if (user.userType === 'project_manager') {
+        loadTeamMembers();
+      }
     }
   }, [user]);
 
@@ -138,6 +201,21 @@ const EditUserModal = ({ user, onSave, onCancel }) => {
       // Add password data if password is being reset
       if (showPasswordSection && passwordData.resetPassword && passwordData.newPassword) {
         updateData.password = passwordData.newPassword;
+      }
+
+      // Add assigned team members for project managers
+      if (formData.userType === 'project_manager') {
+        const assignedTeamMembers = [
+          ...selectedInterviewers.map(id => ({
+            user: id,
+            userType: 'interviewer'
+          })),
+          ...selectedQualityAgents.map(id => ({
+            user: id,
+            userType: 'quality_agent'
+          }))
+        ];
+        updateData.assignedTeamMembers = assignedTeamMembers;
       }
 
       await onSave(updateData);
@@ -403,6 +481,205 @@ const EditUserModal = ({ user, onSave, onCancel }) => {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Team Member Assignment (for Project Managers) */}
+          {formData.userType === 'project_manager' && (
+            <div className="border-t border-gray-200 pt-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center space-x-2">
+                <Users className="w-5 h-5 text-gray-600" />
+                <span>Assign Team Members</span>
+              </h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Select interviewers and quality agents that this project manager will manage.
+              </p>
+
+              {/* Interviewers Selection */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Interviewers {selectedInterviewers.length > 0 && (
+                    <span className="text-blue-600 font-normal">({selectedInterviewers.length} selected)</span>
+                  )}
+                </label>
+                {loadingTeamMembers ? (
+                  <div className="text-sm text-gray-500">Loading interviewers...</div>
+                ) : (
+                  <div className="space-y-2">
+                    {/* Search Input */}
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                      <input
+                        type="text"
+                        placeholder="Search by name, email, or member ID..."
+                        value={interviewerSearch}
+                        onChange={(e) => setInterviewerSearch(e.target.value)}
+                        className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      {interviewerSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setInterviewerSearch('')}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                    
+                    {/* Filtered Interviewers List */}
+                    <div className="border border-gray-300 rounded-lg p-3 max-h-64 overflow-y-auto bg-gray-50">
+                      {availableInterviewers.length === 0 ? (
+                        <p className="text-sm text-gray-500">No interviewers available in your company</p>
+                      ) : (() => {
+                        const filtered = availableInterviewers.filter(interviewer => {
+                          if (!interviewerSearch) return true;
+                          const searchLower = interviewerSearch.toLowerCase();
+                          const fullName = `${interviewer.firstName} ${interviewer.lastName}`.toLowerCase();
+                          const email = (interviewer.email || '').toLowerCase();
+                          const memberId = (interviewer.memberId || '').toLowerCase();
+                          return fullName.includes(searchLower) || 
+                                 email.includes(searchLower) || 
+                                 memberId.includes(searchLower);
+                        });
+                        
+                        if (filtered.length === 0) {
+                          return <p className="text-sm text-gray-500">No interviewers found matching your search</p>;
+                        }
+                        
+                        return filtered.map((interviewer) => {
+                          const isSelected = selectedInterviewers.includes(interviewer._id);
+                          return (
+                            <label
+                              key={interviewer._id}
+                              className="flex items-center space-x-3 p-2 hover:bg-white rounded cursor-pointer transition-colors"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedInterviewers([...selectedInterviewers, interviewer._id]);
+                                  } else {
+                                    setSelectedInterviewers(selectedInterviewers.filter(id => id !== interviewer._id));
+                                  }
+                                }}
+                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium text-gray-900">
+                                    {interviewer.firstName} {interviewer.lastName}
+                                  </span>
+                                  {interviewer.memberId && (
+                                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-mono">
+                                      ID: {interviewer.memberId}
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-xs text-gray-500">{interviewer.email}</span>
+                              </div>
+                            </label>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Quality Agents Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Quality Agents {selectedQualityAgents.length > 0 && (
+                    <span className="text-blue-600 font-normal">({selectedQualityAgents.length} selected)</span>
+                  )}
+                </label>
+                {loadingTeamMembers ? (
+                  <div className="text-sm text-gray-500">Loading quality agents...</div>
+                ) : (
+                  <div className="space-y-2">
+                    {/* Search Input */}
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                      <input
+                        type="text"
+                        placeholder="Search by name, email, or member ID..."
+                        value={qualityAgentSearch}
+                        onChange={(e) => setQualityAgentSearch(e.target.value)}
+                        className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      {qualityAgentSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setQualityAgentSearch('')}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                    
+                    {/* Filtered Quality Agents List */}
+                    <div className="border border-gray-300 rounded-lg p-3 max-h-64 overflow-y-auto bg-gray-50">
+                      {availableQualityAgents.length === 0 ? (
+                        <p className="text-sm text-gray-500">No quality agents available in your company</p>
+                      ) : (() => {
+                        const filtered = availableQualityAgents.filter(agent => {
+                          if (!qualityAgentSearch) return true;
+                          const searchLower = qualityAgentSearch.toLowerCase();
+                          const fullName = `${agent.firstName} ${agent.lastName}`.toLowerCase();
+                          const email = (agent.email || '').toLowerCase();
+                          const memberId = (agent.memberId || '').toLowerCase();
+                          return fullName.includes(searchLower) || 
+                                 email.includes(searchLower) || 
+                                 memberId.includes(searchLower);
+                        });
+                        
+                        if (filtered.length === 0) {
+                          return <p className="text-sm text-gray-500">No quality agents found matching your search</p>;
+                        }
+                        
+                        return filtered.map((agent) => {
+                          const isSelected = selectedQualityAgents.includes(agent._id);
+                          return (
+                            <label
+                              key={agent._id}
+                              className="flex items-center space-x-3 p-2 hover:bg-white rounded cursor-pointer transition-colors"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedQualityAgents([...selectedQualityAgents, agent._id]);
+                                  } else {
+                                    setSelectedQualityAgents(selectedQualityAgents.filter(id => id !== agent._id));
+                                  }
+                                }}
+                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium text-gray-900">
+                                    {agent.firstName} {agent.lastName}
+                                  </span>
+                                  {agent.memberId && (
+                                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-mono">
+                                      ID: {agent.memberId}
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-xs text-gray-500">{agent.email}</span>
+                              </div>
+                            </label>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
