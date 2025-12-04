@@ -494,6 +494,52 @@ const SurveyApprovals = () => {
     resetVerificationForm();
   };
 
+  // Helper function to check if a value is a rejection option for a question type
+  const isRejectionOption = (questionType, value) => {
+    if (!value || value === '') return false;
+    
+    switch (questionType) {
+      case 'audioStatus':
+        // Rejection options: anything that's not "1", "4", or "7"
+        return value !== '1' && value !== '4' && value !== '7';
+      case 'gender':
+        // Rejection options: "2" (Not Matched), "3" (Male answering on behalf of female)
+        return value === '2' || value === '3';
+      case 'upcomingElection':
+      case 'assembly2021':
+      case 'lokSabha2024':
+      case 'name':
+      case 'age':
+        // Rejection options: "2" (Not Matched), "4" (Did not ask)
+        // Note: "3" (Cannot hear) is acceptable, not a rejection
+        return value === '2' || value === '4';
+      default:
+        return false;
+    }
+  };
+
+  // Helper function to check if any rejection option has been selected
+  const hasRejectionOption = () => {
+    // Check in order of questions
+    const questionOrder = [
+      { type: 'audioStatus', value: verificationForm.audioStatus },
+      { type: 'gender', value: verificationForm.genderMatching },
+      { type: 'upcomingElection', value: verificationForm.upcomingElectionsMatching },
+      { type: 'assembly2021', value: verificationForm.previousElectionsMatching },
+      { type: 'lokSabha2024', value: verificationForm.previousLoksabhaElectionsMatching },
+      { type: 'name', value: verificationForm.nameMatching },
+      { type: 'age', value: verificationForm.ageMatching },
+    ];
+    
+    for (const question of questionOrder) {
+      if (question.value && isRejectionOption(question.type, question.value)) {
+        return true;
+      }
+    }
+    
+    return false;
+  };
+
   // Helper function to check if a verification question should be shown
   const shouldShowVerificationQuestion = (questionType, interview) => {
     if (!interview) return true;
@@ -501,6 +547,36 @@ const SurveyApprovals = () => {
     // Phone number question should not be shown for CATI responses
     if (questionType === 'phoneNumber' && interview.interviewMode === 'cati') {
       return false;
+    }
+    
+    // If any rejection option has been selected, hide all subsequent questions
+    if (hasRejectionOption()) {
+      // Define question order
+      const questionOrder = ['audioStatus', 'gender', 'upcomingElection', 'assembly2021', 'lokSabha2024', 'name', 'age', 'phoneNumber'];
+      const currentIndex = questionOrder.indexOf(questionType);
+      
+      // Find the first question with a rejection option
+      let rejectionIndex = -1;
+      if (isRejectionOption('audioStatus', verificationForm.audioStatus)) {
+        rejectionIndex = 0;
+      } else if (isRejectionOption('gender', verificationForm.genderMatching)) {
+        rejectionIndex = 1;
+      } else if (isRejectionOption('upcomingElection', verificationForm.upcomingElectionsMatching)) {
+        rejectionIndex = 2;
+      } else if (isRejectionOption('assembly2021', verificationForm.previousElectionsMatching)) {
+        rejectionIndex = 3;
+      } else if (isRejectionOption('lokSabha2024', verificationForm.previousLoksabhaElectionsMatching)) {
+        rejectionIndex = 4;
+      } else if (isRejectionOption('name', verificationForm.nameMatching)) {
+        rejectionIndex = 5;
+      } else if (isRejectionOption('age', verificationForm.ageMatching)) {
+        rejectionIndex = 6;
+      }
+      
+      // Hide all questions after the one with rejection option
+      if (rejectionIndex >= 0 && currentIndex > rejectionIndex) {
+        return false;
+      }
     }
     
     // Get verification responses to check if related response is skipped
@@ -532,7 +608,12 @@ const SurveyApprovals = () => {
     // Audio status is always required
     if (verificationForm.audioStatus === '') return false;
     
-    // Check each question only if it should be shown
+    // If a rejection option is selected, form is valid (don't require other questions)
+    if (hasRejectionOption()) {
+      return true;
+    }
+    
+    // Otherwise, check each question only if it should be shown
     if (shouldShowVerificationQuestion('gender', selectedInterview) && verificationForm.genderMatching === '') return false;
     if (shouldShowVerificationQuestion('upcomingElection', selectedInterview) && verificationForm.upcomingElectionsMatching === '') return false;
     if (shouldShowVerificationQuestion('assembly2021', selectedInterview) && verificationForm.previousElectionsMatching === '') return false;
@@ -547,6 +628,11 @@ const SurveyApprovals = () => {
   // Determine approval status based on form responses
   const getApprovalStatus = () => {
     if (!selectedInterview) return 'rejected';
+    
+    // If any rejection option is selected, automatically reject
+    if (hasRejectionOption()) {
+      return 'rejected';
+    }
     
     // For approval, ALL fields must be either:
     // - Best case (option 1 for most fields, or 1/4 for audioStatus), OR

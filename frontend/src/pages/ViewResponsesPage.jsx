@@ -370,18 +370,120 @@ const ViewResponsesPage = () => {
       questions = actualSurvey.survey.sections.flatMap(section => section.questions || []);
     }
     
-    // Find the question by text
-    const foundQuestion = questions.find(q => q.text === questionText);
-    
-    // Debug logging
-    if (!foundQuestion) {
-      console.log('Question not found:', questionText);
-      console.log('Available questions:', questions.map(q => q.text));
-      console.log('Survey structure keys:', Object.keys(actualSurvey));
-      console.log('Full survey structure:', actualSurvey);
-    }
+    // Find the question by text (using main text for comparison)
+    const questionMainText = getMainText(questionText).toLowerCase().trim();
+    const foundQuestion = questions.find(q => {
+      const qText = getMainText(q.text || q.questionText || '').toLowerCase().trim();
+      return qText === questionMainText || 
+             qText.includes(questionMainText) ||
+             questionMainText.includes(qText);
+    });
     
     return foundQuestion;
+  };
+
+  // Helper function to find question in survey by keywords (similar to SurveyApprovals)
+  const findQuestionInSurveyByKeywords = (keywords, survey, requireAll = false, excludeKeywords = []) => {
+    if (!survey || !keywords || keywords.length === 0) return null;
+    
+    const actualSurvey = survey.survey || survey;
+    const normalizedKeywords = keywords.map(k => k.toLowerCase());
+    const normalizedExclude = excludeKeywords.map(k => k.toLowerCase());
+    
+    const searchInQuestions = (questions) => {
+      for (const question of questions) {
+        const questionText = getMainText(question.text || question.questionText || '').toLowerCase();
+        
+        // Check exclude keywords first
+        if (normalizedExclude.length > 0) {
+          const hasExcludeKeyword = normalizedExclude.some(keyword => questionText.includes(keyword));
+          if (hasExcludeKeyword) continue;
+        }
+        
+        // Check include keywords
+        if (requireAll) {
+          if (normalizedKeywords.every(keyword => questionText.includes(keyword))) {
+            return question;
+          }
+        } else {
+          if (normalizedKeywords.some(keyword => questionText.includes(keyword))) {
+            return question;
+          }
+        }
+      }
+      return null;
+    };
+    
+    // Search in sections
+    if (actualSurvey.sections) {
+      for (const section of actualSurvey.sections) {
+        if (section.questions) {
+          const found = searchInQuestions(section.questions);
+          if (found) return found;
+        }
+      }
+    }
+    
+    // Search in top-level questions
+    if (actualSurvey.questions) {
+      const found = searchInQuestions(actualSurvey.questions);
+      if (found) return found;
+    }
+    
+    return null;
+  };
+
+  // Helper function to find response by matching question text (without translations)
+  const findResponseByQuestionTextMatch = (responses, targetQuestionText) => {
+    if (!responses || !Array.isArray(responses) || !targetQuestionText) return null;
+    const targetMainText = getMainText(targetQuestionText).toLowerCase().trim();
+    
+    return responses.find(r => {
+      if (!r.questionText) return false;
+      const responseQuestionText = getMainText(r.questionText).toLowerCase().trim();
+      // Exact match or contains the main text
+      return responseQuestionText === targetMainText || 
+             responseQuestionText.includes(targetMainText) ||
+             targetMainText.includes(responseQuestionText);
+    });
+  };
+
+  // Helper function to find response by matching survey question (finds question in survey, then matches response)
+  const findResponseBySurveyQuestion = (keywords, responses, survey, requireAll = false, excludeKeywords = []) => {
+    // First, find the question in the survey
+    const surveyQuestion = findQuestionInSurveyByKeywords(keywords, survey, requireAll, excludeKeywords);
+    if (!surveyQuestion) return null;
+    
+    // Get the main text of the survey question (without translation)
+    const surveyQuestionMainText = getMainText(surveyQuestion.text || surveyQuestion.questionText || '');
+    
+    // Now find the response that matches this question text
+    return findResponseByQuestionTextMatch(responses, surveyQuestionMainText);
+  };
+
+  // Helper function to find response by question text keywords (fallback method)
+  const findResponseByKeywords = (responses, keywords, requireAll = false, excludeKeywords = []) => {
+    if (!responses || !Array.isArray(responses)) return null;
+    const normalizedKeywords = keywords.map(k => k.toLowerCase());
+    const normalizedExclude = excludeKeywords.map(k => k.toLowerCase());
+    
+    return responses.find(r => {
+      if (!r.questionText) return false;
+      const questionText = getMainText(r.questionText || '').toLowerCase();
+      
+      // Check exclude keywords first
+      if (normalizedExclude.length > 0) {
+        const hasExcludeKeyword = normalizedExclude.some(keyword => questionText.includes(keyword));
+        if (hasExcludeKeyword) return false;
+      }
+      
+      // Check include keywords
+      if (requireAll) {
+        return normalizedKeywords.every(keyword => questionText.includes(keyword));
+      } else {
+        return normalizedKeywords.some(keyword => questionText.includes(keyword));
+      }
+    });
   };
 
   // Helper function to get state from GPS location
@@ -503,40 +605,16 @@ const ViewResponsesPage = () => {
       });
     };
 
-    // Get survey ID
-    const surveyId = responseData?.survey?._id || responseData?.survey?._id || null;
+    // Get survey ID - check both responseData and component state
+    // Convert to string to handle ObjectId objects
+    const surveyIdRaw = responseData?.survey?._id || responseData?.survey?.id || survey?._id || survey?.id || null;
+    const surveyId = surveyIdRaw ? String(surveyIdRaw) : null;
+    // Get survey object - prefer component state, fallback to responseData
+    const surveyObj = survey || responseData?.survey || null;
 
     // Special handling for survey "68fd1915d41841da463f0d46"
     if (surveyId === '68fd1915d41841da463f0d46') {
-      // Find name from Q28 - "Would You like to share your name with us?"
-      let nameResponse = findResponseByQuestionNumber(responses, 'Q28') || 
-                         findResponseByQuestionNumber(responses, '28');
-      
-      // Fallback to question text search
-      if (!nameResponse) {
-        nameResponse = findResponseByQuestionText(responses, [
-          'would you like to share your name',
-          'share your name',
-          'name with us'
-        ]);
-      }
-      
-      // Fallback to general name search
-      if (!nameResponse) {
-        nameResponse = findResponseByQuestionText(responses, [
-          'what is your full name',
-          'full name',
-          'name'
-        ]);
-      }
-      
-      // Get name and capitalize it
-      let name = nameResponse?.response || 'N/A';
-      if (name !== 'N/A') {
-        name = capitalizeName(String(name));
-      }
-      
-      // Find gender from "Please note the respondent's gender"
+      // STEP 1: Find gender response FIRST and get its identifiers to exclude it
       let genderResponse = findResponseByQuestionText(responses, [
         'please note the respondent\'s gender',
         'note the respondent\'s gender',
@@ -561,11 +639,286 @@ const ViewResponsesPage = () => {
         }
       }
       
+      // Get gender question ID to exclude it from name search - CRITICAL
+      const genderQuestionId = genderResponse?.questionId;
+      const genderResponseId = genderResponse?._id || genderResponse?.id;
+      const genderQuestionText = genderResponse ? getMainText(genderResponse.questionText || '').toLowerCase() : '';
+      
+      // Create a set of gender identifiers for fast lookup
+      const genderIdentifiers = new Set();
+      if (genderQuestionId) genderIdentifiers.add(genderQuestionId);
+      if (genderResponseId) {
+        genderIdentifiers.add(String(genderResponseId));
+        if (genderResponse._id) genderIdentifiers.add(String(genderResponse._id));
+        if (genderResponse.id) genderIdentifiers.add(String(genderResponse.id));
+      }
+      
+      // Helper function to check if a response value is a gender value
+      const isGenderResponseValue = (value) => {
+        if (!value) return false;
+        const valueStr = String(value).toLowerCase().trim();
+        // Check for exact gender values
+        if (valueStr === 'male' || valueStr === 'female' || valueStr === 'non_binary' || valueStr === 'other') return true;
+        // Check for gender option codes
+        if (valueStr === '1' || valueStr === '2' || valueStr === '3') return true;
+        // Check for translation format (e.g., "Male_{পুরুষ}")
+        if (valueStr.includes('_{')) return true;
+        // Check if it starts with gender keywords
+        if (valueStr.startsWith('male') || valueStr.startsWith('female')) return true;
+        return false;
+      };
+      
+      // Find name from the fixed name question
+      // Based on actual data: questionId = "68fd1915d41841da463f0d46_fixed_respondent_name"
+      let nameResponse = null;
+      
+      // Strategy 1: Find by fixed questionId (most reliable for this survey)
+      // Based on actual data: questionId = "68fd1915d41841da463f0d46_fixed_respondent_name"
+      const fixedNameQuestionId = `${surveyId}_fixed_respondent_name`;
+      const nameResponseById = responses.find(r => r.questionId === fixedNameQuestionId);
+      
+      if (nameResponseById) {
+        // CRITICAL: Multiple checks to ensure it's not the gender response
+        const isGenderById = genderIdentifiers.has(nameResponseById.questionId) ||
+                            genderIdentifiers.has(String(nameResponseById._id)) ||
+                            genderIdentifiers.has(String(nameResponseById.id));
+        const isGenderByValue = isGenderResponseValue(nameResponseById.response);
+        const isGenderByText = nameResponseById.questionText && 
+                              (getMainText(nameResponseById.questionText).toLowerCase().includes('gender') ||
+                               getMainText(nameResponseById.questionText).toLowerCase().includes('respondent\'s gender'));
+        
+        // Only use if it passes ALL checks
+        if (!isGenderById && !isGenderByValue && !isGenderByText) {
+          nameResponse = nameResponseById;
+        }
+      }
+      
+      // Strategy 2: Find Q29 question in survey by questionNumber, then match response by questionId
+      if (!nameResponse && surveyObj) {
+        const nameQuestion = findQuestionByNumber('Q29', surveyObj) || findQuestionByNumber('29', surveyObj);
+        if (nameQuestion && nameQuestion.id) {
+          // Find response that matches this questionId
+          const foundResponse = responses.find(r => r.questionId === nameQuestion.id);
+          if (foundResponse) {
+            // CRITICAL: Check if this is the gender response using the set
+            const isGenderResponse = genderIdentifiers.has(foundResponse.questionId) ||
+                                    genderIdentifiers.has(String(foundResponse._id)) ||
+                                    genderIdentifiers.has(String(foundResponse.id));
+            
+            if (!isGenderResponse && !isGenderResponseValue(foundResponse.response)) {
+              // Verify question text is not about gender
+              if (foundResponse.questionText) {
+                const qText = getMainText(foundResponse.questionText).toLowerCase();
+                if (!qText.includes('gender') && 
+                    !qText.includes('respondent\'s gender') && 
+                    !qText.includes('note the gender') &&
+                    !qText.includes('note the respondent')) {
+                  nameResponse = foundResponse;
+                }
+              } else {
+                nameResponse = foundResponse;
+              }
+            }
+          }
+        }
+      }
+      
+      // Strategy 3: If not found by questionId, search by question text pattern
+      if (!nameResponse) {
+        for (const response of responses) {
+          // CRITICAL: Skip if this is the gender response (by ID) - check first using set
+          if (genderIdentifiers.has(response.questionId) ||
+              genderIdentifiers.has(String(response._id)) ||
+              genderIdentifiers.has(String(response.id))) {
+            continue; // This is the gender response, skip it
+          }
+          
+          // Skip if response value is a gender value
+          if (isGenderResponseValue(response.response)) {
+            continue;
+          }
+          
+          // Skip if question text contains gender keywords
+          if (response.questionText) {
+            const qText = getMainText(response.questionText).toLowerCase();
+            if (qText.includes('gender') || 
+                qText.includes('respondent\'s gender') || 
+                qText.includes('note the gender') ||
+                qText.includes('note the respondent')) {
+              continue;
+            }
+          }
+          
+          // Check for name question text pattern - be very specific
+          if (response.questionText) {
+            const qText = getMainText(response.questionText).toLowerCase();
+            // Look for name question text patterns - must have "share your name" AND ("confidential" OR "assure")
+            const hasShareName = qText.includes('share your name') || 
+                                qText.includes('would you like to share your name');
+            const hasConfidential = qText.includes('confidential') || 
+                                   qText.includes('assure') ||
+                                   qText.includes('assurance');
+            
+            if (hasShareName && hasConfidential) {
+              nameResponse = response;
+              break; // Found name question, stop searching
+            }
+          }
+        }
+      }
+      
+      // Strategy 4: Fallback - search for any question with "share your name" (without confidential)
+      if (!nameResponse) {
+        for (const response of responses) {
+          // Skip if this is the gender response using set
+          if (genderIdentifiers.has(response.questionId) ||
+              genderIdentifiers.has(String(response._id)) ||
+              genderIdentifiers.has(String(response.id))) {
+            continue;
+          }
+          
+          // Skip if response value is a gender value
+          if (isGenderResponseValue(response.response)) {
+            continue;
+          }
+          
+          // Skip if question text contains gender keywords
+          if (response.questionText) {
+            const qText = getMainText(response.questionText).toLowerCase();
+            if (qText.includes('gender') || 
+                qText.includes('respondent\'s gender') || 
+                qText.includes('note the gender') ||
+                qText.includes('note the respondent')) {
+              continue;
+            }
+            
+            // Check for "share your name" pattern
+            if (qText.includes('would you like to share your name') ||
+                qText.includes('share your name with us') ||
+                (qText.includes('share your name') && !qText.includes('gender'))) {
+              nameResponse = response;
+              break;
+            }
+          }
+        }
+      }
+      
+      // Final safety check: if we still have a nameResponse, verify it's not a gender value or gender response
+      // This is CRITICAL - we must never use the gender response as the name
+      if (nameResponse) {
+        // Check 1: Is it the gender response by ID? (using set for fast lookup)
+        if (genderIdentifiers.has(nameResponse.questionId) ||
+            genderIdentifiers.has(String(nameResponse._id)) ||
+            genderIdentifiers.has(String(nameResponse.id))) {
+          nameResponse = null;
+        }
+        // Check by question text match
+        else if (nameResponse.questionText && genderResponse && genderResponse.questionText) {
+          const nameText = getMainText(nameResponse.questionText).toLowerCase();
+          const genderText = getMainText(genderResponse.questionText).toLowerCase();
+          if (nameText === genderText) {
+            nameResponse = null;
+          }
+        }
+        
+        // Check 2: Is the response value a gender value?
+        if (nameResponse && isGenderResponseValue(nameResponse.response)) {
+          nameResponse = null;
+        }
+        
+        // Check 3: Does the question text contain gender keywords?
+        if (nameResponse && nameResponse.questionText) {
+          const qText = getMainText(nameResponse.questionText).toLowerCase();
+          if (qText.includes('gender') || 
+              qText.includes('respondent\'s gender') || 
+              qText.includes('note the gender') ||
+              qText.includes('note the respondent') ||
+              (qText.includes('respondent') && qText.includes('gender'))) {
+            nameResponse = null;
+          }
+        }
+      }
+      
+      // ABSOLUTE FINAL CHECK: If nameResponse is still set but has a gender value, clear it
+      if (nameResponse && isGenderResponseValue(nameResponse.response)) {
+        nameResponse = null;
+      }
+      
+      // Get name and capitalize it
+      // CRITICAL: Only use nameResponse if it exists and is NOT the gender response
+      let name = 'N/A';
+      
+      // Final validation: Ensure nameResponse is valid and not the gender response
+      if (nameResponse) {
+        // Check 1: Is it the gender response? (using set for fast lookup)
+        if (genderIdentifiers.has(nameResponse.questionId) ||
+            genderIdentifiers.has(String(nameResponse._id)) ||
+            genderIdentifiers.has(String(nameResponse.id))) {
+          nameResponse = null; // Clear it - this is the gender response
+        }
+        // Check 2: Is the response value a gender value?
+        else if (isGenderResponseValue(nameResponse.response)) {
+          nameResponse = null; // Clear it - this has a gender value
+        }
+        // Check 3: Is the question text about gender?
+        else if (nameResponse.questionText) {
+          const qText = getMainText(nameResponse.questionText).toLowerCase();
+          if (qText.includes('gender') || 
+              qText.includes('respondent\'s gender') || 
+              qText.includes('note the gender') ||
+              qText.includes('note the respondent')) {
+            nameResponse = null; // Clear it - this is a gender question
+          }
+        }
+      }
+      
+      // Now extract the name only if nameResponse is still valid
+      // ABSOLUTE FINAL CHECK: Make absolutely sure nameResponse is not the gender response
+      if (nameResponse) {
+        // Check one more time if it's the gender response
+        if (genderIdentifiers.has(nameResponse.questionId) ||
+            genderIdentifiers.has(String(nameResponse._id)) ||
+            genderIdentifiers.has(String(nameResponse.id))) {
+          nameResponse = null; // Clear it
+        }
+        // Check if the value is a gender value
+        else if (isGenderResponseValue(nameResponse.response)) {
+          nameResponse = null; // Clear it
+        }
+        // Check if question text is about gender
+        else if (nameResponse.questionText) {
+          const qText = getMainText(nameResponse.questionText).toLowerCase();
+          if (qText.includes('gender') || 
+              qText.includes('respondent\'s gender') || 
+              qText.includes('note the gender') ||
+              qText.includes('note the respondent')) {
+            nameResponse = null; // Clear it
+          }
+        }
+      }
+      
+      if (nameResponse?.response) {
+        const nameValue = Array.isArray(nameResponse.response) ? nameResponse.response[0] : nameResponse.response;
+        const nameStr = String(nameValue).toLowerCase().trim();
+        
+        // ABSOLUTE FINAL CHECK: ensure it's not a gender value
+        if (!isGenderResponseValue(nameValue) && 
+            nameValue && 
+            nameValue !== 'N/A' && 
+            nameValue !== null &&
+            nameValue !== undefined &&
+            nameStr !== '' &&
+            nameStr.length > 1 &&
+            !nameStr.includes('_{')) { // Extra check for translation format
+          name = capitalizeName(String(nameValue));
+        }
+      }
+      
       // Get gender option text (without translation)
       let gender = 'N/A';
       if (genderResponse?.response) {
         // Try to find the gender question in survey
-        const genderQuestion = survey ? getAllSurveyQuestions(survey).find(q => {
+        const genderQuestion = surveyObj ? getAllSurveyQuestions(surveyObj).find(q => {
           const qText = getMainText(q.text || '').toLowerCase();
           return qText.includes('gender') || qText.includes('respondent');
         }) : null;
@@ -621,26 +974,40 @@ const ViewResponsesPage = () => {
     }
 
     // Default behavior for other surveys
-    const nameResponse = responses.find(r => 
-      getMainText(r.questionText || '').toLowerCase().includes('name') || 
-      getMainText(r.questionText || '').toLowerCase().includes('respondent') ||
-      getMainText(r.questionText || '').toLowerCase().includes('full name')
-    );
-    
+    // IMPORTANT: Exclude gender responses from name search
     const genderResponse = responses.find(r => 
+      getMainText(r.questionText || '').toLowerCase().includes('gender') || 
+      getMainText(r.questionText || '').toLowerCase().includes('sex')
+    );
+    const genderQuestionId = genderResponse?.questionId;
+    
+    const nameResponse = responses.find(r => {
+      // Skip if this is the gender response
+      if (genderQuestionId && r.questionId === genderQuestionId) return false;
+      // Skip if question text is about gender
+      const qText = getMainText(r.questionText || '').toLowerCase();
+      if (qText.includes('gender') || qText.includes('sex')) return false;
+      // Look for name-related questions
+      return qText.includes('name') || 
+             (qText.includes('respondent') && !qText.includes('gender')) ||
+             qText.includes('full name');
+    });
+    
+    // Get gender response (already found above if not in special survey section)
+    const genderResponseForDefault = responses.find(r => 
       getMainText(r.questionText || '').toLowerCase().includes('gender') || 
       getMainText(r.questionText || '').toLowerCase().includes('sex')
     );
     
     // Get gender option text (without translation)
     let gender = 'N/A';
-    if (genderResponse?.response) {
+    if (genderResponseForDefault?.response) {
       const genderQuestion = survey ? getAllSurveyQuestions(survey).find(q => {
         const qText = getMainText(q.text || '').toLowerCase();
         return qText.includes('gender') || qText.includes('sex');
       }) : null;
       
-      gender = getOptionTextFromValue(genderResponse.response, genderQuestion);
+      gender = getOptionTextFromValue(genderResponseForDefault.response, genderQuestion);
     }
     
     const ageResponse = responses.find(r => 
@@ -676,9 +1043,23 @@ const ViewResponsesPage = () => {
     const state = getStateFromGPS(responseData?.location);
 
     // Get name and capitalize it
-    let name = nameResponse?.response || 'N/A';
-    if (name !== 'N/A') {
-      name = capitalizeName(String(name));
+    // CRITICAL: Ensure nameResponse is not a gender response
+    let name = 'N/A';
+    if (nameResponse && nameResponse !== genderResponseForDefault) {
+      const nameValue = nameResponse.response;
+      // Check if it's a gender value
+      const nameStr = String(nameValue).toLowerCase().trim();
+      if (!nameStr.includes('_{') && // Not a translated gender value
+          !nameStr.startsWith('male') && 
+          !nameStr.startsWith('female') &&
+          nameValue && 
+          nameValue !== 'N/A' && 
+          nameValue !== null &&
+          nameValue !== undefined &&
+          nameStr !== '' &&
+          nameStr.length > 1) {
+        name = capitalizeName(String(nameValue));
+      }
     }
 
     return {

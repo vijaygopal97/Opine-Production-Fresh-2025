@@ -289,44 +289,126 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
       });
     };
 
-    // Get survey ID
-    const surveyId = responseData?.survey?._id || survey?._id || null;
+    // Get survey ID - convert to string to handle ObjectId objects
+    const surveyIdRaw = responseData?.survey?._id || survey?._id || null;
+    const surveyId = surveyIdRaw ? String(surveyIdRaw) : null;
+
+    // Helper function to check if a response value is a gender value
+    const isGenderResponseValue = (value) => {
+      if (!value) return false;
+      const valueStr = String(value).toLowerCase().trim();
+      // Check for exact gender values
+      if (valueStr === 'male' || valueStr === 'female' || valueStr === 'non_binary' || valueStr === 'other') return true;
+      // Check for gender option codes
+      if (valueStr === '1' || valueStr === '2' || valueStr === '3') return true;
+      // Check for translation format (e.g., "Male_{পুরুষ}")
+      if (valueStr.includes('_{')) return true;
+      // Check if it starts with gender keywords
+      if (valueStr.startsWith('male') || valueStr.startsWith('female')) return true;
+      return false;
+    };
+
+    // Find gender response FIRST to exclude it from name search
+    const genderResponse = findGenderResponse(responses, survey) || responses.find(r => 
+      getMainText(r.questionText || '').toLowerCase().includes('gender') || 
+      getMainText(r.questionText || '').toLowerCase().includes('sex') ||
+      getMainText(r.questionText || '').toLowerCase().includes('respondent\'s gender')
+    );
+    
+    // Get gender identifiers to exclude from name search
+    const genderQuestionId = genderResponse?.questionId;
+    const genderResponseId = genderResponse?._id || genderResponse?.id;
+    const genderIdentifiers = new Set();
+    if (genderQuestionId) genderIdentifiers.add(genderQuestionId);
+    if (genderResponseId) {
+      genderIdentifiers.add(String(genderResponseId));
+      if (genderResponse._id) genderIdentifiers.add(String(genderResponse._id));
+      if (genderResponse.id) genderIdentifiers.add(String(genderResponse.id));
+    }
 
     // Special handling for survey "68fd1915d41841da463f0d46"
     let nameResponse = null;
     if (surveyId === '68fd1915d41841da463f0d46') {
-      // Find name from "Would You like to share your name with us?" question
-      nameResponse = findResponseByQuestionText([
-        'would you like to share your name',
-        'share your name',
-        'name with us'
-      ]);
-      // Fallback to general name search
+      // Strategy 1: Find by fixed questionId (most reliable for this survey)
+      // Based on actual data: questionId = "68fd1915d41841da463f0d46_fixed_respondent_name"
+      const fixedNameQuestionId = `${surveyId}_fixed_respondent_name`;
+      const nameResponseById = responses.find(r => r.questionId === fixedNameQuestionId);
+      
+      if (nameResponseById) {
+        // CRITICAL: Multiple checks to ensure it's not the gender response
+        const isGenderById = genderIdentifiers.has(nameResponseById.questionId) ||
+                            genderIdentifiers.has(String(nameResponseById._id)) ||
+                            genderIdentifiers.has(String(nameResponseById.id));
+        const isGenderByValue = isGenderResponseValue(nameResponseById.response);
+        const isGenderByText = nameResponseById.questionText && 
+                              (getMainText(nameResponseById.questionText).toLowerCase().includes('gender') ||
+                               getMainText(nameResponseById.questionText).toLowerCase().includes('respondent\'s gender'));
+        
+        // Only use if it passes ALL checks
+        if (!isGenderById && !isGenderByValue && !isGenderByText) {
+          nameResponse = nameResponseById;
+        }
+      }
+      
+      // Strategy 2: Find by question text pattern if not found by ID
       if (!nameResponse) {
-        nameResponse = findResponseByQuestionText([
-          'what is your full name',
-          'full name',
-          'name'
+        const textResponse = findResponseByQuestionText([
+          'would you like to share your name',
+          'share your name with us',
+          'share your name'
         ]);
+        if (textResponse) {
+          // Verify it's not the gender response
+          if (!genderIdentifiers.has(textResponse.questionId) &&
+              !genderIdentifiers.has(String(textResponse._id)) &&
+              !genderIdentifiers.has(String(textResponse.id)) &&
+              !isGenderResponseValue(textResponse.response)) {
+            const qText = getMainText(textResponse.questionText || '').toLowerCase();
+            if (!qText.includes('gender') && !qText.includes('respondent\'s gender')) {
+              nameResponse = textResponse;
+            }
+          }
+        }
       }
     } else {
-      // For other surveys, use general name search
-      nameResponse = findResponseByQuestionText([
-        'what is your full name',
-        'full name',
-        'name',
-        'respondent'
-      ]);
+      // For other surveys, use general name search (excluding gender)
+      nameResponse = responses.find(r => {
+        // Skip if this is the gender response
+        if (genderIdentifiers.has(r.questionId) ||
+            genderIdentifiers.has(String(r._id)) ||
+            genderIdentifiers.has(String(r.id))) {
+          return false;
+        }
+        // Skip if response value is a gender value
+        if (isGenderResponseValue(r.response)) {
+          return false;
+        }
+        // Skip if question text is about gender
+        const qText = getMainText(r.questionText || '').toLowerCase();
+        if (qText.includes('gender') || qText.includes('sex')) {
+          return false;
+        }
+        // Look for name-related questions
+        return qText.includes('name') || 
+               (qText.includes('respondent') && !qText.includes('gender'));
+      });
     }
     
-    // Find gender response using genderUtils
-    const genderResponse = findGenderResponse(responses, survey) || responses.find(r => 
-      getMainText(r.questionText || '').toLowerCase().includes('gender') || 
-      getMainText(r.questionText || '').toLowerCase().includes('sex')
-    );
-    // Normalize gender response to handle translations
-    const genderValue = genderResponse?.response ? normalizeGenderResponse(genderResponse.response) : null;
-    const genderDisplay = genderValue === 'male' ? 'Male' : (genderValue === 'female' ? 'Female' : (genderResponse?.response || 'N/A'));
+    // Get gender question from survey to format the response correctly
+    let genderQuestion = null;
+    if (genderResponse && survey) {
+      const actualSurvey = survey.survey || survey;
+      genderQuestion = findQuestionByText(genderResponse.questionText, actualSurvey);
+    }
+    
+    // Format gender response using formatResponseDisplay (removes translation part)
+    let genderDisplay = 'N/A';
+    if (genderResponse?.response) {
+      const genderValue = extractValue(genderResponse.response);
+      if (genderValue) {
+        genderDisplay = formatResponseDisplay(genderValue, genderQuestion);
+      }
+    }
     
     const ageResponse = responses.find(r => 
       r.questionText?.toLowerCase().includes('age') || 
@@ -360,9 +442,54 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
     // Get state from GPS location
     const state = getStateFromGPS(responseData?.location);
 
+    // Get name and capitalize it
+    // CRITICAL: Ensure nameResponse is not the gender response
+    let name = 'N/A';
+    if (nameResponse) {
+      // Final validation: Ensure it's not the gender response
+      if (genderIdentifiers.has(nameResponse.questionId) ||
+          genderIdentifiers.has(String(nameResponse._id)) ||
+          genderIdentifiers.has(String(nameResponse.id)) ||
+          isGenderResponseValue(nameResponse.response)) {
+        nameResponse = null; // Clear it
+      } else if (nameResponse.questionText) {
+        const qText = getMainText(nameResponse.questionText).toLowerCase();
+        if (qText.includes('gender') || 
+            qText.includes('respondent\'s gender') || 
+            qText.includes('note the gender')) {
+          nameResponse = null; // Clear it
+        }
+      }
+    }
+    
+    if (nameResponse?.response) {
+      const nameValue = extractValue(nameResponse.response);
+      const nameStr = String(nameValue).toLowerCase().trim();
+      
+      // ABSOLUTE FINAL CHECK: ensure it's not a gender value
+      if (!isGenderResponseValue(nameValue) && 
+          nameValue && 
+          nameValue !== 'N/A' && 
+          nameValue !== null &&
+          nameValue !== undefined &&
+          nameStr !== '' &&
+          nameStr.length > 1 &&
+          !nameStr.includes('_{') && // Extra check for translation format
+          !nameStr.startsWith('male') && // Extra check
+          !nameStr.startsWith('female')) { // Extra check
+        // Capitalize the name
+        name = String(nameValue)
+          .split(' ')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+          .join(' ');
+      } else {
+        name = 'N/A'; // If it's a gender value, explicitly set to N/A
+      }
+    }
+    
     return {
-      name: extractValue(nameResponse?.response) || 'N/A',
-      gender: extractValue(genderResponse?.response) || 'N/A',
+      name: name,
+      gender: genderDisplay,
       age: extractValue(ageResponse?.response) || 'N/A',
       city: city,
       district: district,
@@ -372,7 +499,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
     };
   };
 
-  // Helper function to format response display text (same as SurveyApprovals)
+  // Helper function to format response display text (shows only main text, no translation)
   const formatResponseDisplay = (response, surveyQuestion) => {
     if (!response || response === null || response === undefined) {
       return 'No response';
@@ -390,12 +517,20 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
         }
         
         if (surveyQuestion && surveyQuestion.options) {
-          const option = surveyQuestion.options.find(opt => opt.value === value);
+          const option = surveyQuestion.options.find(opt => 
+            opt.value === value || 
+            opt.value?.toString() === value?.toString() ||
+            opt.code === value ||
+            opt.code?.toString() === value?.toString()
+          );
           if (option) {
-            const optionText = option.text || option.value || value;
-            const parsed = parseTranslation(optionText);
-            return parsed.translation ? `${parsed.mainText} / ${parsed.translation}` : parsed.mainText;
+            // Return only main text (without translation)
+            return getMainText(option.text || option.value || value);
           }
+        }
+        // If value has translation format, extract main text
+        if (typeof value === 'string' && value.includes('_{')) {
+          return value.split('_{')[0];
         }
         return value;
       });
@@ -417,23 +552,36 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
         const min = scale.min || 1;
         const label = labels[response - min];
         if (label) {
-          const parsed = parseTranslation(label);
-          const labelText = parsed.translation ? `${parsed.mainText} / ${parsed.translation}` : parsed.mainText;
-          return `${response} (${labelText})`;
+          // Return only main text (without translation)
+          return `${response} (${getMainText(label)})`;
         }
         return response.toString();
       }
       
       // Map to display text using question options
       if (surveyQuestion && surveyQuestion.options) {
-        const option = surveyQuestion.options.find(opt => opt.value === response);
+        const option = surveyQuestion.options.find(opt => 
+          opt.value === response || 
+          opt.value?.toString() === response?.toString() ||
+          opt.code === response ||
+          opt.code?.toString() === response?.toString()
+        );
         if (option) {
-          const optionText = option.text || option.value || response.toString();
-          const parsed = parseTranslation(optionText);
-          return parsed.translation ? `${parsed.mainText} / ${parsed.translation}` : parsed.mainText;
+          // Return only main text (without translation)
+          return getMainText(option.text || option.value || response.toString());
+        }
+        // If response has translation format, extract main text
+        if (typeof response === 'string' && response.includes('_{')) {
+          return response.split('_{')[0];
         }
         return response.toString();
       }
+      
+      // If response has translation format, extract main text
+      if (typeof response === 'string' && response.includes('_{')) {
+        return response.split('_{')[0];
+      }
+      
       return response.toString();
     }
 
@@ -519,7 +667,8 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
   };
 
   // Helper function to evaluate if a condition is met
-  const evaluateCondition = (condition, responses) => {
+  // This matches the logic from SurveyApprovals.jsx to handle translations correctly
+  const evaluateCondition = (condition, responses, survey) => {
     if (!condition.questionId || !condition.operator || condition.value === undefined || condition.value === '__NOVALUE__') {
       return false;
     }
@@ -537,43 +686,113 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
     const responseValue = targetResponse.response;
     const conditionValue = condition.value;
 
+    // Find the target question to get its options for proper comparison
+    const targetQuestion = findQuestionById(condition.questionId, survey);
+
     // Helper function to get main text (without translation) for comparison
+    // This matches the logic from SurveyApprovals.jsx
     const getComparisonValue = (val) => {
-      if (val === null || val === undefined) return String(val || '');
-      return getMainText(String(val)).toLowerCase().trim();
+      if (val === null || val === undefined) return String(val || '').toLowerCase().trim();
+      const strVal = String(val);
+      
+      // If we have the target question and it has options, try to match the value to an option
+      if (targetQuestion && targetQuestion.options && Array.isArray(targetQuestion.options)) {
+        // Check if val matches any option.value or option.text (after stripping translations)
+        for (const option of targetQuestion.options) {
+          const optionValue = typeof option === 'object' ? (option.value || option.text) : option;
+          const optionText = typeof option === 'object' ? option.text : option;
+          
+          // Check if val matches option.value or option.text (with or without translations)
+          if (strVal === String(optionValue) || strVal === String(optionText)) {
+            // Return the main text of the option (without translation)
+            return getMainText(String(optionText)).toLowerCase().trim();
+          }
+          
+          // Also check if main texts match (in case translations differ)
+          if (getMainText(strVal).toLowerCase().trim() === getMainText(String(optionText)).toLowerCase().trim()) {
+            return getMainText(String(optionText)).toLowerCase().trim();
+          }
+        }
+      }
+      
+      // Fallback: just strip translations from the value itself
+      return getMainText(strVal).toLowerCase().trim();
     };
+
+    // Get comparison values for both response and condition value
+    // Handle arrays properly
+    const responseComparison = Array.isArray(responseValue) 
+      ? responseValue.map(r => getComparisonValue(r))
+      : getComparisonValue(responseValue);
+    const conditionComparison = getComparisonValue(conditionValue);
+
+    let met = false;
 
     switch (condition.operator) {
       case 'equals':
-        return getComparisonValue(responseValue) === getComparisonValue(conditionValue);
+        if (Array.isArray(responseComparison)) {
+          met = responseComparison.some(r => r === conditionComparison);
+        } else {
+          met = responseComparison === conditionComparison;
+        }
+        break;
       case 'not_equals':
-        return getComparisonValue(responseValue) !== getComparisonValue(conditionValue);
+        if (Array.isArray(responseComparison)) {
+          met = !responseComparison.some(r => r === conditionComparison);
+        } else {
+          met = responseComparison !== conditionComparison;
+        }
+        break;
       case 'contains':
-        return getComparisonValue(responseValue).includes(getComparisonValue(conditionValue));
+        const responseStr = Array.isArray(responseComparison) 
+          ? responseComparison.join(' ') 
+          : String(responseComparison);
+        met = responseStr.includes(conditionComparison);
+        break;
       case 'not_contains':
-        return !getComparisonValue(responseValue).includes(getComparisonValue(conditionValue));
+        const responseStr2 = Array.isArray(responseComparison) 
+          ? responseComparison.join(' ') 
+          : String(responseComparison);
+        met = !responseStr2.includes(conditionComparison);
+        break;
       case 'greater_than':
-        return parseFloat(responseValue) > parseFloat(conditionValue);
+        met = parseFloat(responseValue) > parseFloat(conditionValue);
+        break;
       case 'less_than':
-        return parseFloat(responseValue) < parseFloat(conditionValue);
+        met = parseFloat(responseValue) < parseFloat(conditionValue);
+        break;
       case 'is_empty':
-        return !responseValue || responseValue.toString().trim() === '';
+        met = !responseValue || (Array.isArray(responseValue) ? responseValue.length === 0 : responseValue.toString().trim() === '');
+        break;
       case 'is_not_empty':
-        return responseValue && responseValue.toString().trim() !== '';
+        met = responseValue && (Array.isArray(responseValue) ? responseValue.length > 0 : responseValue.toString().trim() !== '');
+        break;
       case 'is_selected':
-        return getComparisonValue(responseValue) === getComparisonValue(conditionValue);
+        if (Array.isArray(responseComparison)) {
+          met = responseComparison.some(r => r === conditionComparison);
+        } else {
+          met = responseComparison === conditionComparison;
+        }
+        break;
       case 'is_not_selected':
-        return getComparisonValue(responseValue) !== getComparisonValue(conditionValue);
+        if (Array.isArray(responseComparison)) {
+          met = !responseComparison.some(r => r === conditionComparison);
+        } else {
+          met = responseComparison !== conditionComparison;
+        }
+        break;
       default:
-        return false;
+        met = false;
     }
+
+    return met;
   };
 
   // Helper function to check if all conditions are met
-  const areConditionsMet = (conditions, responses) => {
+  const areConditionsMet = (conditions, responses, survey) => {
     if (!conditions || conditions.length === 0) return true;
     
-    return conditions.every(condition => evaluateCondition(condition, responses));
+    return conditions.every(condition => evaluateCondition(condition, responses, survey));
   };
 
   // Helper function to format conditional logic (same as SurveyApprovals)
@@ -587,9 +806,32 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
       .filter(condition => condition.questionId && condition.operator && condition.value !== undefined && condition.value !== '__NOVALUE__')
       .map((condition, index) => {
         const targetQuestion = findQuestionById(condition.questionId, actualSurvey);
-        const targetQuestionText = targetQuestion ? (targetQuestion.text || targetQuestion.questionText) : `Question ${condition.questionId}`;
+        let targetQuestionText = targetQuestion ? (targetQuestion.text || targetQuestion.questionText) : `Question ${condition.questionId}`;
+        // Strip translation from question text
+        targetQuestionText = getMainText(targetQuestionText);
+        
         const operator = getOperatorDescription(condition.operator);
-        const value = condition.value;
+        let value = condition.value;
+        
+        // If value is an option value, try to find the option text (without translation)
+        if (targetQuestion && targetQuestion.options) {
+          const matchingOption = targetQuestion.options.find(opt => 
+            opt.value === value || 
+            opt.value?.toString() === value?.toString() ||
+            opt.code === value ||
+            opt.code?.toString() === value?.toString()
+          );
+          if (matchingOption) {
+            // Use main text (without translation)
+            value = getMainText(matchingOption.text || matchingOption.value || value);
+          } else if (typeof value === 'string' && value.includes('_{')) {
+            // If value has translation format, extract main text
+            value = value.split('_{')[0];
+          }
+        } else if (typeof value === 'string' && value.includes('_{')) {
+          // If value has translation format, extract main text
+          value = value.split('_{')[0];
+        }
         
         return `${targetQuestionText} ${operator} "${value}"`;
       });
@@ -1195,7 +1437,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                       const actualSurvey = survey.survey || survey;
                       const surveyQuestion = findQuestionByText(responseItem.questionText, actualSurvey);
                       const hasConditions = surveyQuestion?.conditions && surveyQuestion.conditions.length > 0;
-                      const conditionsMet = hasConditions ? areConditionsMet(surveyQuestion.conditions, response.responses) : true;
+                      const conditionsMet = hasConditions ? areConditionsMet(surveyQuestion.conditions, response.responses, actualSurvey) : true;
                       
                       return (
                         <div key={index} className="border border-gray-200 rounded-lg p-4">
