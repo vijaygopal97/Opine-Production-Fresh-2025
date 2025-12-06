@@ -26,8 +26,13 @@ const findACNumberByName = (state, acName) => {
   const data = loadData();
   if (!data || !data[state]) return null;
   
+  // Ensure acName is a string
+  if (!acName || (typeof acName !== 'string' && typeof acName !== 'number')) return null;
+  const acNameStr = String(acName).trim();
+  if (!acNameStr || acNameStr === 'N/A' || acNameStr === '') return null;
+  
   // Normalize the search name (remove extra spaces, convert to lowercase)
-  const normalizedSearchName = acName.trim().toLowerCase().replace(/\s+/g, ' ');
+  const normalizedSearchName = acNameStr.toLowerCase().replace(/\s+/g, ' ');
   
   for (const [acNo, acData] of Object.entries(data[state])) {
     if (!acData.ac_name) continue;
@@ -63,6 +68,9 @@ const findACNumberByName = (state, acName) => {
 const getGroupsForAC = (state, acIdentifier) => {
   const data = loadData();
   if (!data || !data[state]) return null;
+  
+  // Ensure acIdentifier is valid
+  if (!acIdentifier || (typeof acIdentifier !== 'string' && typeof acIdentifier !== 'number')) return null;
   
   // Try to find by number first
   if (data[state][acIdentifier]) {

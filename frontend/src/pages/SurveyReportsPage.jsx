@@ -90,7 +90,7 @@ const SurveyReportsPage = () => {
     dateRange: 'all', // 'today', 'week', 'month', 'all'
     startDate: '',
     endDate: '',
-    status: 'all', // 'all', 'Approved', 'Rejected'
+    status: 'all', // 'all', 'approved_rejected_pending', 'approved_pending', 'pending', 'Approved', 'Rejected'
     interviewMode: '', // 'CAPI', 'CATI', ''
     ac: '',
     district: '',
@@ -254,12 +254,12 @@ const SurveyReportsPage = () => {
         console.log('🔍🔍🔍 surveyData.modes:', surveyData?.modes);
         setSurvey(surveyData);
         
-        // Fetch all responses for analytics - always fetch all (Approved + Rejected) for comprehensive analytics
+        // Fetch all responses for analytics - fetch all statuses (Approved, Rejected, Pending_Approval) for comprehensive analytics
         // Client-side filtering will handle status filtering
         const params = {
           page: 1,
           limit: 10000, // Get all responses for comprehensive analytics
-          status: 'all' // Always fetch all (Approved + Rejected) for comprehensive analytics
+          status: 'approved_rejected_pending' // Fetch all statuses (Approved, Rejected, Pending_Approval) for comprehensive analytics
         };
         
         const response = await surveyResponseAPI.getSurveyResponses(surveyId, params);
@@ -478,11 +478,6 @@ const SurveyReportsPage = () => {
         'age'
       ]);
 
-      const acResponse = responses.find(r => 
-        getMainText(r.questionText || '').toLowerCase().includes('assembly') ||
-        getMainText(r.questionText || '').toLowerCase().includes('constituency')
-      );
-
       let city = 'N/A';
       if (responseData?.location?.city) {
         city = responseData.location.city;
@@ -494,7 +489,95 @@ const SurveyReportsPage = () => {
         city = cityResponse?.response || 'N/A';
       }
 
-      const acName = acResponse?.response || 'N/A';
+      // Comprehensive AC extraction function
+      const extractACFromResponse = (responses, responseData) => {
+        // Helper to validate if a value is a valid AC name (not yes/no/consent answers)
+        const isValidACName = (value) => {
+          if (!value || typeof value !== 'string') return false;
+          const cleaned = getMainText(value).trim();
+          if (!cleaned || cleaned === 'N/A' || cleaned === '') return false;
+          
+          const lower = cleaned.toLowerCase();
+          // Reject common non-AC values
+          const invalidValues = ['yes', 'no', 'y', 'n', 'true', 'false', 'ok', 'okay', 'sure', 'agree', 'disagree', 'consent'];
+          if (invalidValues.includes(lower)) return false;
+          if (lower.startsWith('yes') || lower.startsWith('no')) return false;
+          if (lower.match(/^yes[_\s]/i) || lower.match(/^no[_\s]/i)) return false;
+          
+          // Must be longer than 2 characters
+          if (cleaned.length <= 2) return false;
+          
+          // Should look like a valid name (has capital letters or multiple words)
+          const hasCapitalLetters = /[A-Z]/.test(cleaned);
+          const hasMultipleWords = cleaned.split(/\s+/).length > 1;
+          const looksLikeName = hasCapitalLetters || hasMultipleWords;
+          
+          return looksLikeName;
+        };
+
+        // Priority 1: Check selectedAC field
+        if (responseData?.selectedAC && isValidACName(responseData.selectedAC)) {
+          return getMainText(String(responseData.selectedAC)).trim();
+        }
+        
+        // Priority 2: Check selectedPollingStation.acName
+        if (responseData?.selectedPollingStation?.acName && isValidACName(responseData.selectedPollingStation.acName)) {
+          return getMainText(String(responseData.selectedPollingStation.acName)).trim();
+        }
+        
+        // Priority 3: Check responses array for questionId === 'ac-selection'
+        if (responses && Array.isArray(responses)) {
+          const acSelectionResponse = responses.find(r => 
+            r.questionId === 'ac-selection' && r.response
+          );
+          if (acSelectionResponse && isValidACName(acSelectionResponse.response)) {
+            return getMainText(String(acSelectionResponse.response)).trim();
+          }
+          
+          // Priority 4: Check for questionType that indicates AC selection
+          const acTypeResponse = responses.find(r => 
+            (r.questionType === 'ac_selection' || 
+             r.questionType === 'assembly_constituency' ||
+             r.questionType === 'ac') && 
+            r.response
+          );
+          if (acTypeResponse && isValidACName(acTypeResponse.response)) {
+            return getMainText(String(acTypeResponse.response)).trim();
+          }
+          
+          // Priority 5: Search by question text containing "assembly" or "constituency"
+          // BUT exclude questions that are consent/agreement questions
+          const acTextResponses = responses.filter(r => {
+            if (!r.questionText || !r.response) return false;
+            const questionText = getMainText(r.questionText).toLowerCase();
+            const hasAssembly = questionText.includes('assembly');
+            const hasConstituency = questionText.includes('constituency');
+            
+            // Exclude consent/agreement questions
+            const isConsentQuestion = questionText.includes('consent') || 
+                                      questionText.includes('agree') ||
+                                      questionText.includes('participate') ||
+                                      questionText.includes('willing') ||
+                                      questionText.includes('do you') ||
+                                      questionText.includes('would you');
+            
+            return (hasAssembly || hasConstituency) && !isConsentQuestion;
+          });
+          
+          // Try each potential AC response and validate it
+          for (const acResponse of acTextResponses) {
+            if (isValidACName(acResponse.response)) {
+              return getMainText(String(acResponse.response)).trim();
+            }
+          }
+        }
+        
+        return null;
+      };
+
+      // Extract AC using comprehensive function
+      const extractedAC = extractACFromResponse(responses, responseData);
+      const acName = extractedAC || 'N/A';
       const district = getDistrictFromAC(acName);
       const lokSabha = getLokSabhaFromAC(acName);
       const state = getStateFromGPS(responseData?.location);
@@ -627,9 +710,26 @@ const SurveyReportsPage = () => {
 
       // Status filter
       if (filters.status && filters.status !== 'all') {
-        // Filter by specific status
-        if (response.status !== filters.status) {
-          return false;
+        if (filters.status === 'approved_rejected_pending') {
+          // Show Approved, Rejected, and Pending_Approval
+          if (response.status !== 'Approved' && response.status !== 'Rejected' && response.status !== 'Pending_Approval') {
+            return false;
+          }
+        } else if (filters.status === 'approved_pending') {
+          // Show Approved and Pending_Approval
+          if (response.status !== 'Approved' && response.status !== 'Pending_Approval') {
+            return false;
+          }
+        } else if (filters.status === 'pending') {
+          // Show only Pending_Approval
+          if (response.status !== 'Pending_Approval') {
+            return false;
+          }
+        } else {
+          // Filter by specific status
+          if (response.status !== filters.status) {
+            return false;
+          }
         }
       } else {
         // Default (status === 'all' or undefined): Show both Approved and Rejected
@@ -975,7 +1075,7 @@ const SurveyReportsPage = () => {
       // Interviewer stats
       if (response.interviewer) {
         const interviewerName = `${response.interviewer.firstName} ${response.interviewer.lastName}`;
-        const currentCount = interviewerMap.get(interviewerName) || { total: 0, approved: 0, rejected: 0 };
+        const currentCount = interviewerMap.get(interviewerName) || { total: 0, approved: 0, rejected: 0, pending: 0 };
         currentCount.total += 1;
         
         // Track status counts
@@ -983,6 +1083,8 @@ const SurveyReportsPage = () => {
           currentCount.approved += 1;
         } else if (response.status === 'Rejected') {
           currentCount.rejected += 1;
+        } else if (response.status === 'Pending_Approval') {
+          currentCount.pending += 1;
         }
         
         interviewerMap.set(interviewerName, currentCount);
@@ -1019,6 +1121,12 @@ const SurveyReportsPage = () => {
       dailyMap.set(date, (dailyMap.get(date) || 0) + 1);
     });
 
+    // Helper to normalize AC name for comparison (remove extra spaces, trim, lowercase)
+    const normalizeACName = (acName) => {
+      if (!acName || typeof acName !== 'string') return '';
+      return acName.trim().toLowerCase().replace(/\s+/g, ' ');
+    };
+
     // Convert maps to sorted arrays - First get ACs with responses
     const acStatsWithResponses = Array.from(acMap.entries())
       .map(([ac, data]) => ({ 
@@ -1041,13 +1149,27 @@ const SurveyReportsPage = () => {
     console.log('🔍 Analytics - acStatsWithResponses:', acStatsWithResponses.length, 'ACs with responses');
     console.log('🔍 Analytics - acStatsWithResponses details:', acStatsWithResponses);
     
-    // Create a set of ACs that already have responses
-    const acsWithResponses = new Set(acStatsWithResponses.map(stat => stat.ac));
-    console.log('🔍 Analytics - acsWithResponses set:', Array.from(acsWithResponses));
+    // Create a normalized set of ACs that already have responses (for comparison)
+    const acsWithResponsesNormalized = new Set(
+      acStatsWithResponses.map(stat => normalizeACName(stat.ac))
+    );
+    console.log('🔍 Analytics - acsWithResponsesNormalized set:', Array.from(acsWithResponsesNormalized));
     
-    // Add ACs with 0 responses
+    // Create a map of normalized AC names to original AC names from responses
+    const normalizedToOriginalMap = new Map();
+    acStatsWithResponses.forEach(stat => {
+      const normalized = normalizeACName(stat.ac);
+      if (!normalizedToOriginalMap.has(normalized)) {
+        normalizedToOriginalMap.set(normalized, stat.ac);
+      }
+    });
+    
+    // Add ACs with 0 responses - use normalized comparison to find missing ACs
     const acsWithZeroResponses = allStateACs
-      .filter(acName => !acsWithResponses.has(acName))
+      .filter(acName => {
+        const normalized = normalizeACName(acName);
+        return !acsWithResponsesNormalized.has(normalized);
+      })
       .map(acName => ({
         ac: acName,
         count: 0,
@@ -1069,6 +1191,9 @@ const SurveyReportsPage = () => {
     const acStats = [...acStatsWithResponses, ...acsWithZeroResponses];
     console.log('🔍 Analytics - Final acStats:', acStats.length, 'total ACs');
     console.log('🔍 Analytics - Final acStats sample:', acStats.slice(0, 5));
+    
+    // Store allStateACs for use in modal (to ensure all ACs are always shown)
+    acStats._allStateACs = allStateACs;
 
     const districtStats = Array.from(districtMap.entries())
       .map(([district, count]) => ({ district, count, percentage: (count / totalResponses) * 100 }))
@@ -1085,12 +1210,14 @@ const SurveyReportsPage = () => {
         const total = isObject ? (data.total || 0) : (data || 0);
         const approved = isObject ? (data.approved || 0) : 0;
         const rejected = isObject ? (data.rejected || 0) : 0;
+        const pending = isObject ? (data.pending || 0) : 0;
         
         return {
           interviewer,
           count: total,
           approved: approved,
           rejected: rejected,
+          pending: pending,
           percentage: totalResponses > 0 ? (total / totalResponses) * 100 : 0
         };
       })
@@ -1206,16 +1333,16 @@ const SurveyReportsPage = () => {
     setCallRecordsPage(1);
   }, [callRecordsFilters.search, callRecordsFilters.status]);
 
-  // Filter options
+  // Filter options - based on filteredResponses to show only options available in current filter
   const filterOptions = useMemo(() => {
-    if (!responses || responses.length === 0) return { ac: [], district: [], lokSabha: [], interviewer: [] };
+    if (!filteredResponses || filteredResponses.length === 0) return { ac: [], district: [], lokSabha: [], interviewer: [] };
 
     const acSet = new Set();
     const districtSet = new Set();
     const lokSabhaSet = new Set();
     const interviewerSet = new Set();
 
-    responses.forEach(response => {
+    filteredResponses.forEach(response => {
       const respondentInfo = getRespondentInfo(response.responses, response);
       
       if (respondentInfo.ac && respondentInfo.ac !== 'N/A') {
@@ -1238,7 +1365,7 @@ const SurveyReportsPage = () => {
       lokSabha: Array.from(lokSabhaSet).sort(),
       interviewer: Array.from(interviewerSet).sort()
     };
-  }, [responses]);
+  }, [filteredResponses]);
 
   // Handle filter changes
   const handleFilterChange = (key, value) => {
@@ -1403,7 +1530,10 @@ const SurveyReportsPage = () => {
                     onChange={(e) => handleFilterChange('status', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
-                    <option value="all">All (Approved + Rejected)</option>
+                    <option value="all">Approved + Rejected</option>
+                    <option value="approved_rejected_pending">Approved + Rejected + Pending</option>
+                    <option value="approved_pending">Approved + Pending</option>
+                    <option value="pending">Pending</option>
                     <option value="Approved">Approved</option>
                     <option value="Rejected">Rejected</option>
                   </select>
@@ -2098,7 +2228,136 @@ const SurveyReportsPage = () => {
         )}
 
         {/* AC Performance Modal */}
-        {showACModal && (
+        {showACModal && (() => {
+          // Helper to normalize AC name for comparison
+          const normalizeACName = (acName) => {
+            if (!acName || typeof acName !== 'string') return '';
+            return acName.trim().toLowerCase().replace(/\s+/g, ' ');
+          };
+
+          // Get all ACs from the state
+          const allStateACs = getAllACsForState();
+          
+          // Get stats - prefer backend if available, otherwise use frontend
+          const statsFromBackend = acPerformanceStats || [];
+          const statsFromFrontend = analytics.acStats || [];
+          
+          // If backend stats exist, use them; otherwise use frontend stats
+          // Frontend stats already include all ACs (with responses + zeros), so we can use them directly
+          // But if backend stats exist, we need to merge them with all state ACs
+          let allACStatsForModal = [];
+          
+          if (statsFromBackend.length > 0) {
+            // Backend stats available - merge with all state ACs
+            const statsMap = new Map();
+            statsFromBackend.forEach(stat => {
+              const normalized = normalizeACName(stat.ac);
+              if (!statsMap.has(normalized)) {
+                statsMap.set(normalized, stat);
+              }
+            });
+            
+            // Create a set of normalized AC names that have stats
+            const acsWithStatsNormalized = new Set(
+              statsFromBackend.map(stat => normalizeACName(stat.ac))
+            );
+            
+            // Separate ACs with stats and ACs without stats
+            const acsWithStats = [];
+            const acsWithoutStats = [];
+            
+            allStateACs.forEach(acName => {
+              const normalized = normalizeACName(acName);
+              const existingStat = statsMap.get(normalized);
+              
+              if (existingStat) {
+                // AC has stats - use backend stat
+                acsWithStats.push({
+                  ...existingStat,
+                  ac: acName // Use original AC name from state list
+                });
+              } else {
+                // AC has no stats - create zero stat entry
+                acsWithoutStats.push({
+                  ac: acName,
+                  count: 0,
+                  capi: 0,
+                  cati: 0,
+                  percentage: 0,
+                  pcName: '',
+                  interviewersCount: 0,
+                  approved: 0,
+                  rejected: 0,
+                  underQC: 0,
+                  totalResponses: 0,
+                  psCovered: 0,
+                  systemRejections: 0,
+                  countsAfterRejection: 0,
+                  gpsPending: 0,
+                  gpsFail: 0,
+                  femalePercentage: 0,
+                  withoutPhonePercentage: 0,
+                  scPercentage: 0,
+                  muslimPercentage: 0,
+                  age18to24Percentage: 0,
+                  age50PlusPercentage: 0
+                });
+              }
+            });
+            
+            // Sort ACs with stats by count descending
+            acsWithStats.sort((a, b) => {
+              const countA = a.totalResponses || a.count || 0;
+              const countB = b.totalResponses || b.count || 0;
+              return countB - countA;
+            });
+            
+            // Sort ACs without stats alphabetically
+            acsWithoutStats.sort((a, b) => a.ac.localeCompare(b.ac));
+            
+            // Combine: ACs with stats first, then ACs without stats
+            allACStatsForModal = [...acsWithStats, ...acsWithoutStats];
+          } else {
+            // No backend stats - use frontend stats which already includes all ACs
+            // Frontend analytics.acStats already has the correct merged list
+            allACStatsForModal = statsFromFrontend.length > 0 ? statsFromFrontend : [];
+            
+            // Ensure all state ACs are included (in case frontend stats are incomplete)
+            if (allACStatsForModal.length < allStateACs.length) {
+              const existingACsNormalized = new Set(
+                allACStatsForModal.map(stat => normalizeACName(stat.ac))
+              );
+              
+              const missingACs = allStateACs
+                .filter(acName => !existingACsNormalized.has(normalizeACName(acName)))
+                .map(acName => ({
+                  ac: acName,
+                  count: 0,
+                  capi: 0,
+                  cati: 0,
+                  percentage: 0,
+                  pcName: '',
+                  interviewersCount: 0,
+                  approved: 0,
+                  rejected: 0,
+                  underQC: 0
+                }));
+              
+              // Sort: ACs with responses first, then zeros alphabetically
+              allACStatsForModal = [...allACStatsForModal, ...missingACs].sort((a, b) => {
+                if (a.count > 0 && b.count === 0) return -1;
+                if (a.count === 0 && b.count > 0) return 1;
+                if (a.count > 0 && b.count > 0) return b.count - a.count;
+                return a.ac.localeCompare(b.ac);
+              });
+            }
+          }
+          
+          console.log('🔍 Modal - allACStatsForModal length:', allACStatsForModal.length);
+          console.log('🔍 Modal - ACs with responses:', allACStatsForModal.filter(s => (s.count || s.totalResponses || 0) > 0).length);
+          console.log('🔍 Modal - ACs with zero responses:', allACStatsForModal.filter(s => (s.count || s.totalResponses || 0) === 0).length);
+
+          return (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl p-6 w-full max-w-[95vw] max-h-[90vh] overflow-y-auto">
               <div className="flex items-start justify-between mb-4">
@@ -2113,9 +2372,9 @@ const SurveyReportsPage = () => {
                 <div className="flex flex-col items-end space-y-2 ml-4">
                   <button
                     onClick={() => {
-                      const statsToUse = acPerformanceStats || analytics.acStats;
+                      const statsToUse = allACStatsForModal;
                       const csvData = statsToUse.map(stat => {
-                        const displayStat = acPerformanceStats ? stat : {
+                        const displayStat = (acPerformanceStats && acPerformanceStats.length > 0) ? stat : {
                           ...stat,
                           pcName: stat.pcName || '',
                           psCovered: 0,
@@ -2218,9 +2477,9 @@ const SurveyReportsPage = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {(acPerformanceStats || analytics.acStats).map((stat, index) => {
+                    {allACStatsForModal.map((stat, index) => {
                       // Use backend data if available, otherwise use frontend calculated data
-                      const displayStat = acPerformanceStats ? stat : {
+                      const displayStat = (acPerformanceStats && acPerformanceStats.length > 0) ? stat : {
                         ...stat,
                         pcName: stat.pcName || '',
                         psCovered: 0,
@@ -2274,7 +2533,8 @@ const SurveyReportsPage = () => {
               </div>
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* Interviewer Performance Modal */}
         {showInterviewerModal && (

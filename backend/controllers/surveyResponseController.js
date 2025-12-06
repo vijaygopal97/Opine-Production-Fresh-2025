@@ -2689,9 +2689,22 @@ const getSurveyResponses = async (req, res) => {
       }
     }
     
-    // Handle status filter: 'all' or undefined/null means both Approved and Rejected, otherwise filter by specific status
+    // Handle status filter: 
+    // 'all' or undefined/null means both Approved and Rejected
+    // 'approved_rejected_pending' means Approved, Rejected, and Pending_Approval
+    // 'approved_pending' means Approved and Pending_Approval
+    // 'pending' means only Pending_Approval
+    // otherwise filter by specific status
     if (status && status !== 'all' && status !== '') {
-      filter.status = status;
+      if (status === 'approved_rejected_pending') {
+        filter.status = { $in: ['Approved', 'Rejected', 'Pending_Approval'] };
+      } else if (status === 'approved_pending') {
+        filter.status = { $in: ['Approved', 'Pending_Approval'] };
+      } else if (status === 'pending') {
+        filter.status = 'Pending_Approval';
+      } else {
+        filter.status = status;
+      }
     } else {
       // Default: Include both Approved and Rejected responses
       filter.status = { $in: ['Approved', 'Rejected'] };
@@ -2745,8 +2758,8 @@ const getSurveyResponses = async (req, res) => {
     
     console.log('🔍 getSurveyResponses - Total responses count:', totalResponses);
     
-    // Get filter options for dropdowns (include both Approved and Rejected for comprehensive options)
-    const statusFilterForOptions = { survey: surveyId, status: { $in: ['Approved', 'Rejected'] } };
+    // Get filter options for dropdowns (include Approved, Rejected, and Pending_Approval for comprehensive options)
+    const statusFilterForOptions = { survey: surveyId, status: { $in: ['Approved', 'Rejected', 'Pending_Approval'] } };
     const genderOptions = await SurveyResponse.distinct('responses.gender', statusFilterForOptions);
     const ageOptions = await SurveyResponse.distinct('responses.age', statusFilterForOptions);
     const acOptions = await SurveyResponse.distinct('responses.assemblyConstituency', statusFilterForOptions);
@@ -2910,7 +2923,13 @@ const getACPerformanceStats = async (req, res) => {
     // Helper to get PC from AC
     const getPCFromAC = (acName) => {
       if (!acName) return null;
-      const acData = getGroupsForAC(state, acName);
+      // Ensure acName is a string
+      const acNameStr = typeof acName === 'string' ? acName : String(acName || '');
+      if (!acNameStr || acNameStr === 'N/A' || acNameStr.trim() === '') return null;
+      // Clean up the AC name - remove translation suffixes like _{হ্যাঁ।}
+      const cleanedAcName = getMainTextValue(acNameStr);
+      if (!cleanedAcName || cleanedAcName === 'N/A') return null;
+      const acData = getGroupsForAC(state, cleanedAcName);
       return acData?.pc_name || null;
     };
 
@@ -2926,24 +2945,119 @@ const getACPerformanceStats = async (req, res) => {
 
     // Helper to get main text (strip translations)
     const getMainTextValue = (text) => {
-      if (!text || typeof text !== 'string') return text || '';
+      // Ensure we always return a string
+      if (!text) return '';
+      if (typeof text !== 'string') {
+        // Convert to string if it's not already
+        text = String(text);
+      }
       const translationRegex = /^(.+?)\s*\{([^}]+)\}\s*$/;
       const match = text.match(translationRegex);
       return match ? match[1].trim() : text.trim();
+    };
+
+    // Helper to validate if a value is a valid AC name (not yes/no/consent answers)
+    const isValidACName = (value) => {
+      if (!value || typeof value !== 'string') return false;
+      const cleaned = getMainTextValue(value).trim();
+      if (!cleaned || cleaned === 'N/A' || cleaned === '') return false;
+      
+      const lower = cleaned.toLowerCase();
+      // Reject common non-AC values
+      const invalidValues = ['yes', 'no', 'y', 'n', 'true', 'false', 'ok', 'okay', 'sure', 'agree', 'disagree', 'consent'];
+      if (invalidValues.includes(lower)) return false;
+      if (lower.startsWith('yes') || lower.startsWith('no')) return false;
+      if (lower.match(/^yes[_\s]/i) || lower.match(/^no[_\s]/i)) return false;
+      
+      // Must be longer than 2 characters
+      if (cleaned.length <= 2) return false;
+      
+      // Try to validate against known ACs in the state
+      const acData = getGroupsForAC(state, cleaned);
+      if (acData && acData.ac_name) {
+        return true; // Found in AC database
+      }
+      
+      // If not found in database, still accept if it looks like a valid name (has capital letters, multiple words, etc.)
+      // This handles cases where AC might not be in the database yet
+      const hasCapitalLetters = /[A-Z]/.test(cleaned);
+      const hasMultipleWords = cleaned.split(/\s+/).length > 1;
+      const looksLikeName = hasCapitalLetters || hasMultipleWords;
+      
+      return looksLikeName;
+    };
+
+    // Comprehensive AC extraction function
+    const extractACFromResponse = (response) => {
+      // Priority 1: Check selectedAC field
+      if (response.selectedAC && isValidACName(response.selectedAC)) {
+        return getMainTextValue(response.selectedAC).trim();
+      }
+      
+      // Priority 2: Check selectedPollingStation.acName
+      if (response.selectedPollingStation?.acName && isValidACName(response.selectedPollingStation.acName)) {
+        return getMainTextValue(response.selectedPollingStation.acName).trim();
+      }
+      
+      // Priority 3: Check responses array for questionId === 'ac-selection'
+      if (response.responses && Array.isArray(response.responses)) {
+        const acSelectionResponse = response.responses.find(r => 
+          r.questionId === 'ac-selection' && r.response
+        );
+        if (acSelectionResponse && isValidACName(acSelectionResponse.response)) {
+          return getMainTextValue(acSelectionResponse.response).trim();
+        }
+        
+        // Priority 4: Check for questionType that indicates AC selection
+        const acTypeResponse = response.responses.find(r => 
+          (r.questionType === 'ac_selection' || 
+           r.questionType === 'assembly_constituency' ||
+           r.questionType === 'ac') && 
+          r.response
+        );
+        if (acTypeResponse && isValidACName(acTypeResponse.response)) {
+          return getMainTextValue(acTypeResponse.response).trim();
+        }
+        
+        // Priority 5: Search by question text containing "assembly" or "constituency"
+        // BUT exclude questions that are consent/agreement questions
+        const acTextResponses = response.responses.filter(r => {
+          if (!r.questionText || !r.response) return false;
+          const questionText = (r.questionText || '').toLowerCase();
+          const hasAssembly = questionText.includes('assembly');
+          const hasConstituency = questionText.includes('constituency');
+          
+          // Exclude consent/agreement questions
+          const isConsentQuestion = questionText.includes('consent') || 
+                                    questionText.includes('agree') ||
+                                    questionText.includes('participate') ||
+                                    questionText.includes('willing');
+          
+          return (hasAssembly || hasConstituency) && !isConsentQuestion;
+        });
+        
+        // Try each potential AC response and validate it
+        for (const acResponse of acTextResponses) {
+          if (isValidACName(acResponse.response)) {
+            return getMainTextValue(acResponse.response).trim();
+          }
+        }
+      }
+      
+      return null;
     };
 
     // Group responses by AC
     const acMap = new Map();
 
     allResponses.forEach(response => {
-      const ac = response.selectedAC || 
-                 response.selectedPollingStation?.acName || 
-                 (response.responses?.find(r => 
-                   (r.questionText || '').toLowerCase().includes('assembly') ||
-                   (r.questionText || '').toLowerCase().includes('constituency')
-                 )?.response);
+      // Use comprehensive extraction function
+      let ac = extractACFromResponse(response);
 
-      if (!ac || ac === 'N/A') return;
+      // If still no AC found, skip this response
+      if (!ac) {
+        return;
+      }
 
       if (!acMap.has(ac)) {
         acMap.set(ac, {
@@ -3004,14 +3118,28 @@ const getACPerformanceStats = async (req, res) => {
     });
 
     // Calculate stats for each AC
-    const acStats = Array.from(acMap.entries()).map(([ac, acData]) => {
-      const responses = acData.responses;
-      const totalResponses = responses.length;
+    const acStats = Array.from(acMap.entries())
+      .map(([ac, acData]) => {
+        try {
+          // Ensure ac is a valid string
+          if (!ac || typeof ac !== 'string') {
+            console.warn(`Invalid AC name found: ${ac}, skipping...`);
+            return null;
+          }
+          
+          const responses = acData.responses;
+          const totalResponses = responses.length;
 
-      // Get PC
-      const pcName = getPCFromAC(ac) || 
+          // Get PC - wrap in try-catch to handle any errors
+          let pcName = null;
+          try {
+            pcName = getPCFromAC(ac) || 
                      responses.find(r => r.selectedPollingStation?.pcName)?.selectedPollingStation?.pcName || 
                      null;
+          } catch (pcError) {
+            console.warn(`Error getting PC for AC ${ac}:`, pcError.message);
+            // Continue without PC name
+          }
 
       // Count by status
       const approved = responses.filter(r => r.status === 'Approved').length;
@@ -3130,7 +3258,13 @@ const getACPerformanceStats = async (req, res) => {
         age18to24Percentage: parseFloat(age18to24Percentage.toFixed(2)),
         age50PlusPercentage: parseFloat(age50PlusPercentage.toFixed(2))
       };
-    });
+        } catch (error) {
+          console.error(`Error processing AC ${ac}:`, error);
+          // Return null to filter out this AC
+          return null;
+        }
+      })
+      .filter(stat => stat !== null); // Remove any null entries
 
     // Sort by total responses (descending)
     acStats.sort((a, b) => b.totalResponses - a.totalResponses);
@@ -3207,7 +3341,12 @@ const getInterviewerPerformanceStats = async (req, res) => {
 
     // Helper to get main text (strip translations)
     const getMainTextValue = (text) => {
-      if (!text || typeof text !== 'string') return text || '';
+      // Ensure we always return a string
+      if (!text) return '';
+      if (typeof text !== 'string') {
+        // Convert to string if it's not already
+        text = String(text);
+      }
       const translationRegex = /^(.+?)\s*\{([^}]+)\}\s*$/;
       const match = text.match(translationRegex);
       return match ? match[1].trim() : text.trim();
