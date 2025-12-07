@@ -75,18 +75,30 @@ const SurveyReportsPage = () => {
   const [showInterviewerModal, setShowInterviewerModal] = useState(false);
   const [showDailyTrendsModal, setShowDailyTrendsModal] = useState(false);
   const [catiStats, setCatiStats] = useState(null);
-  const [showCallRecords, setShowCallRecords] = useState(false);
   const [acPerformanceStats, setAcPerformanceStats] = useState(null);
   const [interviewerPerformanceStats, setInterviewerPerformanceStats] = useState(null);
   const { showError } = useToast();
 
-  // Call Records filter and pagination states
-  const [callRecordsFilters, setCallRecordsFilters] = useState({
-    search: '', // Search by from number, to number, or interviewer name
-    status: '' // Filter by call status
+  // CATI Performance filter states (separate from main filters)
+  const [catiFilters, setCatiFilters] = useState({
+    dateRange: 'all', // 'today', 'week', 'month', 'all'
+    startDate: '',
+    endDate: '',
+    ac: '',
+    interviewerIds: [],
+    interviewerMode: 'include' // 'include' or 'exclude'
   });
-  const [callRecordsPage, setCallRecordsPage] = useState(1);
-  const [callRecordsPageSize, setCallRecordsPageSize] = useState(10);
+  const [showCatiFilters, setShowCatiFilters] = useState(true);
+  
+  // CATI Interviewer filter states
+  const [catiInterviewerSearchTerm, setCatiInterviewerSearchTerm] = useState('');
+  const [showCatiInterviewerDropdown, setShowCatiInterviewerDropdown] = useState(false);
+  const catiInterviewerDropdownRef = useRef(null);
+  
+  // CATI AC filter states
+  const [catiAcSearchTerm, setCatiAcSearchTerm] = useState('');
+  const [showCatiACDropdown, setShowCatiACDropdown] = useState(false);
+  const catiAcDropdownRef = useRef(null);
 
   // Filter states
   const [filters, setFilters] = useState({
@@ -471,10 +483,17 @@ const SurveyReportsPage = () => {
         if (isCatiSurvey) {
           try {
             console.log('🔍🔍🔍 Fetching CATI stats for survey:', surveyId);
-            // Pass date range filters if available
-            const startDate = filters.startDate || null;
-            const endDate = filters.endDate || null;
-            const catiStatsResponse = await surveyAPI.getCatiStats(surveyId, startDate, endDate);
+            // Pass CATI-specific filters
+            const catiStartDate = catiFilters.startDate || null;
+            const catiEndDate = catiFilters.endDate || null;
+            const catiStatsResponse = await surveyAPI.getCatiStats(
+              surveyId, 
+              catiStartDate, 
+              catiEndDate,
+              catiFilters.interviewerIds || [],
+              catiFilters.interviewerMode || 'include',
+              catiFilters.ac || ''
+            );
             console.log('🔍🔍🔍 CATI stats response:', catiStatsResponse);
             console.log('🔍🔍🔍 CATI stats response success:', catiStatsResponse?.success);
             console.log('🔍🔍🔍 CATI stats response data:', catiStatsResponse?.data);
@@ -525,7 +544,7 @@ const SurveyReportsPage = () => {
           !error.message?.includes('Failed to fetch') && 
           !error.message?.includes('.jsx') &&
           !error.stack?.includes('.jsx')) {
-        showError('Failed to load survey reports', error.message);
+      showError('Failed to load survey reports', error.message);
       }
     } finally {
       setLoading(false);
@@ -537,6 +556,41 @@ const SurveyReportsPage = () => {
       fetchSurveyData();
     }
   }, [surveyId, filters.status]);
+
+  // Refetch CATI stats when CATI filters change
+  useEffect(() => {
+    if (!survey || !surveyId) return;
+    
+    const surveyMode = survey?.mode;
+    const surveyModes = survey?.modes;
+    const isCatiSurvey = surveyMode === 'cati' || 
+                        surveyMode === 'multi_mode' ||
+                        (surveyModes && Array.isArray(surveyModes) && surveyModes.includes('cati'));
+    
+    if (isCatiSurvey) {
+      const fetchCatiStats = async () => {
+        try {
+          const catiStartDate = catiFilters.startDate || null;
+          const catiEndDate = catiFilters.endDate || null;
+          const catiStatsResponse = await surveyAPI.getCatiStats(
+            surveyId, 
+            catiStartDate, 
+            catiEndDate,
+            catiFilters.interviewerIds || [],
+            catiFilters.interviewerMode || 'include',
+            catiFilters.ac || ''
+          );
+          if (catiStatsResponse && catiStatsResponse.success) {
+            setCatiStats(catiStatsResponse.data);
+          }
+        } catch (error) {
+          console.error('Error fetching CATI stats with filters:', error);
+        }
+      };
+      
+      fetchCatiStats();
+    }
+  }, [surveyId, survey, catiFilters.startDate, catiFilters.endDate, catiFilters.interviewerIds, catiFilters.interviewerMode, catiFilters.ac]);
 
   // Helper functions
   const getStateFromGPS = (location) => {
@@ -1165,7 +1219,6 @@ const SurveyReportsPage = () => {
           callerPerformance: {
             callsMade: 0,
             callsAttended: 0,
-            dialsAttempted: 0,
             callsConnected: 0,
             totalTalkDuration: '0:00:00'
           },
@@ -1434,7 +1487,6 @@ const SurveyReportsPage = () => {
       callerPerformance: {
         callsMade: 0,
         callsAttended: 0,
-        dialsAttempted: 0,
         callsConnected: 0,
         totalTalkDuration: '0:00:00'
       },
@@ -1476,51 +1528,6 @@ const SurveyReportsPage = () => {
     };
   }, [filteredResponses, survey, catiStats]);
 
-  // Filter and paginate call records
-  const filteredAndPaginatedCallRecords = useMemo(() => {
-    if (!catiStats?.callRecords) return { filtered: [], paginated: [], totalPages: 0, hasNext: false, hasPrev: false };
-
-    // Apply filters
-    let filtered = [...catiStats.callRecords];
-
-    // Search filter (from number, to number, or interviewer name)
-    if (callRecordsFilters.search && callRecordsFilters.search.trim()) {
-      const searchLower = callRecordsFilters.search.toLowerCase().trim();
-      filtered = filtered.filter(call => {
-        const fromMatch = call.fromNumber?.toLowerCase().includes(searchLower) || false;
-        const toMatch = call.toNumber?.toLowerCase().includes(searchLower) || false;
-        const interviewerMatch = call.interviewer?.name?.toLowerCase().includes(searchLower) || false;
-        return fromMatch || toMatch || interviewerMatch;
-      });
-    }
-
-    // Status filter
-    if (callRecordsFilters.status) {
-      filtered = filtered.filter(call => {
-        const status = call.callStatus?.toLowerCase() || '';
-        return status === callRecordsFilters.status.toLowerCase();
-      });
-    }
-
-    // Pagination
-    const totalPages = Math.ceil(filtered.length / callRecordsPageSize);
-    const startIndex = (callRecordsPage - 1) * callRecordsPageSize;
-    const endIndex = startIndex + callRecordsPageSize;
-    const paginated = filtered.slice(startIndex, endIndex);
-
-    return {
-      filtered,
-      paginated,
-      totalPages,
-      hasNext: callRecordsPage < totalPages,
-      hasPrev: callRecordsPage > 1
-    };
-  }, [catiStats?.callRecords, callRecordsFilters, callRecordsPage, callRecordsPageSize]);
-
-  // Reset call records page when filters change
-  useEffect(() => {
-    setCallRecordsPage(1);
-  }, [callRecordsFilters.search, callRecordsFilters.status]);
 
   // Helper function to extract numeric AC code (remove state prefix and leading zeros)
   // e.g., "WB001" -> "1", "WB010" -> "10", "WB100" -> "100"
@@ -1698,6 +1705,46 @@ const SurveyReportsPage = () => {
     });
   };
 
+  // CATI Filter handlers
+  const handleCatiFilterChange = (key, value) => {
+    setCatiFilters(prev => ({
+      ...prev,
+      [key]: value
+    }));
+  };
+
+  // Handle CATI interviewer selection
+  const handleCatiInterviewerToggle = (interviewerId) => {
+    setCatiFilters(prev => {
+      const currentIds = prev.interviewerIds || [];
+      const isSelected = currentIds.includes(interviewerId);
+      
+      return {
+        ...prev,
+        interviewerIds: isSelected
+          ? currentIds.filter(id => id !== interviewerId)
+          : [...currentIds, interviewerId]
+      };
+    });
+  };
+
+  // Handle CATI interviewer mode toggle (include/exclude)
+  const handleCatiInterviewerModeToggle = () => {
+    setCatiFilters(prev => ({
+      ...prev,
+      interviewerMode: prev.interviewerMode === 'include' ? 'exclude' : 'include'
+    }));
+  };
+
+  // Clear CATI interviewer filters
+  const clearCatiInterviewerFilters = () => {
+    setCatiFilters(prev => ({
+      ...prev,
+      interviewerIds: []
+    }));
+    setCatiInterviewerSearchTerm('');
+  };
+
   // Handle interviewer mode toggle (include/exclude)
   const handleInterviewerModeToggle = (mode) => {
     setFilters(prev => ({
@@ -1721,20 +1768,21 @@ const SurveyReportsPage = () => {
   const filteredInterviewers = useMemo(() => {
     if (!allInterviewerObjects || allInterviewerObjects.length === 0) return [];
     
-    if (!interviewerSearchTerm.trim()) {
+    if (!interviewerSearchTerm.trim() && !catiInterviewerSearchTerm.trim()) {
       return allInterviewerObjects;
     }
 
-    const searchLower = interviewerSearchTerm.toLowerCase();
+    const searchLower = (interviewerSearchTerm || catiInterviewerSearchTerm).toLowerCase();
     return allInterviewerObjects.filter(interviewer => {
-      const nameMatch = interviewer.name.toLowerCase().includes(searchLower);
+      const name = `${interviewer.firstName || ''} ${interviewer.lastName || ''}`.toLowerCase();
+      const nameMatch = name.includes(searchLower);
       const emailMatch = interviewer.email?.toLowerCase().includes(searchLower);
       const phoneMatch = interviewer.phone?.toLowerCase().includes(searchLower);
       const memberIDMatch = interviewer.memberID?.toLowerCase().includes(searchLower);
       
       return nameMatch || emailMatch || phoneMatch || memberIDMatch;
     });
-  }, [allInterviewerObjects, interviewerSearchTerm]);
+  }, [allInterviewerObjects, interviewerSearchTerm, catiInterviewerSearchTerm]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -1744,6 +1792,12 @@ const SurveyReportsPage = () => {
       }
       if (acDropdownRef.current && !acDropdownRef.current.contains(event.target)) {
         setShowACDropdown(false);
+      }
+      if (catiInterviewerDropdownRef.current && !catiInterviewerDropdownRef.current.contains(event.target)) {
+        setShowCatiInterviewerDropdown(false);
+      }
+      if (catiAcDropdownRef.current && !catiAcDropdownRef.current.contains(event.target)) {
+        setShowCatiACDropdown(false);
       }
     };
 
@@ -2559,8 +2613,8 @@ const SurveyReportsPage = () => {
               >
                 View All ({analytics.dailyStats.length} Days)
               </button>
-            </div>
           </div>
+        </div>
         </div>
 
         {/* CAPI Performance Section */}
@@ -2607,30 +2661,325 @@ const SurveyReportsPage = () => {
           return true;
         })() && (
           <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 mb-8">
-            <h3 className="text-lg font-semibold text-gray-900 mb-6">CATI Performance</h3>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-semibold text-gray-900">CATI Performance</h3>
+              <button
+                onClick={() => setShowCatiFilters(!showCatiFilters)}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                <Filter className="w-4 h-4" />
+                {showCatiFilters ? 'Hide Filters' : 'Show Filters'}
+              </button>
+            </div>
+
+            {/* CATI Performance Filters */}
+            {showCatiFilters && (
+              <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Date Range */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Date Range</label>
+                    <select
+                      value={catiFilters.dateRange}
+                      onChange={(e) => {
+                        const range = e.target.value;
+                        handleCatiFilterChange('dateRange', range);
+                        if (range === 'all') {
+                          handleCatiFilterChange('startDate', '');
+                          handleCatiFilterChange('endDate', '');
+                        } else {
+                          const now = new Date();
+                          let startDate = new Date();
+                          switch (range) {
+                            case 'today':
+                              startDate.setHours(0, 0, 0, 0);
+                              break;
+                            case 'week':
+                              startDate.setDate(now.getDate() - 7);
+                              break;
+                            case 'month':
+                              startDate.setDate(now.getDate() - 30);
+                              break;
+                            default:
+                              startDate = null;
+                          }
+                          if (startDate) {
+                            handleCatiFilterChange('startDate', startDate.toISOString().split('T')[0]);
+                            handleCatiFilterChange('endDate', now.toISOString().split('T')[0]);
+                          }
+                        }
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="all">All Time</option>
+                      <option value="today">Today</option>
+                      <option value="week">Last 7 Days</option>
+                      <option value="month">Last 30 Days</option>
+                      <option value="custom">Custom Range</option>
+                    </select>
+                  </div>
+
+                  {/* Custom Date Range */}
+                  {catiFilters.dateRange === 'custom' && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                        <DatePicker
+                          selected={catiFilters.startDate ? new Date(catiFilters.startDate) : null}
+                          onChange={(date) => {
+                            if (date) {
+                              handleCatiFilterChange('startDate', date.toISOString().split('T')[0]);
+                            } else {
+                              handleCatiFilterChange('startDate', '');
+                            }
+                          }}
+                          selectsStart
+                          startDate={catiFilters.startDate ? new Date(catiFilters.startDate) : null}
+                          endDate={catiFilters.endDate ? new Date(catiFilters.endDate) : null}
+                          maxDate={catiFilters.endDate ? new Date(catiFilters.endDate) : new Date()}
+                          dateFormat="MMM dd, yyyy"
+                          placeholderText="Select start date"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          isClearable
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                        <DatePicker
+                          selected={catiFilters.endDate ? new Date(catiFilters.endDate) : null}
+                          onChange={(date) => {
+                            if (date) {
+                              handleCatiFilterChange('endDate', date.toISOString().split('T')[0]);
+                            } else {
+                              handleCatiFilterChange('endDate', '');
+                            }
+                          }}
+                          selectsEnd
+                          startDate={catiFilters.startDate ? new Date(catiFilters.startDate) : null}
+                          endDate={catiFilters.endDate ? new Date(catiFilters.endDate) : null}
+                          minDate={catiFilters.startDate ? new Date(catiFilters.startDate) : null}
+                          maxDate={new Date()}
+                          dateFormat="MMM dd, yyyy"
+                          placeholderText="Select end date"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          isClearable
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {/* Assembly Constituency */}
+                  <div className="relative" ref={catiAcDropdownRef}>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Assembly Constituency</label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                      <input
+                        type="text"
+                        placeholder={catiFilters.ac ? catiFilters.ac : "Search AC..."}
+                        value={catiFilters.ac ? catiFilters.ac : catiAcSearchTerm}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setCatiAcSearchTerm(value);
+                          setShowCatiACDropdown(true);
+                          handleCatiFilterChange('ac', '');
+                        }}
+                        onFocus={() => {
+                          setShowCatiACDropdown(true);
+                          if (catiFilters.ac) {
+                            setCatiAcSearchTerm(catiFilters.ac);
+                            handleCatiFilterChange('ac', '');
+                          }
+                        }}
+                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      {catiFilters.ac && (
+                        <button
+                          onClick={() => {
+                            handleCatiFilterChange('ac', '');
+                            setCatiAcSearchTerm('');
+                            setShowCatiACDropdown(false);
+                          }}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                    {showCatiACDropdown && (() => {
+                      const catiFilteredACs = !catiAcSearchTerm.trim() 
+                        ? allACObjects 
+                        : allACObjects.filter(ac => {
+                            const searchLower = catiAcSearchTerm.toLowerCase();
+                            const searchNumeric = catiAcSearchTerm.trim();
+                            const nameMatch = ac.name.toLowerCase().includes(searchLower);
+                            const numericCodeMatch = ac.numericCode && (
+                              ac.numericCode === searchNumeric || 
+                              ac.numericCode.includes(searchNumeric) ||
+                              searchNumeric.includes(ac.numericCode)
+                            );
+                            return nameMatch || numericCodeMatch;
+                          });
+                      return catiFilteredACs.length > 0 ? (
+                        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                          {catiFilteredACs.map(ac => {
+                          const isSelected = catiFilters.ac === ac.name;
+                          return (
+                            <div
+                              key={ac.name}
+                              onClick={() => {
+                                handleCatiFilterChange('ac', ac.name);
+                                setCatiAcSearchTerm('');
+                                setShowCatiACDropdown(false);
+                              }}
+                              className={`px-4 py-2 cursor-pointer hover:bg-gray-100 transition-colors ${
+                                isSelected ? 'bg-blue-50' : ''
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1">
+                                  <div className="font-medium text-gray-900">{ac.name}</div>
+                                  {ac.numericCode && (
+                                    <div className="text-xs text-gray-500">AC Code: {ac.numericCode}</div>
+                                  )}
+                                </div>
+                                {isSelected && (
+                                  <CheckCircle className="w-5 h-5 text-blue-600" />
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        </div>
+                      ) : null;
+                    })()}
+                    {showCatiACDropdown && catiAcSearchTerm && (() => {
+                      const catiFilteredACs = allACObjects.filter(ac => {
+                        const searchLower = catiAcSearchTerm.toLowerCase();
+                        const searchNumeric = catiAcSearchTerm.trim();
+                        const nameMatch = ac.name.toLowerCase().includes(searchLower);
+                        const numericCodeMatch = ac.numericCode && (
+                          ac.numericCode === searchNumeric || 
+                          ac.numericCode.includes(searchNumeric) ||
+                          searchNumeric.includes(ac.numericCode)
+                        );
+                        return nameMatch || numericCodeMatch;
+                      });
+                      return catiFilteredACs.length === 0 ? (
+                        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg p-4 text-center text-gray-500 text-sm">
+                          No ACs found matching "{catiAcSearchTerm}"
+                        </div>
+                      ) : null;
+                    })()}
+                  </div>
+                </div>
+
+                {/* CATI Interviewer Filter */}
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <div className="relative" ref={catiInterviewerDropdownRef}>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      CATI Interviewers {catiFilters.interviewerIds?.length > 0 && `(${catiFilters.interviewerIds.length} selected)`}
+                    </label>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                        <input
+                          type="text"
+                          placeholder="Search by name, email, phone, or Member ID..."
+                          value={catiInterviewerSearchTerm}
+                          onChange={(e) => {
+                            setCatiInterviewerSearchTerm(e.target.value);
+                            setShowCatiInterviewerDropdown(true);
+                          }}
+                          onFocus={() => setShowCatiInterviewerDropdown(true)}
+                          className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        {catiFilters.interviewerIds?.length > 0 && (
+                          <button
+                            onClick={clearCatiInterviewerFilters}
+                            className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                            title="Clear all"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={handleCatiInterviewerModeToggle}
+                          className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                            catiFilters.interviewerMode === 'include'
+                              ? 'bg-blue-500 text-white'
+                              : 'bg-red-500 text-white'
+                          }`}
+                        >
+                          {catiFilters.interviewerMode === 'include' ? 'Include' : 'Exclude'}
+                        </button>
+                      </div>
+                    </div>
+                    {showCatiInterviewerDropdown && filteredInterviewers.length > 0 && (
+                      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        {filteredInterviewers.filter(interviewer => {
+                          if (!catiInterviewerSearchTerm.trim()) return true;
+                          const searchLower = catiInterviewerSearchTerm.toLowerCase();
+                          const name = `${interviewer.firstName || ''} ${interviewer.lastName || ''}`.toLowerCase();
+                          const email = (interviewer.email || '').toLowerCase();
+                          const phone = (interviewer.phone || '').toLowerCase();
+                          const memberID = (interviewer.memberID || '').toLowerCase();
+                          return name.includes(searchLower) || email.includes(searchLower) || phone.includes(searchLower) || memberID.includes(searchLower);
+                        }).map(interviewer => {
+                          const interviewerId = interviewer._id?.toString() || interviewer.id?.toString();
+                          const isSelected = catiFilters.interviewerIds?.includes(interviewerId);
+                          return (
+                            <div
+                              key={interviewerId}
+                              onClick={() => handleCatiInterviewerToggle(interviewerId)}
+                              className={`px-4 py-2 cursor-pointer hover:bg-gray-100 transition-colors ${
+                                isSelected ? 'bg-blue-50' : ''
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1">
+                                  <div className="font-medium text-gray-900">
+                                    {interviewer.firstName} {interviewer.lastName}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {interviewer.email && <span>{interviewer.email}</span>}
+                                    {interviewer.phone && <span className="ml-2">• {interviewer.phone}</span>}
+                                    {interviewer.memberID && <span>• Member ID: {interviewer.memberID}</span>}
+                                  </div>
+                                </div>
+                                {isSelected && (
+                                  <CheckCircle className="w-5 h-5 text-blue-600" />
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           
           {/* Caller Performance */}
           <div className="mb-8">
             <h4 className="text-md font-semibold text-gray-800 mb-4">Caller Performance</h4>
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="text-center p-3 bg-blue-50 rounded-lg border border-blue-200">
-                <div className="text-2xl font-bold text-blue-600 mb-1">{analytics.catiPerformance.callerPerformance.callsMade}</div>
+                <div className="text-2xl font-bold text-blue-600 mb-1">{analytics.catiPerformance.callerPerformance.callsMade || 0}</div>
                 <div className="text-xs font-medium text-blue-800">Calls Made</div>
               </div>
               <div className="text-center p-3 bg-green-50 rounded-lg border border-green-200">
-                <div className="text-2xl font-bold text-green-600 mb-1">{analytics.catiPerformance.callerPerformance.callsAttended}</div>
+                <div className="text-2xl font-bold text-green-600 mb-1">{analytics.catiPerformance.callerPerformance.callsAttended || 0}</div>
                 <div className="text-xs font-medium text-green-800">Calls Attended</div>
               </div>
-              <div className="text-center p-3 bg-purple-50 rounded-lg border border-purple-200">
-                <div className="text-2xl font-bold text-purple-600 mb-1">{analytics.catiPerformance.callerPerformance.dialsAttempted}</div>
-                <div className="text-xs font-medium text-purple-800">Dials Attempted</div>
-              </div>
               <div className="text-center p-3 bg-orange-50 rounded-lg border border-orange-200">
-                <div className="text-2xl font-bold text-orange-600 mb-1">{analytics.catiPerformance.callerPerformance.callsConnected}</div>
+                <div className="text-2xl font-bold text-orange-600 mb-1">{analytics.catiPerformance.callerPerformance.callsConnected || 0}</div>
                 <div className="text-xs font-medium text-orange-800">Calls Connected</div>
               </div>
               <div className="text-center p-3 bg-indigo-50 rounded-lg border border-indigo-200">
-                <div className="text-2xl font-bold text-indigo-600 mb-1">{analytics.catiPerformance.callerPerformance.totalTalkDuration}</div>
+                <div className="text-2xl font-bold text-indigo-600 mb-1">{analytics.catiPerformance.callerPerformance.totalTalkDuration || '0:00:00'}</div>
                 <div className="text-xs font-medium text-indigo-800">Talk Duration</div>
               </div>
             </div>
@@ -2689,227 +3038,58 @@ const SurveyReportsPage = () => {
             </div>
           </div>
 
-          {/* Call Records Section */}
-          {catiStats?.callRecords && catiStats.callRecords.length > 0 && (
-            <div className="mt-8">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-3">
-                  <div className="p-2 bg-blue-100 rounded-lg">
-                    <Phone className="h-5 w-5 text-blue-600" />
-                  </div>
-                  <div>
-                    <h4 className="text-md font-semibold text-gray-800">Call Records</h4>
-                    <p className="text-xs text-gray-600">
-                      {filteredAndPaginatedCallRecords.filtered.length} of {catiStats.callRecords.length} call{catiStats.callRecords.length !== 1 ? 's' : ''}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowCallRecords(!showCallRecords)}
-                  className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-                >
-                  {showCallRecords ? 'Hide' : 'Show'} Call Records
-                </button>
-              </div>
-              
-              {showCallRecords && (
-                <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                  {/* Filters */}
-                  <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* Search */}
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          Search Calls
-                        </label>
-                        <div className="relative">
-                          <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                          <input
-                            type="text"
-                            value={callRecordsFilters.search}
-                            onChange={(e) => setCallRecordsFilters(prev => ({ ...prev, search: e.target.value }))}
-                            placeholder="Search by From, To, or Interviewer..."
-                            className="w-full pl-10 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          />
-                          {callRecordsFilters.search && (
-                            <button
-                              onClick={() => setCallRecordsFilters(prev => ({ ...prev, search: '' }))}
-                              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Status Filter */}
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          Call Status
-                        </label>
-                        <select
-                          value={callRecordsFilters.status}
-                          onChange={(e) => setCallRecordsFilters(prev => ({ ...prev, status: e.target.value }))}
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        >
-                          <option value="">All Statuses</option>
-                          <option value="answered">Answered</option>
-                          <option value="completed">Completed</option>
-                          <option value="no-answer">No Answer</option>
-                          <option value="failed">Failed</option>
-                          <option value="busy">Busy</option>
-                          <option value="canceled">Canceled</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Table */}
-                  <div className="overflow-x-auto">
-                    <table className="w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-3 sm:px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Call ID</th>
-                          <th className="px-3 sm:px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">From</th>
-                          <th className="px-3 sm:px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">To</th>
-                          <th className="px-3 sm:px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Interviewer</th>
-                          <th className="px-3 sm:px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                          <th className="px-3 sm:px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
-                          <th className="px-3 sm:px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Talk Time</th>
-                          <th className="px-3 sm:px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {filteredAndPaginatedCallRecords.paginated.length > 0 ? (
-                          filteredAndPaginatedCallRecords.paginated.map((call) => (
-                            <tr key={call._id} className="hover:bg-gray-50">
-                              <td className="px-3 sm:px-4 md:px-6 py-3 whitespace-nowrap text-sm font-mono text-gray-900">
-                                {call.callId?.substring(0, 20)}...
-                              </td>
-                              <td className="px-3 sm:px-4 md:px-6 py-3 whitespace-nowrap text-sm text-gray-900">{call.fromNumber}</td>
-                              <td className="px-3 sm:px-4 md:px-6 py-3 whitespace-nowrap text-sm text-gray-900">{call.toNumber}</td>
-                              <td className="px-3 sm:px-4 md:px-6 py-3 whitespace-nowrap text-sm text-gray-900">
-                                {call.interviewer ? call.interviewer.name : 'N/A'}
-                              </td>
-                              <td className="px-3 sm:px-4 md:px-6 py-3 whitespace-nowrap">
-                                <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
-                                  call.callStatus === 'answered' || call.callStatus === 'completed' 
-                                    ? 'bg-green-100 text-green-800'
-                                    : call.callStatus === 'no-answer'
-                                    ? 'bg-yellow-100 text-yellow-800'
-                                    : call.callStatus === 'failed'
-                                    ? 'bg-red-100 text-red-800'
-                                    : 'bg-gray-100 text-gray-800'
-                                }`}>
-                                  {call.callStatusDescription || call.callStatus}
-                                </span>
-                              </td>
-                              <td className="px-3 sm:px-4 md:px-6 py-3 whitespace-nowrap text-sm text-gray-900">
-                                {call.callDuration ? `${Math.floor(call.callDuration / 60)}:${(call.callDuration % 60).toString().padStart(2, '0')}` : 'N/A'}
-                              </td>
-                              <td className="px-3 sm:px-4 md:px-6 py-3 whitespace-nowrap text-sm text-gray-900">
-                                {call.talkDuration ? `${Math.floor(call.talkDuration / 60)}:${(call.talkDuration % 60).toString().padStart(2, '0')}` : 'N/A'}
-                              </td>
-                              <td className="px-3 sm:px-4 md:px-6 py-3 whitespace-nowrap text-sm text-gray-500">
-                                {call.callStartTime ? new Date(call.callStartTime).toLocaleDateString() : 'N/A'}
-                              </td>
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan="8" className="px-6 py-8 text-center text-sm text-gray-500">
-                              No call records found matching your filters
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Pagination */}
-                  {filteredAndPaginatedCallRecords.totalPages > 1 && (
-                    <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-4">
-                          <span className="text-sm text-gray-700">
-                            Showing {((callRecordsPage - 1) * callRecordsPageSize) + 1} to {Math.min(callRecordsPage * callRecordsPageSize, filteredAndPaginatedCallRecords.filtered.length)} of {filteredAndPaginatedCallRecords.filtered.length} calls
-                          </span>
-                          <select
-                            value={callRecordsPageSize}
-                            onChange={(e) => {
-                              setCallRecordsPageSize(Number(e.target.value));
-                              setCallRecordsPage(1);
-                            }}
-                            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          >
-                            <option value={10}>10 per page</option>
-                            <option value={25}>25 per page</option>
-                            <option value={50}>50 per page</option>
-                            <option value={100}>100 per page</option>
-                          </select>
-                        </div>
-
-                        <div className="flex items-center space-x-2">
-                          <button
-                            onClick={() => setCallRecordsPage(prev => Math.max(1, prev - 1))}
-                            disabled={!filteredAndPaginatedCallRecords.hasPrev}
-                            className="px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white transition-colors"
-                            title="Previous page"
-                          >
-                            <ChevronLeft className="w-4 h-4" />
-                          </button>
-                          
-                          {/* Page Numbers */}
-                          {Array.from({ length: Math.min(5, filteredAndPaginatedCallRecords.totalPages) }, (_, i) => {
-                            let pageNum;
-                            if (filteredAndPaginatedCallRecords.totalPages <= 5) {
-                              pageNum = i + 1;
-                            } else if (callRecordsPage <= 3) {
-                              pageNum = i + 1;
-                            } else if (callRecordsPage >= filteredAndPaginatedCallRecords.totalPages - 2) {
-                              pageNum = filteredAndPaginatedCallRecords.totalPages - 4 + i;
-                            } else {
-                              pageNum = callRecordsPage - 2 + i;
-                            }
-                            
-                            if (pageNum < 1 || pageNum > filteredAndPaginatedCallRecords.totalPages) return null;
-                            
-                            return (
-                              <button
-                                key={pageNum}
-                                onClick={() => setCallRecordsPage(pageNum)}
-                                className={`px-3 py-2 min-w-[2.5rem] border rounded-lg transition-colors ${
-                                  pageNum === callRecordsPage
-                                    ? 'bg-blue-600 text-white border-blue-600'
-                                    : 'border-gray-300 hover:bg-white'
-                                }`}
-                              >
-                                {pageNum}
-                              </button>
-                            );
-                          })}
-                          
-                          <button
-                            onClick={() => setCallRecordsPage(prev => Math.min(filteredAndPaginatedCallRecords.totalPages, prev + 1))}
-                            disabled={!filteredAndPaginatedCallRecords.hasNext}
-                            className="px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white transition-colors"
-                            title="Next page"
-                          >
-                            <ChevronRight className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Interviewer Performance Table */}
           {catiStats?.interviewerStats && catiStats.interviewerStats.length > 0 && (
             <div className="mt-8">
-              <h4 className="text-md font-semibold text-gray-800 mb-4">Interviewer Performance</h4>
+              <div className="flex justify-between items-center mb-4">
+                <h4 className="text-md font-semibold text-gray-800">Interviewer Performance</h4>
+                <button
+                  onClick={() => {
+                    if (!catiStats?.interviewerStats || catiStats.interviewerStats.length === 0) {
+                      showError('No data to export');
+                      return;
+                    }
+                    
+                    const csvData = catiStats.interviewerStats.map(stat => ({
+                      'S.No': stat.sNo || '',
+                      'Interviewer ID': stat.memberID || 'N/A',
+                      'Caller Name': stat.interviewerName || 'N/A',
+                      'Caller Mobile No.': stat.interviewerPhone || 'N/A',
+                      'Number of Dials': stat.numberOfDials || 0,
+                      'Completed': stat.completed || 0,
+                      'Successful': stat.successful || 0,
+                      'Under QC': stat.underQC || 0,
+                      'Rejected': stat.rejected || 0,
+                      'Form Duration': stat.formDuration || '0:00:00',
+                      'Call Not Received to Telecaller': stat.callNotReceivedToTelecaller || 0,
+                      'Ringing': stat.ringing || 0,
+                      'Not Ringing': stat.notRinging || 0,
+                      'Switch Off': stat.switchOff || 0,
+                      'Number Not Reachable': stat.numberNotReachable || 0,
+                      'Number Does Not Exist': stat.numberDoesNotExist || 0,
+                      'No Response by Telecaller': stat.noResponseByTelecaller || 0
+                    }));
+                    
+                    const csvContent = [Object.keys(csvData[0]), ...csvData.map(row => Object.values(row))]
+                      .map(row => row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(','))
+                      .join('\n');
+                    
+                    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                    const url = window.URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = `interviewer_performance_cati_${survey?.surveyName?.replace(/[^a-z0-9]/gi, '_') || 'survey'}_${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    window.URL.revokeObjectURL(url);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Export as CSV</span>
+                </button>
+              </div>
               <div className="bg-white border border-gray-200 rounded-lg overflow-hidden overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
@@ -2960,7 +3140,7 @@ const SurveyReportsPage = () => {
               </div>
             </div>
           )}
-          </div>
+        </div>
         )}
 
         {/* AC Performance Modal */}

@@ -2016,10 +2016,10 @@ exports.saveRespondentContacts = async (req, res) => {
 exports.getCatiStats = async (req, res) => {
   try {
     const { id } = req.params;
-    const { startDate, endDate } = req.query; // Get date range from query params
+    const { startDate, endDate, interviewerIds, interviewerMode, ac } = req.query; // Get filters from query params
     
     console.log(`🔍🔍🔍 getCatiStats - START - Request for survey ID: ${id}`);
-    console.log(`🔍🔍🔍 getCatiStats - Date range:`, { startDate, endDate });
+    console.log(`🔍🔍🔍 getCatiStats - Filters:`, { startDate, endDate, interviewerIds, interviewerMode, ac });
     console.log(`🔍🔍🔍 getCatiStats - User:`, req.user?.email, req.user?.userType);
     
     // Get current user and their company
@@ -2069,20 +2069,143 @@ exports.getCatiStats = async (req, res) => {
       };
     }
 
+    // Build interviewer filter
+    let interviewerFilter = {};
+    let projectManagerInterviewerIds = [];
+    
+    // For project managers: if interviewerIds not provided, get from assignedTeamMembers
+    if (!interviewerIds && req.user.userType === 'project_manager') {
+      try {
+        console.log('🔍 getCatiStats - Project Manager detected, fetching assigned interviewers');
+        const currentUser = await User.findById(req.user.id);
+        console.log('🔍 getCatiStats - Current user:', currentUser?._id, currentUser?.userType);
+        console.log('🔍 getCatiStats - Assigned team members count:', currentUser?.assignedTeamMembers?.length || 0);
+        
+        if (currentUser && currentUser.assignedTeamMembers && currentUser.assignedTeamMembers.length > 0) {
+          const assignedInterviewers = currentUser.assignedTeamMembers
+            .filter(tm => tm.userType === 'interviewer' && tm.user)
+            .map(tm => {
+              // Handle both ObjectId and populated user object
+              const userId = tm.user._id ? tm.user._id : tm.user;
+              return userId.toString();
+            })
+            .filter(id => mongoose.Types.ObjectId.isValid(id));
+          
+          if (assignedInterviewers.length > 0) {
+            projectManagerInterviewerIds = assignedInterviewers.map(id => new mongoose.Types.ObjectId(id));
+            interviewerIds = assignedInterviewers.join(',');
+            console.log('🔍 getCatiStats - Filtering by', projectManagerInterviewerIds.length, 'assigned interviewers');
+          } else {
+            console.log('⚠️ getCatiStats - No assigned interviewers found for project manager');
+          }
+        } else {
+          console.log('⚠️ getCatiStats - Project manager has no assigned team members');
+        }
+      } catch (error) {
+        console.error('❌ Error fetching project manager assigned interviewers:', error);
+        // Continue without filtering if there's an error
+      }
+    }
+    
+    if (interviewerIds) {
+      const interviewerIdArray = typeof interviewerIds === 'string' 
+        ? interviewerIds.split(',').filter(id => id.trim())
+        : Array.isArray(interviewerIds) ? interviewerIds : [];
+      
+      if (interviewerIdArray.length > 0) {
+        const validInterviewerIds = interviewerIdArray
+          .map(id => mongoose.Types.ObjectId.isValid(id.trim()) ? new mongoose.Types.ObjectId(id.trim()) : null)
+          .filter(id => id !== null);
+        
+        if (validInterviewerIds.length > 0) {
+          if (interviewerMode === 'exclude') {
+            interviewerFilter.interviewer = { $nin: validInterviewerIds };
+          } else {
+            interviewerFilter.interviewer = { $in: validInterviewerIds };
+          }
+          // Store for use in call records query
+          projectManagerInterviewerIds = validInterviewerIds;
+        }
+      }
+    } else if (req.user.userType === 'project_manager' && projectManagerInterviewerIds.length === 0) {
+      console.log('⚠️ getCatiStats - Project manager but no interviewer filter applied - returning empty results');
+      // For project managers with no assigned interviewers, return empty results
+      return res.json({
+        success: true,
+        data: {
+          callerPerformance: {
+            callsMade: 0,
+            callsAttended: 0,
+            callsConnected: 0,
+            totalTalkDuration: '0:00:00'
+          },
+          numberStats: {
+            callNotReceived: 0,
+            ringing: 0,
+            notRinging: 0
+          },
+          callNotRingStatus: {
+            switchOff: 0,
+            numberNotReachable: 0,
+            numberDoesNotExist: 0
+          },
+          callRingStatus: {
+            callsConnected: 0,
+            callsNotConnected: 0
+          },
+          interviewerStats: [],
+          callRecords: []
+        }
+      });
+    }
+
+    // Build AC filter
+    let acFilter = {};
+    if (ac && ac.trim()) {
+      // Filter by AC from respondent contact or response metadata
+      acFilter.$or = [
+        { 'metadata.respondentContact.ac': ac },
+        { 'metadata.respondentContact.assemblyConstituency': ac },
+        { 'metadata.respondentContact.acName': ac },
+        { 'metadata.respondentContact.assemblyConstituencyName': ac },
+        { selectedAC: ac }
+      ];
+    }
+
     // Get CATI responses to extract call status from metadata
     const catiResponsesQuery = {
       survey: surveyObjectId,
       interviewMode: 'cati',
-      ...dateFilter
+      ...dateFilter,
+      ...interviewerFilter,
+      ...acFilter
     };
     
     console.log(`🔍 getCatiStats - Query filter:`, JSON.stringify(catiResponsesQuery, null, 2));
     
-    const catiResponses = await SurveyResponse.find(catiResponsesQuery)
-      .populate('interviewer', 'firstName lastName phone memberID')
-      .select('_id interviewer metadata callStatus responses totalTimeSpent status createdAt');
+    let catiResponses = await SurveyResponse.find(catiResponsesQuery)
+      .populate('interviewer', 'firstName lastName phone memberId')
+      .select('_id interviewer metadata callStatus responses totalTimeSpent status createdAt knownCallStatus');
     
-    console.log(`🔍 getCatiStats - Found ${catiResponses.length} CATI responses`);
+    // Additional safety filter: For project managers, ensure we only include responses from assigned interviewers
+    // This catches any edge cases where the query filter might not work correctly
+    if (projectManagerInterviewerIds.length > 0) {
+      const originalCount = catiResponses.length;
+      catiResponses = catiResponses.filter(response => {
+        if (!response.interviewer || !response.interviewer._id) return false;
+        const interviewerId = response.interviewer._id.toString();
+        const interviewerIdObj = mongoose.Types.ObjectId.isValid(interviewerId) 
+          ? new mongoose.Types.ObjectId(interviewerId) 
+          : null;
+        if (!interviewerIdObj) return false;
+        return projectManagerInterviewerIds.some(id => id.toString() === interviewerIdObj.toString());
+      });
+      if (originalCount !== catiResponses.length) {
+        console.log(`⚠️ getCatiStats - Filtered ${originalCount - catiResponses.length} responses that didn't match assigned interviewers`);
+      }
+    }
+    
+    console.log(`🔍 getCatiStats - Found ${catiResponses.length} CATI responses (after project manager filtering)`);
 
     // Get queue entries first to find all related call records
     const queueEntries = await CatiRespondentQueue.find({
@@ -2105,6 +2228,7 @@ exports.getCatiStats = async (req, res) => {
     
     // Approach 1: Query by ObjectId (primary method - should find all calls)
     // Apply date filter to call records as well
+    // For project managers, also filter by assigned interviewers
     const callRecordsQuery = {
       survey: surveyObjectId
     };
@@ -2117,12 +2241,16 @@ exports.getCatiStats = async (req, res) => {
         callRecordsQuery.createdAt.$lte = new Date(new Date(endDate).setHours(23, 59, 59, 999));
       }
     }
+    // Apply project manager interviewer filter to call records
+    if (projectManagerInterviewerIds.length > 0) {
+      callRecordsQuery.createdBy = { $in: projectManagerInterviewerIds };
+    }
     
     console.log(`🔍🔍🔍 getCatiStats - Querying CatiCall with survey: ${surveyObjectId}`);
     console.log(`🔍🔍🔍 getCatiStats - Call records query:`, JSON.stringify(callRecordsQuery, null, 2));
     
     const callsByObjectId = await CatiCall.find(callRecordsQuery)
-      .populate('createdBy', 'firstName lastName phone memberID')
+      .populate('createdBy', 'firstName lastName phone memberId')
       .populate('queueEntry')
       .lean(); // Use lean() for better performance
 
@@ -2145,6 +2273,10 @@ exports.getCatiStats = async (req, res) => {
         queueEntry: { $in: queueEntryIds },
         _id: { $nin: callRecords.map(c => c._id) }  // Exclude already found calls
       };
+      // Apply project manager interviewer filter to calls via queue
+      if (projectManagerInterviewerIds.length > 0) {
+        callsViaQueueQuery.createdBy = { $in: projectManagerInterviewerIds };
+      }
       if (startDate || endDate) {
         callsViaQueueQuery.createdAt = {};
         if (startDate) {
@@ -2156,7 +2288,7 @@ exports.getCatiStats = async (req, res) => {
       }
       
       const callsViaQueue = await CatiCall.find(callsViaQueueQuery)
-        .populate('createdBy', 'firstName lastName phone memberID')
+        .populate('createdBy', 'firstName lastName phone memberId')
         .populate('queueEntry');
       
       console.log(`🔍 getCatiStats - Calls found via queueEntry: ${callsViaQueue.length}`);
@@ -2378,6 +2510,7 @@ exports.getCatiStats = async (req, res) => {
 
     // Call status breakdown from call records (webhook data) - PRIMARY SOURCE
     // Use getCallStatus helper function to map DeepCall status codes correctly
+    // Note: callRecords are already filtered by project manager assigned interviewers in the query
     const callStatusBreakdown = {
       answered: callRecords.filter(c => getCallStatus(c) === 'answered').length,
       completed: callRecords.filter(c => getCallStatus(c) === 'completed').length,
@@ -2388,6 +2521,13 @@ exports.getCatiStats = async (req, res) => {
       ringing: callRecords.filter(c => getCallStatus(c) === 'ringing' || c.callStatus === 'ringing').length,
       initiated: callRecords.filter(c => getCallStatus(c) === 'initiated' || c.callStatus === 'initiated').length
     };
+    
+    console.log(`🔍 getCatiStats - Call records count: ${callRecords.length}`);
+    console.log(`🔍 getCatiStats - CATI responses count: ${catiResponses.length}`);
+    if (projectManagerInterviewerIds.length > 0) {
+      console.log(`🔍 getCatiStats - Project manager filtering: ${projectManagerInterviewerIds.length} assigned interviewers`);
+      console.log(`🔍 getCatiStats - Assigned interviewer IDs:`, projectManagerInterviewerIds.map(id => id.toString()));
+    }
     
     console.log(`🔍 getCatiStats - Call status breakdown:`, callStatusBreakdown);
 
@@ -2405,6 +2545,18 @@ exports.getCatiStats = async (req, res) => {
     // 20=To Hangup in Queue, 21=To Hangup
     
     callRecords.forEach(call => {
+      // For project managers, only count calls from assigned interviewers
+      if (projectManagerInterviewerIds.length > 0) {
+        if (!call.createdBy || !call.createdBy._id) return;
+        const interviewerId = call.createdBy._id.toString();
+        const interviewerIdObj = mongoose.Types.ObjectId.isValid(interviewerId) 
+          ? new mongoose.Types.ObjectId(interviewerId) 
+          : null;
+        if (!interviewerIdObj || !projectManagerInterviewerIds.some(id => id.toString() === interviewerIdObj.toString())) {
+          return; // Skip this call
+        }
+      }
+      
       const webhookData = call.webhookData || {};
       const originalStatusCode = call.originalStatusCode || webhookData.callStatus || webhookData.status;
       const statusCode = typeof originalStatusCode === 'number' ? originalStatusCode : parseInt(originalStatusCode);
@@ -2466,6 +2618,18 @@ exports.getCatiStats = async (req, res) => {
     let didntGetCallFromResponses = 0;
     
     catiResponses.forEach(response => {
+      // For project managers, only count responses from assigned interviewers
+      if (projectManagerInterviewerIds.length > 0) {
+        if (!response.interviewer || !response.interviewer._id) return;
+        const interviewerId = response.interviewer._id.toString();
+        const interviewerIdObj = mongoose.Types.ObjectId.isValid(interviewerId) 
+          ? new mongoose.Types.ObjectId(interviewerId) 
+          : null;
+        if (!interviewerIdObj || !projectManagerInterviewerIds.some(id => id.toString() === interviewerIdObj.toString())) {
+          return; // Skip this response
+        }
+      }
+      
       // Get call status from metadata.callStatus (stored when response was submitted)
       const callStatus = response.metadata?.callStatus || 
                         (response.responses?.find(r => r.questionId === 'call-status')?.response);
@@ -2502,9 +2666,20 @@ exports.getCatiStats = async (req, res) => {
     let noResponseByTelecallerCount = 0;
     const interviewerPhoneMap = new Map(); // Map phone numbers to interviewer IDs
     
-    // Build map of interviewer phone numbers
+    // Build map of interviewer phone numbers (only from assigned interviewers for project managers)
     catiResponses.forEach(response => {
       if (response.interviewer && response.interviewer.phone) {
+        // For project managers, only include assigned interviewers
+        if (projectManagerInterviewerIds.length > 0) {
+          const interviewerId = response.interviewer._id.toString();
+          const interviewerIdObj = mongoose.Types.ObjectId.isValid(interviewerId) 
+            ? new mongoose.Types.ObjectId(interviewerId) 
+            : null;
+          if (!interviewerIdObj || !projectManagerInterviewerIds.some(id => id.toString() === interviewerIdObj.toString())) {
+            return; // Skip this interviewer
+          }
+        }
+        
         const phone = response.interviewer.phone.replace(/[^0-9]/g, '');
         const interviewerId = response.interviewer._id.toString();
         if (!interviewerPhoneMap.has(phone)) {
@@ -2514,7 +2689,20 @@ exports.getCatiStats = async (req, res) => {
     });
     
     // Check CatiCall objects for "No Response by Telecaller"
+    // Only check calls from assigned interviewers for project managers
     callRecords.forEach(call => {
+      // For project managers, only check calls from assigned interviewers
+      if (projectManagerInterviewerIds.length > 0) {
+        if (!call.createdBy || !call.createdBy._id) return;
+        const interviewerId = call.createdBy._id.toString();
+        const interviewerIdObj = mongoose.Types.ObjectId.isValid(interviewerId) 
+          ? new mongoose.Types.ObjectId(interviewerId) 
+          : null;
+        if (!interviewerIdObj || !projectManagerInterviewerIds.some(id => id.toString() === interviewerIdObj.toString())) {
+          return; // Skip this call
+        }
+      }
+      
       const fromNumber = call.fromNumber?.replace(/[^0-9]/g, '');
       if (fromNumber && interviewerPhoneMap.has(fromNumber)) {
         // Check if hangupBySource === 1 or status code === 7
@@ -2562,13 +2750,37 @@ exports.getCatiStats = async (req, res) => {
     
     // Step 1: Get all interviewers who made calls (from CatiCall objects)
     // Build map of interviewer phone -> interviewer ID
+    // For project managers, only include assigned interviewers
     const interviewerPhoneToIdMap = new Map();
     const interviewerIdToInfoMap = new Map();
+    
+    // Helper function to check if interviewer should be included
+    const shouldIncludeInterviewer = (interviewerId) => {
+      if (projectManagerInterviewerIds.length === 0) {
+        // Not a project manager or no assigned interviewers - include all
+        return true;
+      }
+      // For project managers, only include assigned interviewers
+      const interviewerIdObj = typeof interviewerId === 'string' 
+        ? (mongoose.Types.ObjectId.isValid(interviewerId) ? new mongoose.Types.ObjectId(interviewerId) : null)
+        : interviewerId;
+      if (!interviewerIdObj) return false;
+      
+      return projectManagerInterviewerIds.some(id => 
+        id.toString() === interviewerIdObj.toString()
+      );
+    };
     
     // Get unique interviewers from call records
     callRecords.forEach(call => {
       if (call.createdBy && call.createdBy._id) {
         const interviewerId = call.createdBy._id.toString();
+        
+        // Filter by project manager assigned interviewers
+        if (!shouldIncludeInterviewer(interviewerId)) {
+          return; // Skip this interviewer
+        }
+        
         const phone = call.fromNumber?.replace(/[^0-9]/g, '');
         
         if (!interviewerIdToInfoMap.has(interviewerId)) {
@@ -2576,7 +2788,7 @@ exports.getCatiStats = async (req, res) => {
             interviewerId: call.createdBy._id,
             interviewerName: `${call.createdBy.firstName || ''} ${call.createdBy.lastName || ''}`.trim(),
             interviewerPhone: call.createdBy.phone || phone || '',
-            memberID: call.createdBy.memberID || ''
+            memberID: call.createdBy.memberId || call.createdBy.memberID || ''
           });
         }
         
@@ -2590,18 +2802,29 @@ exports.getCatiStats = async (req, res) => {
     catiResponses.forEach(response => {
       if (response.interviewer && response.interviewer._id) {
         const interviewerId = response.interviewer._id.toString();
+        
+        // Filter by project manager assigned interviewers
+        if (!shouldIncludeInterviewer(interviewerId)) {
+          return; // Skip this interviewer
+        }
+        
         if (!interviewerIdToInfoMap.has(interviewerId)) {
           interviewerIdToInfoMap.set(interviewerId, {
             interviewerId: response.interviewer._id,
             interviewerName: `${response.interviewer.firstName || ''} ${response.interviewer.lastName || ''}`.trim(),
             interviewerPhone: response.interviewer.phone || '',
-            memberID: response.interviewer.memberID || ''
+            memberID: response.interviewer.memberId || response.interviewer.memberID || ''
           });
         }
       }
     });
     
-    // Initialize stats for all interviewers
+    console.log(`🔍 getCatiStats - Interviewer stats map size: ${interviewerIdToInfoMap.size}`);
+    if (projectManagerInterviewerIds.length > 0) {
+      console.log(`🔍 getCatiStats - Project manager filtering: ${projectManagerInterviewerIds.length} assigned interviewers`);
+    }
+    
+    // Initialize stats for all interviewers (already filtered above)
     interviewerIdToInfoMap.forEach((info, interviewerId) => {
       interviewerStatsMap.set(interviewerId, {
         interviewerId: info.interviewerId,
@@ -2813,12 +3036,100 @@ exports.getCatiStats = async (req, res) => {
     
     console.log(`🔍 getCatiStats - Interviewer stats:`, interviewerStats.length, 'interviewers');
 
-    console.log(`🔍 getCatiStats - Final stats:`, {
-      callsMade: totalCallsMade,
-      callsAttended: callsAttended,
-      dialsAttempted: dialsAttempted,
-      callsConnected: callsConnected,
-      totalTalkDuration: formatDuration(totalTalkDuration),
+    // Calculate overall stats from filtered interviewer stats
+    // 1. Calls Made = Total of all "Number of Dials" from all filtered interviewers
+    const totalCallsMadeFromStats = interviewerStats.reduce((sum, stat) => sum + (stat.numberOfDials || 0), 0);
+    
+    // 2. Calls Attended = Total count of "Ringing" from all filtered interviewers
+    const totalCallsAttendedFromStats = interviewerStats.reduce((sum, stat) => sum + (stat.ringing || 0), 0);
+    
+    // 3. Calls Connected = Total count of knownCallStatus = "call_connected" in filtered responses
+    // Check both 'call_connected' and 'success' (legacy value)
+    // Also check metadata.callStatus as fallback
+    // For project managers, only count responses from assigned interviewers
+    const totalCallsConnectedFromResponses = catiResponses.filter(response => {
+      // For project managers, only count responses from assigned interviewers
+      if (projectManagerInterviewerIds.length > 0) {
+        if (!response.interviewer || !response.interviewer._id) return false;
+        const interviewerId = response.interviewer._id.toString();
+        const interviewerIdObj = mongoose.Types.ObjectId.isValid(interviewerId) 
+          ? new mongoose.Types.ObjectId(interviewerId) 
+          : null;
+        if (!interviewerIdObj || !projectManagerInterviewerIds.some(id => id.toString() === interviewerIdObj.toString())) {
+          return false; // Skip this response
+        }
+      }
+      
+      const knownStatus = response.knownCallStatus;
+      const metadataStatus = response.metadata?.callStatus;
+      
+      // Check knownCallStatus field first (primary source)
+      if (knownStatus === 'call_connected' || knownStatus === 'success') {
+        return true;
+      }
+      
+      // Fallback to metadata.callStatus if knownCallStatus is not set
+      if (!knownStatus && metadataStatus) {
+        const normalizedMetadataStatus = String(metadataStatus).toLowerCase().trim();
+        return normalizedMetadataStatus === 'call_connected' || 
+               normalizedMetadataStatus === 'success' || 
+               normalizedMetadataStatus === 'connected';
+      }
+      
+      return false;
+    }).length;
+    
+    console.log(`🔍 getCatiStats - Total CATI responses: ${catiResponses.length}`);
+    if (projectManagerInterviewerIds.length > 0) {
+      console.log(`🔍 getCatiStats - Project manager filtering active: ${projectManagerInterviewerIds.length} assigned interviewers`);
+      const responsesFromAssignedInterviewers = catiResponses.filter(r => {
+        if (!r.interviewer || !r.interviewer._id) return false;
+        const interviewerId = r.interviewer._id.toString();
+        const interviewerIdObj = mongoose.Types.ObjectId.isValid(interviewerId) 
+          ? new mongoose.Types.ObjectId(interviewerId) 
+          : null;
+        return interviewerIdObj && projectManagerInterviewerIds.some(id => id.toString() === interviewerIdObj.toString());
+      });
+      console.log(`🔍 getCatiStats - Responses from assigned interviewers: ${responsesFromAssignedInterviewers.length}`);
+    }
+    console.log(`🔍 getCatiStats - Responses with knownCallStatus:`, catiResponses.filter(r => r.knownCallStatus).length);
+    console.log(`🔍 getCatiStats - Responses with call_connected/success:`, catiResponses.filter(r => {
+      const ks = r.knownCallStatus;
+      const ms = r.metadata?.callStatus;
+      return ks === 'call_connected' || ks === 'success' || 
+             (ms && (String(ms).toLowerCase().trim() === 'call_connected' || String(ms).toLowerCase().trim() === 'success'));
+    }).length);
+    console.log(`🔍 getCatiStats - Sample knownCallStatus values:`, catiResponses.slice(0, 10).map(r => ({ 
+      id: r._id, 
+      interviewerId: r.interviewer?._id?.toString(),
+      knownCallStatus: r.knownCallStatus,
+      metadataCallStatus: r.metadata?.callStatus,
+      status: r.status
+    })));
+    
+    // 4. Talk Duration = Total of all "Form Duration" (totalTimeSpent) from filtered responses
+    // For project managers, only count responses from assigned interviewers
+    const totalTalkDurationFromResponses = catiResponses.reduce((sum, response) => {
+      // For project managers, only count responses from assigned interviewers
+      if (projectManagerInterviewerIds.length > 0) {
+        if (!response.interviewer || !response.interviewer._id) return sum;
+        const interviewerId = response.interviewer._id.toString();
+        const interviewerIdObj = mongoose.Types.ObjectId.isValid(interviewerId) 
+          ? new mongoose.Types.ObjectId(interviewerId) 
+          : null;
+        if (!interviewerIdObj || !projectManagerInterviewerIds.some(id => id.toString() === interviewerIdObj.toString())) {
+          return sum; // Skip this response
+        }
+      }
+      
+      return sum + (response.totalTimeSpent || 0);
+    }, 0);
+
+    console.log(`🔍 getCatiStats - Final stats (from filtered data):`, {
+      callsMade: totalCallsMadeFromStats,
+      callsAttended: totalCallsAttendedFromStats,
+      callsConnected: totalCallsConnectedFromResponses,
+      totalTalkDuration: formatDuration(totalTalkDurationFromResponses),
       callNotReceived,
       ringing,
       notRinging,
@@ -2829,11 +3140,10 @@ exports.getCatiStats = async (req, res) => {
 
     const responseData = {
       callerPerformance: {
-        callsMade: totalCallsMade,
-        callsAttended: callsAttended,
-        dialsAttempted: dialsAttempted,
-        callsConnected: callsConnected,
-        totalTalkDuration: formatDuration(totalTalkDuration)
+        callsMade: totalCallsMadeFromStats,
+        callsAttended: totalCallsAttendedFromStats,
+        callsConnected: totalCallsConnectedFromResponses,
+        totalTalkDuration: formatDuration(totalTalkDurationFromResponses)
       },
       numberStats: {
         callNotReceived: callNotReceived,

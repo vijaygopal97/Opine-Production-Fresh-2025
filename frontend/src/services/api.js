@@ -472,11 +472,16 @@ export const surveyAPI = {
   },
 
   // Get CATI performance stats for a survey
-  getCatiStats: async (surveyId, startDate, endDate) => {
+  getCatiStats: async (surveyId, startDate, endDate, interviewerIds = [], interviewerMode = 'include', ac = '') => {
     try {
       const params = {};
       if (startDate) params.startDate = startDate;
       if (endDate) params.endDate = endDate;
+      if (interviewerIds && interviewerIds.length > 0) {
+        params.interviewerIds = interviewerIds.join(',');
+        params.interviewerMode = interviewerMode;
+      }
+      if (ac) params.ac = ac;
       const response = await api.get(`/api/surveys/${surveyId}/cati-stats`, { params });
       return response.data;
     } catch (error) {
