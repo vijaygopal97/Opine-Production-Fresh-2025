@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
 import { 
   ArrowLeft,
   Filter, 
@@ -11,7 +13,10 @@ import {
   Calendar,
   User,
   MapPin,
-  BarChart3
+  BarChart3,
+  X,
+  CheckCircle,
+  AlertCircle
 } from 'lucide-react';
 import { surveyResponseAPI, surveyAPI } from '../services/api';
 import { useToast } from '../contexts/ToastContext';
@@ -45,7 +50,10 @@ const ViewResponsesPage = () => {
   // Filter states
   const [filters, setFilters] = useState({
     search: '',
-    status: 'all', // 'all', 'Approved', 'Rejected'
+    status: 'all', // 'all', 'approved_rejected_pending', 'approved_pending', 'pending', 'Approved', 'Rejected'
+    dateRange: 'all', // 'today', 'week', 'month', 'all', 'custom'
+    startDate: '',
+    endDate: '',
     gender: '',
     ageMin: '',
     ageMax: '',
@@ -54,7 +62,9 @@ const ViewResponsesPage = () => {
     district: '',
     lokSabha: '',
     state: '',
-    interviewMode: ''
+    interviewMode: '',
+    interviewerIds: [], // Array of interviewer IDs
+    interviewerMode: 'include' // 'include' or 'exclude'
   });
   
   const [showFilters, setShowFilters] = useState(true);
@@ -72,15 +82,30 @@ const ViewResponsesPage = () => {
   // Load assembly constituencies data
   const [assemblyConstituencies, setAssemblyConstituencies] = useState({});
   
+  // Interviewer filter states
+  const [interviewerSearchTerm, setInterviewerSearchTerm] = useState('');
+  const [showInterviewerDropdown, setShowInterviewerDropdown] = useState(false);
+  const interviewerDropdownRef = useRef(null);
+
+  // AC filter states
+  const [acSearchTerm, setAcSearchTerm] = useState('');
+  const [showACDropdown, setShowACDropdown] = useState(false);
+  const acDropdownRef = useRef(null);
+  
   useEffect(() => {
     // Load assembly constituencies data
     const loadAssemblyData = async () => {
       try {
         const response = await fetch('/src/data/assemblyConstituencies.json');
+        if (!response.ok) {
+          throw new Error(`Failed to load assembly constituencies: ${response.status}`);
+        }
         const data = await response.json();
         setAssemblyConstituencies(data);
       } catch (error) {
         console.error('Error loading assembly constituencies:', error);
+        // Set empty object to prevent further errors
+        setAssemblyConstituencies({});
       }
     };
     loadAssemblyData();
@@ -97,11 +122,11 @@ const ViewResponsesPage = () => {
         setSurvey(surveyResponse.data);
       }
       
-      // Then fetch responses - always fetch all (Approved + Rejected) for client-side filtering
+      // Then fetch responses - fetch all statuses (Approved, Rejected, Pending_Approval) for client-side filtering
       const params = {
         page: 1,
         limit: 1000, // Get all responses for client-side filtering
-        status: 'all' // Always fetch all (Approved + Rejected) for comprehensive filtering
+        status: 'approved_rejected_pending' // Fetch all statuses (Approved, Rejected, Pending_Approval) for comprehensive filtering
       };
       
       const response = await surveyResponseAPI.getSurveyResponses(surveyId, params);
@@ -126,7 +151,7 @@ const ViewResponsesPage = () => {
     }
   }, [surveyId]);
 
-  // Add CSS to ensure full width
+  // Add CSS to ensure full width and DatePicker styling
   useEffect(() => {
     const style = document.createElement('style');
     style.textContent = `
@@ -139,6 +164,15 @@ const ViewResponsesPage = () => {
       .view-responses-page * {
         max-width: none !important;
       }
+      
+      /* React DatePicker Custom Styling */
+      .react-datepicker-wrapper {
+        width: 100%;
+      }
+      
+      .react-datepicker-popper {
+        z-index: 9999 !important;
+      }
     `;
     document.head.appendChild(style);
     
@@ -150,6 +184,117 @@ const ViewResponsesPage = () => {
   }, []);
 
 
+  // Get all ACs for the survey's target state
+  const getAllACsForState = () => {
+    let targetState = survey?.acAssignmentState;
+    
+    // If no state found, try to infer from responses
+    if (!targetState && responses.length > 0) {
+      const responseWithState = responses.find(r => r.state);
+      if (responseWithState?.state) {
+        targetState = responseWithState.state;
+      }
+    }
+    
+    // If still no state found, try to infer from AC names in responses
+    if (!targetState && responses.length > 0) {
+      const responseACs = responses.map(r => {
+        return r.assemblyConstituency || r.assemblyConstituencyName || r.ac || r.acName || r.constituency;
+      }).filter(Boolean);
+      
+      // Check each state to see if any of the response ACs match
+      for (const [stateName, stateData] of Object.entries(assemblyConstituencies.states || {})) {
+        const stateACNames = stateData.assemblyConstituencies?.map(ac => ac.acName) || [];
+        const matchingACs = responseACs.filter(ac => stateACNames.includes(ac));
+        
+        if (matchingACs.length > 0) {
+          targetState = stateName;
+          break;
+        }
+      }
+    }
+    
+    if (!targetState || !assemblyConstituencies.states) {
+      return [];
+    }
+    
+    const stateACs = assemblyConstituencies.states[targetState]?.assemblyConstituencies || [];
+    return stateACs.map(ac => ({
+      name: ac.acName,
+      numericCode: ac.numericCode
+    }));
+  };
+
+  // Get all AC objects for dropdown
+  const allACObjects = useMemo(() => {
+    return getAllACsForState();
+  }, [survey, responses, assemblyConstituencies]);
+
+  // Get all interviewer objects from responses
+  const allInterviewerObjects = useMemo(() => {
+    if (!responses || responses.length === 0) return [];
+
+    const interviewerMap = new Map();
+
+    responses.forEach(response => {
+      if (response.interviewer && 
+          (response.status === 'Approved' || 
+           response.status === 'Rejected' || 
+           response.status === 'Pending_Approval' ||
+           response.status === 'abandoned')) {
+        const interviewerName = `${response.interviewer.firstName || ''} ${response.interviewer.lastName || ''}`.trim();
+        
+        if (!interviewerMap.has(response.interviewer._id)) {
+          interviewerMap.set(response.interviewer._id, {
+            _id: response.interviewer._id,
+            name: interviewerName,
+            firstName: response.interviewer.firstName,
+            lastName: response.interviewer.lastName,
+            email: response.interviewer.email || '',
+            phone: response.interviewer.phone || '',
+            memberID: response.interviewer.memberId || response.interviewer.memberID || ''
+          });
+        }
+      }
+    });
+    
+    return Array.from(interviewerMap.values());
+  }, [responses]);
+
+  // Filter ACs based on search term
+  const filteredACs = useMemo(() => {
+    if (!acSearchTerm.trim()) {
+      return allACObjects;
+    }
+
+    const searchLower = acSearchTerm.toLowerCase();
+    return allACObjects.filter(ac => {
+      const nameMatch = ac.name?.toLowerCase().includes(searchLower);
+      const codeMatch = ac.numericCode?.toString().includes(searchLower);
+      return nameMatch || codeMatch;
+    });
+  }, [allACObjects, acSearchTerm]);
+
+  // Filter interviewers based on search term
+  const filteredInterviewers = useMemo(() => {
+    if (!allInterviewerObjects || allInterviewerObjects.length === 0) return [];
+    
+    if (!interviewerSearchTerm.trim()) {
+      return allInterviewerObjects;
+    }
+
+    const searchLower = interviewerSearchTerm.toLowerCase();
+    return allInterviewerObjects.filter(interviewer => {
+      const name = `${interviewer.firstName || ''} ${interviewer.lastName || ''}`.toLowerCase();
+      const nameMatch = name.includes(searchLower);
+      const emailMatch = interviewer.email?.toLowerCase().includes(searchLower);
+      const phoneMatch = interviewer.phone?.toLowerCase().includes(searchLower);
+      const memberIDMatch = interviewer.memberID?.toLowerCase().includes(searchLower);
+      
+      return nameMatch || emailMatch || phoneMatch || memberIDMatch;
+    });
+  }, [allInterviewerObjects, interviewerSearchTerm]);
+
   // Handle filter changes
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({
@@ -158,11 +303,63 @@ const ViewResponsesPage = () => {
     }));
   };
 
+  // Handle interviewer toggle
+  const handleInterviewerToggle = (interviewerId) => {
+    setFilters(prev => {
+      const currentIds = prev.interviewerIds || [];
+      const isSelected = currentIds.includes(interviewerId);
+      
+      return {
+        ...prev,
+        interviewerIds: isSelected
+          ? currentIds.filter(id => id !== interviewerId)
+          : [...currentIds, interviewerId]
+      };
+    });
+  };
+
+  // Handle interviewer mode toggle
+  const handleInterviewerModeToggle = (mode) => {
+    setFilters(prev => ({
+      ...prev,
+      interviewerMode: mode
+    }));
+  };
+
+  // Clear interviewer filters
+  const clearInterviewerFilters = () => {
+    setFilters(prev => ({
+      ...prev,
+      interviewerIds: []
+    }));
+    setInterviewerSearchTerm('');
+  };
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (interviewerDropdownRef.current && !interviewerDropdownRef.current.contains(event.target)) {
+        setShowInterviewerDropdown(false);
+      }
+      if (acDropdownRef.current && !acDropdownRef.current.contains(event.target)) {
+        setShowACDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
   // Clear all filters
   const clearFilters = () => {
     setFilters({
       search: '',
-      status: 'all', // Default to all (Approved + Rejected)
+      status: 'all',
+      dateRange: 'all',
+      startDate: '',
+      endDate: '',
       gender: '',
       ageMin: '',
       ageMax: '',
@@ -171,8 +368,12 @@ const ViewResponsesPage = () => {
       district: '',
       lokSabha: '',
       state: '',
-      interviewMode: ''
+      interviewMode: '',
+      interviewerIds: [],
+      interviewerMode: 'include'
     });
+    setInterviewerSearchTerm('');
+    setAcSearchTerm('');
   };
 
   // Helper function to get district from AC using assemblyConstituencies.json
@@ -1153,6 +1354,51 @@ const ViewResponsesPage = () => {
       const state = getStateFromGPS(response.location);
       const lokSabha = getLokSabhaFromAC(respondentInfo.ac);
 
+      // Date Range filter
+      if (filters.dateRange !== 'all') {
+        const responseDate = new Date(response.createdAt);
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        
+        if (filters.dateRange === 'custom') {
+          if (filters.startDate || filters.endDate) {
+            const startDate = filters.startDate ? new Date(filters.startDate) : null;
+            const endDate = filters.endDate ? new Date(filters.endDate) : null;
+            endDate?.setHours(23, 59, 59, 999); // Include full end date
+            
+            if (startDate && responseDate < startDate) return false;
+            if (endDate && responseDate > endDate) return false;
+          }
+        } else if (filters.dateRange === 'today') {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const tomorrow = new Date(today);
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          if (responseDate < today || responseDate >= tomorrow) return false;
+        } else if (filters.dateRange === 'week') {
+          const weekAgo = new Date(now);
+          weekAgo.setDate(weekAgo.getDate() - 7);
+          if (responseDate < weekAgo) return false;
+        } else if (filters.dateRange === 'month') {
+          const monthAgo = new Date(now);
+          monthAgo.setDate(monthAgo.getDate() - 30);
+          if (responseDate < monthAgo) return false;
+        }
+      }
+
+      // Interviewer filter
+      if (filters.interviewerIds && filters.interviewerIds.length > 0) {
+        const interviewerId = response.interviewer?._id;
+        const isIncluded = filters.interviewerIds.includes(interviewerId);
+        
+        if (filters.interviewerMode === 'include' && !isIncluded) {
+          return false;
+        }
+        if (filters.interviewerMode === 'exclude' && isIncluded) {
+          return false;
+        }
+      }
+
       // Search filter
       if (filters.search) {
         const searchTerm = filters.search.toLowerCase().trim();
@@ -1211,12 +1457,29 @@ const ViewResponsesPage = () => {
 
       // Status filter
       if (filters.status && filters.status !== 'all') {
-        // Filter by specific status
-        if (response.status !== filters.status) {
-          return false;
+        if (filters.status === 'approved_rejected_pending') {
+          // Show Approved, Rejected, and Pending_Approval
+          if (response.status !== 'Approved' && response.status !== 'Rejected' && response.status !== 'Pending_Approval') {
+            return false;
+          }
+        } else if (filters.status === 'approved_pending') {
+          // Show Approved and Pending_Approval
+          if (response.status !== 'Approved' && response.status !== 'Pending_Approval') {
+            return false;
+          }
+        } else if (filters.status === 'pending') {
+          // Show only Pending_Approval
+          if (response.status !== 'Pending_Approval') {
+            return false;
+          }
+        } else {
+          // Filter by specific status (Approved, Rejected, etc.)
+          if (response.status !== filters.status) {
+            return false;
+          }
         }
       } else {
-        // Default (status === 'all' or undefined): Show both Approved and Rejected
+        // Default (status === 'all'): Show both Approved and Rejected
         if (response.status !== 'Approved' && response.status !== 'Rejected') {
           return false;
         }
@@ -1225,6 +1488,36 @@ const ViewResponsesPage = () => {
       return true;
     });
   }, [originalResponses, filters]);
+
+  // Reset pagination to page 1 when filters change
+  // Use a serialized key to detect filter changes (handles arrays properly)
+  const filtersKey = useMemo(() => {
+    return JSON.stringify({
+      status: filters.status,
+      dateRange: filters.dateRange,
+      startDate: filters.startDate,
+      endDate: filters.endDate,
+      search: filters.search,
+      gender: filters.gender,
+      ageMin: filters.ageMin,
+      ageMax: filters.ageMax,
+      ac: filters.ac,
+      city: filters.city,
+      district: filters.district,
+      lokSabha: filters.lokSabha,
+      state: filters.state,
+      interviewMode: filters.interviewMode,
+      interviewerIds: filters.interviewerIds?.sort() || [], // Sort for consistent comparison
+      interviewerMode: filters.interviewerMode
+    });
+  }, [filters]);
+
+  useEffect(() => {
+    setTablePagination(prev => ({
+      ...prev,
+      currentPage: 1
+    }));
+  }, [filtersKey]);
 
   // Paginated responses for table
   const paginatedResponses = useMemo(() => {
@@ -1778,21 +2071,395 @@ const ViewResponsesPage = () => {
         {showFilters && (
           <div className="bg-white border-b border-gray-200 w-full">
             <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Status Filter */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Status
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                   <select
                     value={filters.status}
                     onChange={(e) => handleFilterChange('status', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
-                    <option value="all">All (Approved + Rejected)</option>
+                    <option value="all">Approved + Rejected</option>
+                    <option value="approved_rejected_pending">Approved + Rejected + Pending</option>
+                    <option value="approved_pending">Approved + Pending</option>
+                    <option value="pending">Pending</option>
                     <option value="Approved">Approved</option>
                     <option value="Rejected">Rejected</option>
                   </select>
+                </div>
+
+                {/* Date Range */}
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Date Range</label>
+                  <select
+                    value={filters.dateRange}
+                    onChange={(e) => {
+                      handleFilterChange('dateRange', e.target.value);
+                      // Clear custom dates when switching away from custom
+                      if (e.target.value !== 'custom') {
+                        handleFilterChange('startDate', '');
+                        handleFilterChange('endDate', '');
+                      }
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="all">All Time</option>
+                    <option value="today">Today</option>
+                    <option value="week">Last 7 Days</option>
+                    <option value="month">Last 30 Days</option>
+                    <option value="custom">Custom Range</option>
+                  </select>
+                  
+                  {/* Custom Date Range Picker */}
+                  {filters.dateRange === 'custom' && (
+                    <div className="mt-3 p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200 shadow-sm">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Calendar className="w-4 h-4 text-blue-600" />
+                        <span className="text-sm font-semibold text-gray-700">Select Date Range</span>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {/* Start Date */}
+                        <div className="relative">
+                          <label className="block text-xs font-semibold text-gray-700 mb-2">
+                            From Date
+                          </label>
+                          <div className="relative">
+                            <Calendar className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none z-10" />
+                            <DatePicker
+                              selected={filters.startDate ? new Date(filters.startDate) : null}
+                              onChange={(date) => {
+                                if (date) {
+                                  const dateStr = date.toISOString().split('T')[0];
+                                  handleFilterChange('startDate', dateStr);
+                                } else {
+                                  handleFilterChange('startDate', '');
+                                }
+                              }}
+                              selectsStart
+                              startDate={filters.startDate ? new Date(filters.startDate) : null}
+                              endDate={filters.endDate ? new Date(filters.endDate) : null}
+                              maxDate={filters.endDate ? new Date(filters.endDate) : new Date()}
+                              dateFormat="MMM dd, yyyy"
+                              placeholderText="Select start date"
+                              className="w-full pl-8 pr-10 py-2.5 bg-white border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium text-gray-700 shadow-sm transition-all hover:border-blue-400"
+                              showPopperArrow={false}
+                              popperClassName="react-datepicker-popper"
+                              calendarClassName="custom-calendar"
+                              isClearable
+                              clearButtonClassName="text-gray-400 hover:text-red-500 transition-colors"
+                            />
+                          </div>
+                          {filters.startDate && (
+                            <p className="mt-1.5 text-xs text-gray-500">
+                              {new Date(filters.startDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* End Date */}
+                        <div className="relative">
+                          <label className="block text-xs font-semibold text-gray-700 mb-2">
+                            To Date
+                          </label>
+                          <div className="relative">
+                            <Calendar className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none z-10" />
+                            <DatePicker
+                              selected={filters.endDate ? new Date(filters.endDate) : null}
+                              onChange={(date) => {
+                                if (date) {
+                                  const dateStr = date.toISOString().split('T')[0];
+                                  handleFilterChange('endDate', dateStr);
+                                } else {
+                                  handleFilterChange('endDate', '');
+                                }
+                              }}
+                              selectsEnd
+                              startDate={filters.startDate ? new Date(filters.startDate) : null}
+                              endDate={filters.endDate ? new Date(filters.endDate) : null}
+                              minDate={filters.startDate ? new Date(filters.startDate) : null}
+                              maxDate={new Date()}
+                              dateFormat="MMM dd, yyyy"
+                              placeholderText="Select end date"
+                              className="w-full pl-8 pr-10 py-2.5 bg-white border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium text-gray-700 shadow-sm transition-all hover:border-blue-400"
+                              showPopperArrow={false}
+                              popperClassName="react-datepicker-popper"
+                              calendarClassName="custom-calendar"
+                              isClearable
+                              clearButtonClassName="text-gray-400 hover:text-red-500 transition-colors"
+                            />
+                          </div>
+                          {filters.endDate && (
+                            <p className="mt-1.5 text-xs text-gray-500">
+                              {new Date(filters.endDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Date Range Summary */}
+                      {filters.startDate && filters.endDate && (
+                        <div className="mt-4 pt-4 border-t border-blue-200 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                            <span className="text-sm font-medium text-gray-700">
+                              {new Date(filters.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} - {new Date(filters.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              handleFilterChange('startDate', '');
+                              handleFilterChange('endDate', '');
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                            Clear Range
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Helper Text */}
+                      {(!filters.startDate || !filters.endDate) && (
+                        <div className="mt-3 pt-3 border-t border-blue-200">
+                          <p className="text-xs text-gray-500 flex items-center gap-1.5">
+                            <AlertCircle className="w-3.5 h-3.5" />
+                            {!filters.startDate && !filters.endDate 
+                              ? 'Select both start and end dates to filter responses'
+                              : !filters.startDate 
+                                ? 'Please select a start date'
+                                : 'Please select an end date'
+                            }
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Interview Mode */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Interview Mode</label>
+                  <select
+                    value={filters.interviewMode}
+                    onChange={(e) => handleFilterChange('interviewMode', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">All Modes</option>
+                    {getFilterOptions.interviewMode.map(mode => (
+                      <option key={mode} value={mode}>{mode}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Assembly Constituency - Modern Searchable Dropdown */}
+                <div className="relative" ref={acDropdownRef}>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Assembly Constituency
+                    {filters.ac && (
+                      <span className="text-xs font-normal text-gray-500 ml-1">
+                        (AC: {allACObjects.find(ac => ac.name === filters.ac)?.numericCode || ''})
+                      </span>
+                    )}
+                  </label>
+                  
+                  {/* Search Input */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <input
+                      type="text"
+                      placeholder={filters.ac ? filters.ac : "Search by AC name or code..."}
+                      value={filters.ac ? filters.ac : acSearchTerm}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setAcSearchTerm(value);
+                        setShowACDropdown(true);
+                        handleFilterChange('ac', ''); // Clear selection when typing
+                      }}
+                      onFocus={() => {
+                        setShowACDropdown(true);
+                        if (filters.ac) {
+                          setAcSearchTerm(filters.ac);
+                          handleFilterChange('ac', '');
+                        }
+                      }}
+                      className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                    {filters.ac && (
+                      <button
+                        onClick={() => {
+                          handleFilterChange('ac', '');
+                          setAcSearchTerm('');
+                          setShowACDropdown(false);
+                        }}
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  {showACDropdown && filteredACs.length > 0 && (
+                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                      {filteredACs.map(ac => {
+                        const isSelected = filters.ac === ac.name;
+                        return (
+                          <div
+                            key={ac.name}
+                            onClick={() => {
+                              handleFilterChange('ac', ac.name);
+                              setAcSearchTerm('');
+                              setShowACDropdown(false);
+                            }}
+                            className={`px-4 py-2 cursor-pointer hover:bg-gray-100 transition-colors ${
+                              isSelected ? 'bg-blue-50' : ''
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1">
+                                <div className="font-medium text-gray-900">{ac.name}</div>
+                                {ac.numericCode && (
+                                  <div className="text-xs text-gray-500">AC Code: {ac.numericCode}</div>
+                                )}
+                              </div>
+                              {isSelected && (
+                                <CheckCircle className="w-5 h-5 text-blue-600" />
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {showACDropdown && acSearchTerm && filteredACs.length === 0 && (
+                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg p-4 text-center text-gray-500 text-sm">
+                      No ACs found matching "{acSearchTerm}"
+                    </div>
+                  )}
+                </div>
+
+                {/* Interviewer - Modern Multi-Select Search */}
+                <div className="relative" ref={interviewerDropdownRef}>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Interviewer {filters.interviewerIds?.length > 0 && `(${filters.interviewerIds.length} selected)`}
+                  </label>
+                  
+                  {/* Search Input */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <input
+                      type="text"
+                      placeholder="Search by name, email, phone, or Member ID..."
+                      value={interviewerSearchTerm}
+                      onChange={(e) => {
+                        setInterviewerSearchTerm(e.target.value);
+                        setShowInterviewerDropdown(true);
+                      }}
+                      onFocus={() => setShowInterviewerDropdown(true)}
+                      className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                    {filters.interviewerIds?.length > 0 && (
+                      <button
+                        onClick={clearInterviewerFilters}
+                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        title="Clear all"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Include/Exclude Toggle */}
+                  {filters.interviewerIds?.length > 0 && (
+                    <div className="mt-2 flex gap-2">
+                      <button
+                        onClick={() => handleInterviewerModeToggle('include')}
+                        className={`flex-1 px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                          filters.interviewerMode === 'include'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        Include
+                      </button>
+                      <button
+                        onClick={() => handleInterviewerModeToggle('exclude')}
+                        className={`flex-1 px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                          filters.interviewerMode === 'exclude'
+                            ? 'bg-red-600 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        Exclude
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Selected Interviewers Chips */}
+                  {filters.interviewerIds?.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {filters.interviewerIds.map(interviewerId => {
+                        const interviewer = allInterviewerObjects.find(i => i._id === interviewerId);
+                        if (!interviewer) return null;
+                        return (
+                          <span
+                            key={interviewerId}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full"
+                          >
+                            {interviewer.name}
+                            <button
+                              onClick={() => handleInterviewerToggle(interviewerId)}
+                              className="hover:text-blue-600"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Dropdown Results */}
+                  {showInterviewerDropdown && filteredInterviewers.length > 0 && (
+                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                      {filteredInterviewers.map(interviewer => {
+                        const isSelected = filters.interviewerIds?.includes(interviewer._id);
+                        return (
+                          <div
+                            key={interviewer._id}
+                            onClick={() => {
+                              handleInterviewerToggle(interviewer._id);
+                            }}
+                            className={`px-4 py-2 cursor-pointer hover:bg-gray-100 transition-colors ${
+                              isSelected ? 'bg-blue-50' : ''
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1">
+                                <div className="font-medium text-gray-900">{interviewer.name}</div>
+                                <div className="text-xs text-gray-500 space-x-2">
+                                  {interviewer.email && <span>{interviewer.email}</span>}
+                                  {interviewer.phone && <span>• {interviewer.phone}</span>}
+                                  {interviewer.memberID && <span>• Member ID: {interviewer.memberID}</span>}
+                                </div>
+                              </div>
+                              {isSelected && (
+                                <CheckCircle className="w-5 h-5 text-blue-600" />
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {showInterviewerDropdown && interviewerSearchTerm && filteredInterviewers.length === 0 && (
+                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg p-4 text-center text-gray-500 text-sm">
+                      No interviewers found matching "{interviewerSearchTerm}"
+                    </div>
+                  )}
                 </div>
 
                 {/* Search */}
@@ -1852,22 +2519,6 @@ const ViewResponsesPage = () => {
                   </div>
                 </div>
 
-                {/* Assembly Constituency */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Assembly Constituency
-                  </label>
-                  <select
-                    value={filters.ac}
-                    onChange={(e) => handleFilterChange('ac', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="">All ACs</option>
-                    {getFilterOptions.ac.map(ac => (
-                      <option key={ac} value={ac}>{ac}</option>
-                    ))}
-                  </select>
-                </div>
 
                 {/* City */}
                 <div>
