@@ -2599,18 +2599,22 @@ const SurveyApprovals = () => {
                       )}
                       {selectedInterview.location && (
                         <>
-                          <div>
-                            <span className="text-gray-600">Location:</span>
-                            <span className="ml-2 font-medium">
-                              {selectedInterview.location.city}, {selectedInterview.location.state}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-gray-600">Coordinates:</span>
-                            <span className="ml-2 font-medium text-xs">
-                              {selectedInterview.location.latitude.toFixed(6)}, {selectedInterview.location.longitude.toFixed(6)}
-                            </span>
-                          </div>
+                          {(selectedInterview.location.city || selectedInterview.location.state) && (
+                            <div>
+                              <span className="text-gray-600">Location:</span>
+                              <span className="ml-2 font-medium">
+                                {selectedInterview.location.city ? `${selectedInterview.location.city}, ` : ''}{selectedInterview.location.state || 'N/A'}
+                              </span>
+                            </div>
+                          )}
+                          {selectedInterview.location.latitude && selectedInterview.location.longitude && (
+                            <div>
+                              <span className="text-gray-600">Coordinates:</span>
+                              <span className="ml-2 font-medium text-xs">
+                                {selectedInterview.location.latitude.toFixed(6)}, {selectedInterview.location.longitude.toFixed(6)}
+                              </span>
+                            </div>
+                          )}
                         </>
                       )}
                     </div>
