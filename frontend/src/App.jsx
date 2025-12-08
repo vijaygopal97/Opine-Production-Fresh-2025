@@ -22,6 +22,7 @@ import ViewResponsesPage from './pages/ViewResponsesPage';
 import SurveyReportsPage from './pages/SurveyReportsPage';
 import QCPerformancePage from './pages/QCPerformancePage';
 import QCBatchesPage from './pages/QCBatchesPage';
+import FindingsDashboard from './pages/FindingsDashboard';
 import PageTitleManager from './components/PageTitleManager';
 import './App.css';
 
@@ -112,6 +113,9 @@ function App() {
             
             {/* QC Batches Page */}
             <Route path="/company/surveys/:surveyId/qc-batches" element={<QCBatchesPage />} />
+            
+            {/* Findings Dashboard Page */}
+            <Route path="/company/surveys/:surveyId/findings" element={<FindingsDashboard />} />
             
             {/* Project Manager routes */}
             <Route path="/project-manager/survey-reports" element={<AdminDashboard />} />

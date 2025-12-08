@@ -29,7 +29,8 @@ import {
   Target,
   FileText,
   Zap,
-  TrendingUp
+  TrendingUp,
+  Brain
 } from 'lucide-react';
 import SurveyBuilder from './SurveyBuilder';
 import { surveyAPI } from '../../services/api';
@@ -192,6 +193,9 @@ const CompanySurveysManagement = () => {
     } else if (action === 'qc-batches') {
       // Navigate to QC batches page
       navigate(`/company/surveys/${surveyId}/qc-batches`);
+    } else if (action === 'findings') {
+      // Navigate to Findings Dashboard page
+      navigate(`/company/surveys/${surveyId}/findings`);
     } else {
       // Implement other survey actions
       // Action not implemented yet
@@ -624,6 +628,14 @@ const CompanySurveysManagement = () => {
                   >
                     <FileText className="w-4 h-4" />
                     <span>QC Batches</span>
+                  </button>
+                  <button
+                    onClick={() => handleSurveyAction(survey._id || survey.id, 'findings')}
+                    className="flex items-center space-x-1 px-3 py-1.5 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 transition-colors text-sm font-medium"
+                    title="View Findings"
+                  >
+                    <Brain className="w-4 h-4" />
+                    <span>Findings</span>
                   </button>
                   <button
                     onClick={() => setDeleteConfirm(survey._id || survey.id)}
