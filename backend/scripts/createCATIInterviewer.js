@@ -1,12 +1,12 @@
 /**
- * Script to create approved interviewer user: vijaytester1@gmail.com
+ * Script to create approved CATI interviewer user
  * 
  * This script creates an interviewer user with:
- * - Email: vijaytester1@gmail.com
- * - Password: 9958011332
+ * - Specified memberId, email, phone, and password
  * - Interview Mode: CATI (Telephonic interview)
  * - Complete profile data from reference user (68ebf124ab86ea29f3c0f1f8)
  * - Approved status
+ * - Properly hashed password using bcrypt
  */
 
 const mongoose = require('mongoose');
@@ -17,82 +17,67 @@ require('dotenv').config();
 // Reference user ID to copy data from
 const REFERENCE_USER_ID = '68ebf124ab86ea29f3c0f1f8';
 
-// Generate unique 6-digit memberId
-const generateMemberId = async () => {
-  let memberId;
-  let isUnique = false;
-  let attempts = 0;
-  const maxAttempts = 100;
-
-  while (!isUnique && attempts < maxAttempts) {
-    memberId = Math.floor(100000 + Math.random() * 900000).toString();
-    
-    // Check if this memberId already exists
-    const existingUser = await User.findOne({ memberId });
-    if (!existingUser) {
-      isUnique = true;
-    }
-    attempts++;
-  }
-
-  if (!isUnique) {
-    throw new Error('Failed to generate unique memberId after maximum attempts');
-  }
-
-  return memberId;
-};
-
 // Create interviewer user
-const createInterviewer = async () => {
+const createInterviewer = async (userData) => {
   try {
     // Connect to MongoDB
     const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017/opine';
     console.log('🔌 Connecting to MongoDB...');
     await mongoose.connect(mongoUri);
-    console.log('✅ Connected to MongoDB');
+    console.log('✅ Connected to MongoDB\n');
 
     // Fetch reference user to copy data from
-    console.log(`\n📋 Fetching reference user: ${REFERENCE_USER_ID}...`);
+    console.log(`📋 Fetching reference user: ${REFERENCE_USER_ID}...`);
     const referenceUser = await User.findById(REFERENCE_USER_ID);
     
     if (!referenceUser) {
       throw new Error(`Reference user ${REFERENCE_USER_ID} not found`);
     }
-    console.log(`✅ Found reference user: ${referenceUser.firstName} ${referenceUser.lastName}`);
-
-    // User data
-    const userData = {
-      firstName: 'Vijay',
-      lastName: 'Tester',
-      email: 'vijaytester1@gmail.com',
-      phone: '9958011332',
-      password: '9958011332'
-    };
+    console.log(`✅ Found reference user: ${referenceUser.firstName} ${referenceUser.lastName}\n`);
 
     // Check if user already exists
     let existingUser = await User.findOne({ 
       $or: [
         { email: userData.email.toLowerCase() },
-        { phone: userData.phone }
+        { phone: userData.phone },
+        { memberId: userData.memberId }
       ]
-    });
+    }).select('+password');
 
     if (existingUser) {
-      console.log(`⚠️  User already exists: ${userData.firstName} ${userData.lastName} (${userData.email})`);
+      console.log(`⚠️  User already exists:`);
+      console.log(`   Email: ${existingUser.email}`);
+      console.log(`   Phone: ${existingUser.phone}`);
+      console.log(`   MemberId: ${existingUser.memberId || 'N/A'}`);
       console.log(`   User ID: ${existingUser._id}`);
-      console.log(`   Updating existing user with CATI mode and correct settings...`);
+      console.log(`\n   Updating existing user with CATI mode and correct settings...\n`);
       
-      // Hash password first using bcrypt with salt rounds 12 (same as User model)
+      // Hash password using bcrypt with salt rounds 12 (same as User model)
       const salt = await bcrypt.genSalt(12);
       const hashedPassword = await bcrypt.hash(userData.password, salt);
       
+      // Validate and adjust memberId if needed (must be exactly 6 digits)
+      let memberId = userData.memberId;
+      if (memberId && memberId.length !== 6) {
+        if (memberId.length > 6) {
+          // Use last 6 digits if longer
+          memberId = memberId.slice(-6);
+          console.log(`⚠️  MemberId adjusted to 6 digits: ${memberId}\n`);
+        } else {
+          // Pad with zeros if shorter
+          memberId = memberId.padStart(6, '0');
+          console.log(`⚠️  MemberId padded to 6 digits: ${memberId}\n`);
+        }
+      }
+
       // Update the existing user using updateOne to ensure password is saved correctly
-      // This bypasses Mongoose hooks but ensures the password is properly hashed
       await User.updateOne(
         { _id: existingUser._id },
         {
           $set: {
-            email: userData.email.toLowerCase(), // Update email to match requested email
+            email: userData.email.toLowerCase(),
+            phone: userData.phone,
+            memberId: memberId,
             interviewModes: 'CATI (Telephonic interview)',
             password: hashedPassword, // Manually hashed password
             status: 'active',
@@ -120,9 +105,10 @@ const createInterviewer = async () => {
         if (!retryValid) {
           throw new Error('Failed to set password correctly');
         }
+        console.log('✅ Password retry successful\n');
       }
       
-      // Update interviewer profile if it exists, otherwise create it
+      // Update interviewer profile
       if (!existingUser.interviewerProfile) {
         existingUser.interviewerProfile = {};
       }
@@ -161,7 +147,9 @@ const createInterviewer = async () => {
           }
         });
         // Update bank account holder name
-        existingUser.interviewerProfile.bankAccountHolderName = `${userData.firstName.toUpperCase()} ${userData.lastName.toUpperCase()}`;
+        const firstName = existingUser.firstName || 'User';
+        const lastName = existingUser.lastName || 'Name';
+        existingUser.interviewerProfile.bankAccountHolderName = `${firstName.toUpperCase()} ${lastName.toUpperCase()}`;
       }
       
       // Copy other missing fields from reference user
@@ -184,7 +172,7 @@ const createInterviewer = async () => {
       const finalUser = await User.findById(existingUser._id).select('+password');
       const finalPasswordCheck = await finalUser.comparePassword(userData.password);
       
-      console.log(`\n✅ Updated user: ${userData.firstName} ${userData.lastName} (${finalUser.email})`);
+      console.log(`✅ Updated user: ${finalUser.firstName || 'N/A'} ${finalUser.lastName || 'N/A'} (${finalUser.email})`);
       console.log(`   MemberId: ${finalUser.memberId || 'N/A'}`);
       console.log(`   User ID: ${finalUser._id}`);
       console.log(`   Interview Mode: ${finalUser.interviewModes}`);
@@ -193,30 +181,48 @@ const createInterviewer = async () => {
       
       console.log('\n📋 Login Credentials:');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log(`Email: ${userData.email}`);
+      console.log(`Email: ${finalUser.email}`);
       console.log(`Password: ${userData.password}`);
-      console.log(`Phone: ${userData.phone}`);
+      console.log(`Phone: ${finalUser.phone}`);
+      console.log(`MemberId: ${finalUser.memberId}`);
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
       await mongoose.disconnect();
-      return { success: true, user: existingUser, memberId: existingUser.memberId, isUpdate: true };
+      return { success: true, user: finalUser, memberId: finalUser.memberId, isUpdate: true };
     }
 
-    // Generate memberId
-    const memberId = await generateMemberId();
-    console.log(`📝 Generated memberId: ${memberId}`);
+    // Validate and adjust memberId if needed (must be exactly 6 digits)
+    let memberId = userData.memberId;
+    if (memberId && memberId.length !== 6) {
+      if (memberId.length > 6) {
+        // Use last 6 digits if longer
+        memberId = memberId.slice(-6);
+        console.log(`⚠️  MemberId adjusted to 6 digits: ${memberId}\n`);
+      } else {
+        // Pad with zeros if shorter
+        memberId = memberId.padStart(6, '0');
+        console.log(`⚠️  MemberId padded to 6 digits: ${memberId}\n`);
+      }
+    }
 
-    // Copy data from reference user, using provided data where available
+    // Create new user
+    console.log(`📝 Creating new user with memberId: ${memberId}\n`);
+
+    // Hash password first
+    const salt = await bcrypt.genSalt(12);
+    const hashedPassword = await bcrypt.hash(userData.password, salt);
+
+    // Create user object
     const newUser = new User({
-      firstName: userData.firstName,
-      lastName: userData.lastName,
+      firstName: userData.firstName || 'CATI',
+      lastName: userData.lastName || 'Interviewer',
       email: userData.email.toLowerCase(),
       phone: userData.phone,
-      password: userData.password, // Plain password - will be hashed by pre-save hook (for new users)
+      password: hashedPassword, // Manually hashed password
       isEmailVerified: referenceUser.isEmailVerified || false,
       isPhoneVerified: referenceUser.isPhoneVerified || false,
       userType: 'interviewer',
-      interviewModes: 'CATI (Telephonic interview)', // CATI mode as requested
+      interviewModes: 'CATI (Telephonic interview)',
       canSelectMode: referenceUser.canSelectMode || false,
       company: referenceUser.company || new mongoose.Types.ObjectId('68d33a0cd5e4634e58c4e678'),
       companyCode: referenceUser.companyCode || 'TEST001',
@@ -287,7 +293,6 @@ const createInterviewer = async () => {
         certificationStatus: 'not_started'
       },
       interviewerProfile: {
-        // Copy from reference user, but update name fields
         age: referenceUser.interviewerProfile?.age || 28,
         gender: referenceUser.interviewerProfile?.gender || 'male',
         languagesSpoken: referenceUser.interviewerProfile?.languagesSpoken || ['Hindi', 'English'],
@@ -321,7 +326,7 @@ const createInterviewer = async () => {
           ? referenceUser.interviewerProfile.agreesToRemuneration 
           : true,
         bankAccountNumber: referenceUser.interviewerProfile?.bankAccountNumber || '786897980',
-        bankAccountHolderName: `${userData.firstName.toUpperCase()} ${userData.lastName.toUpperCase()}`,
+        bankAccountHolderName: `${(userData.firstName || 'CATI').toUpperCase()} ${(userData.lastName || 'INTERVIEWER').toUpperCase()}`,
         bankName: referenceUser.interviewerProfile?.bankName || 'HDFC',
         bankIfscCode: referenceUser.interviewerProfile?.bankIfscCode || 'HDFC0001234',
         bankDocumentUpload: referenceUser.interviewerProfile?.bankDocumentUpload || 'bankDocumentUpload-1764630178675-881719772.png',
@@ -346,7 +351,7 @@ const createInterviewer = async () => {
       assignedTeamMembers: []
     });
 
-    // Save user - this will trigger the pre-save hook to hash the password
+    // Save user
     await newUser.save({ runValidators: false });
     
     // Verify password was hashed correctly
@@ -356,22 +361,22 @@ const createInterviewer = async () => {
     if (!passwordValid) {
       console.log('⚠️  Warning: Password verification failed. Manually hashing...');
       // Manually hash and update if pre-save hook didn't work
-      const salt = await bcrypt.genSalt(12);
-      const hashedPassword = await bcrypt.hash(userData.password, salt);
+      const retrySalt = await bcrypt.genSalt(12);
+      const retryHashedPassword = await bcrypt.hash(userData.password, retrySalt);
       await User.updateOne(
         { _id: savedUser._id },
-        { $set: { password: hashedPassword } }
+        { $set: { password: retryHashedPassword } }
       );
       const retryUser = await User.findById(savedUser._id).select('+password');
       const retryValid = await retryUser.comparePassword(userData.password);
       if (!retryValid) {
         throw new Error('Failed to set password correctly');
       }
-      console.log('✅ Password manually set and verified');
+      console.log('✅ Password manually set and verified\n');
     }
     
-    console.log(`\n✅ Created user: ${userData.firstName} ${userData.lastName} (${savedUser.email})`);
-    console.log(`   MemberId: ${memberId}`);
+    console.log(`✅ Created user: ${savedUser.firstName} ${savedUser.lastName} (${savedUser.email})`);
+    console.log(`   MemberId: ${savedUser.memberId}`);
     console.log(`   User ID: ${savedUser._id}`);
     console.log(`   Interview Mode: ${savedUser.interviewModes}`);
     console.log(`   Status: ${savedUser.status}`);
@@ -379,15 +384,16 @@ const createInterviewer = async () => {
     
     console.log('\n📋 Login Credentials:');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log(`Email: ${userData.email}`);
+    console.log(`Email: ${savedUser.email}`);
     console.log(`Password: ${userData.password}`);
-    console.log(`Phone: ${userData.phone}`);
+    console.log(`Phone: ${savedUser.phone}`);
+    console.log(`MemberId: ${savedUser.memberId}`);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
     await mongoose.disconnect();
-    return { success: true, user: newUser, memberId: memberId };
+    return { success: true, user: savedUser, memberId: savedUser.memberId };
   } catch (error) {
-    console.error(`❌ Error creating user:`, error.message);
+    console.error(`❌ Error:`, error.message);
     if (mongoose.connection.readyState === 1) {
       await mongoose.disconnect();
     }
@@ -398,13 +404,23 @@ const createInterviewer = async () => {
 // Main execution
 const main = async () => {
   try {
-    const result = await createInterviewer();
+    // User data
+    const userData = {
+      memberId: '1177007',
+      email: '1177007@gmail.com',
+      phone: '9958011332',
+      password: '9958011332', // Password same as phone number
+      firstName: 'CATI',
+      lastName: 'Interviewer'
+    };
+
+    const result = await createInterviewer(userData);
     
     if (result.success) {
       console.log('✅ Script completed successfully!');
       process.exit(0);
     } else {
-      console.log('❌ Script failed:', result.message || result.error);
+      console.log('❌ Script failed:', result.error);
       process.exit(1);
     }
   } catch (error) {
@@ -418,4 +434,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { createInterviewer, generateMemberId };
+module.exports = { createInterviewer };

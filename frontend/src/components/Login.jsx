@@ -43,13 +43,13 @@ const Login = () => {
       errors.push('Email or Member ID is required');
     }
 
-    // Validate email format only if it's not a 6-digit number (memberId)
+    // Validate email format only if it's not a memberId (any digits)
     if (formData.email.trim()) {
-      const isMemberId = /^\d{6}$/.test(formData.email.trim());
+      const isMemberId = /^\d+$/.test(formData.email.trim());
       if (!isMemberId) {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(formData.email.trim())) {
-          errors.push('Please provide a valid email address or 6-digit Member ID');
+          errors.push('Please provide a valid email address or Member ID');
         }
       }
     }
@@ -170,11 +170,11 @@ const Login = () => {
                   value={formData.email}
                   onChange={handleChange}
                   className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="your.email@example.com or 123456"
+                  placeholder="your.email@example.com or Member ID"
                   required
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Enter your email address or 6-digit Member ID
+                  Enter your email address or Member ID
                 </p>
               </div>
 

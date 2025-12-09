@@ -144,12 +144,12 @@ exports.validateLogin = [
     .notEmpty()
     .withMessage('Email or Member ID is required')
     .custom((value) => {
-      // Allow either email format or 6-digit memberId
+      // Allow either email format or memberId (any digits)
       const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-      const isMemberId = /^\d{6}$/.test(value);
+      const isMemberId = /^\d+$/.test(value);
       
       if (!isEmail && !isMemberId) {
-        throw new Error('Please provide a valid email address or 6-digit Member ID');
+        throw new Error('Please provide a valid email address or Member ID');
       }
       return true;
     }),

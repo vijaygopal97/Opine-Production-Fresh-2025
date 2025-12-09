@@ -36,7 +36,7 @@ const userSchema = new mongoose.Schema({
     unique: true,
     sparse: true, // Allow null values but ensure uniqueness when present
     trim: true,
-    match: [/^\d{6}$/, 'Member ID must be exactly 6 digits'],
+    match: [/^\d+$/, 'Member ID must contain only digits'], // Allow any length of digits
     index: true
   },
 

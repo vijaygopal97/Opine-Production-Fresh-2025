@@ -305,8 +305,8 @@ exports.login = async (req, res) => {
     }
 
     // Find user by email or memberId and include password
-    // Check if it's a 6-digit number (memberId) or email
-    const isMemberId = /^\d{6}$/.test(loginIdentifier);
+    // Check if it's a memberId (any digits) or email
+    const isMemberId = /^\d+$/.test(loginIdentifier);
     const query = isMemberId 
       ? { memberId: loginIdentifier }
       : { email: loginIdentifier.toLowerCase() };
