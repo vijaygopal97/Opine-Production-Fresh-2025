@@ -533,7 +533,19 @@ surveyResponseSchema.statics.createCompleteResponse = async function(data) {
   const answeredQuestions = responses.filter(r => !r.isSkipped && r.response !== null && r.response !== undefined && r.response !== '').length;
   const skippedQuestions = responses.filter(r => r.isSkipped).length;
   const completionPercentage = totalQuestions > 0 ? Math.round((answeredQuestions / totalQuestions) * 100) : 0;
-  const totalTimeSpent = Math.round((endTime - startTime) / 1000); // Convert to seconds
+  
+  // CRITICAL: Use totalTimeSpent from data if provided (for offline synced interviews)
+  // Otherwise calculate from startTime and endTime (for online interviews)
+  let totalTimeSpent;
+  if (data.totalTimeSpent !== null && data.totalTimeSpent !== undefined) {
+    // Use provided totalTimeSpent (for offline synced interviews)
+    totalTimeSpent = Math.round(Number(data.totalTimeSpent));
+    console.log(`✅ Using totalTimeSpent from data: ${totalTimeSpent} seconds (${Math.floor(totalTimeSpent / 60)} minutes)`);
+  } else {
+    // Calculate from timestamps (for online interviews)
+    totalTimeSpent = Math.round((endTime - startTime) / 1000); // Convert to seconds
+    console.log(`✅ Calculated totalTimeSpent from timestamps: ${totalTimeSpent} seconds (${Math.floor(totalTimeSpent / 60)} minutes)`);
+  }
 
   // Generate unique response ID
   const responseId = await generateUniqueResponseId(this);

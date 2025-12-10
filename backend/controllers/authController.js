@@ -296,8 +296,14 @@ exports.login = async (req, res) => {
     const { email, password } = req.body;
     const loginIdentifier = email; // Can be email or memberId
 
+    console.log('🔐 Login attempt:', { 
+      loginIdentifier: loginIdentifier ? (loginIdentifier.length > 0 ? 'provided' : 'empty') : 'missing',
+      hasPassword: !!password 
+    });
+
     // Validate required fields
     if (!loginIdentifier || !password) {
+      console.log('❌ Login failed: Missing credentials');
       return res.status(400).json({
         success: false,
         message: 'Please provide email/member ID and password'
@@ -314,11 +320,20 @@ exports.login = async (req, res) => {
     const user = await User.findOne(query).select('+password').populate('company', 'companyName companyCode status');
 
     if (!user) {
+      console.log('❌ Login failed: User not found', { query, isMemberId });
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
+
+    console.log('✅ User found:', { 
+      userId: user._id, 
+      email: user.email, 
+      userType: user.userType, 
+      status: user.status,
+      companyStatus: user.company?.status 
+    });
 
     // Check if account is locked
     if (user.isLocked) {
@@ -331,6 +346,7 @@ exports.login = async (req, res) => {
     // Check password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
+      console.log('❌ Login failed: Invalid password', { userId: user._id });
       await user.incLoginAttempts();
       return res.status(401).json({
         success: false,
@@ -338,8 +354,11 @@ exports.login = async (req, res) => {
       });
     }
 
+    console.log('✅ Password validated successfully');
+
     // Check if user is active
     if (user.status !== 'active') {
+      console.log('❌ Login failed: User not active', { userId: user._id, status: user.status });
       return res.status(403).json({
         success: false,
         message: `Account is ${user.status}. Please contact support.`
@@ -348,6 +367,11 @@ exports.login = async (req, res) => {
 
     // Check if company is active (for non-super-admin users)
     if (user.userType !== 'super_admin' && user.company && user.company.status !== 'active') {
+      console.log('❌ Login failed: Company not active', { 
+        userId: user._id, 
+        companyId: user.company._id, 
+        companyStatus: user.company.status 
+      });
       return res.status(403).json({
         success: false,
         message: 'Your company account is not active. Please contact support.'
@@ -379,6 +403,8 @@ exports.login = async (req, res) => {
       createdAt: user.createdAt
     };
 
+    console.log('✅ Login successful:', { userId: user._id, userType: user.userType });
+
     res.status(200).json({
       success: true,
       message: 'Login successful',
@@ -389,7 +415,8 @@ exports.login = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('❌ Login error:', error);
+    console.error('Error stack:', error.stack);
     res.status(500).json({
       success: false,
       message: 'Server error during login',

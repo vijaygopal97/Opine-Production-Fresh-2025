@@ -1,3 +1,25 @@
+const fs = require('fs');
+const path = require('path');
+
+// Read .env file and parse it
+const envPath = path.join(__dirname, 'backend', '.env');
+let envVars = {};
+
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, 'utf8');
+  envContent.split('\n').forEach(line => {
+    const trimmedLine = line.trim();
+    if (trimmedLine && !trimmedLine.startsWith('#')) {
+      const [key, ...valueParts] = trimmedLine.split('=');
+      if (key && valueParts.length > 0) {
+        const value = valueParts.join('=').trim();
+        // Remove quotes if present
+        envVars[key.trim()] = value.replace(/^["']|["']$/g, '');
+      }
+    }
+  });
+}
+
 module.exports = {
   apps: [
     {
@@ -9,8 +31,12 @@ module.exports = {
       watch: false,
       max_memory_restart: '1G',
       env: {
-        NODE_ENV: 'development',
-        PORT: 5000
+        NODE_ENV: envVars.NODE_ENV || 'development',
+        PORT: envVars.PORT || 5000,
+        JWT_SECRET: envVars.JWT_SECRET || 'your-secret-key',
+        MONGODB_URI: envVars.MONGODB_URI,
+        DB_NAME: envVars.DB_NAME,
+        ...envVars // Spread all other env vars
       },
       error_file: '../logs/backend-error.log',
       out_file: '../logs/backend-out.log',

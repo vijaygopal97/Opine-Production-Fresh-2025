@@ -459,8 +459,20 @@ const completeInterview = async (req, res) => {
     }
 
     // Calculate final statistics
-    const endTime = new Date();
-    const totalTimeSpent = Math.round((endTime - session.startTime) / 1000);
+    // CRITICAL: For offline synced interviews, use totalTimeSpent from metadata if provided
+    // This ensures correct duration for interviews that were conducted offline
+    const endTime = metadata?.endTime ? new Date(metadata.endTime) : new Date();
+    let totalTimeSpent;
+    
+    if (metadata?.totalTimeSpent !== null && metadata?.totalTimeSpent !== undefined) {
+      // Use duration from metadata (for offline synced interviews)
+      totalTimeSpent = Math.round(Number(metadata.totalTimeSpent));
+      console.log(`✅ Using totalTimeSpent from metadata: ${totalTimeSpent} seconds (${Math.floor(totalTimeSpent / 60)} minutes)`);
+    } else {
+      // Calculate from session startTime (for online interviews)
+      totalTimeSpent = Math.round((endTime - session.startTime) / 1000);
+      console.log(`✅ Calculated totalTimeSpent from session: ${totalTimeSpent} seconds (${Math.floor(totalTimeSpent / 60)} minutes)`);
+    }
 
     // Extract OldinterviewerID from responses (for survey 68fd1915d41841da463f0d46)
     let oldInterviewerID = null;
@@ -475,12 +487,19 @@ const completeInterview = async (req, res) => {
     }
 
     // Create complete survey response
+    // CRITICAL: Use startTime from metadata if provided (for offline synced interviews)
+    // Otherwise use session.startTime (for online interviews)
+    const actualStartTime = metadata?.startTime ? new Date(metadata.startTime) : session.startTime;
+    
+    console.log(`📊 Creating survey response - startTime: ${actualStartTime.toISOString()}, endTime: ${endTime.toISOString()}, totalTimeSpent: ${totalTimeSpent} seconds`);
+    
     const surveyResponse = await SurveyResponse.createCompleteResponse({
       survey: session.survey._id,
       interviewer: session.interviewer,
       sessionId: session.sessionId,
-      startTime: session.startTime,
-      endTime,
+      startTime: actualStartTime, // Use actual start time from metadata if available
+      endTime, // Use end time from metadata if available, otherwise current time
+      totalTimeSpent: totalTimeSpent, // CRITICAL: Pass calculated totalTimeSpent (uses metadata value if available)
       responses,
       interviewMode: session.interviewMode,
       deviceInfo: session.deviceInfo,
@@ -2284,80 +2303,69 @@ const getLastCatiSetNumber = async (req, res) => {
       });
     }
 
-    // PROFESSIONAL BALANCED ROTATION: Count completed responses per set and pick the least used one
-    // This ensures even distribution across all sets
+    // SIMPLE ROTATION: Alternate between sets based on last used set
+    // If last was Set 1, next is Set 2; if last was Set 2, next is Set 1
     const SetData = require('../models/SetData');
     
-    // Count completed CATI responses for each set using SetData (most reliable)
-    const setCounts = {};
-    for (const setNum of setArray) {
-      const count = await SetData.countDocuments({
-        survey: new mongoose.Types.ObjectId(surveyId),
-        interviewMode: 'cati',
-        setNumber: setNum
-      });
-      setCounts[setNum] = count || 0;
-    }
-    
-    console.log(`🔵 Set usage counts for survey ${surveyId}:`, setCounts);
-    
-    // Find the minimum count
-    const minCount = Math.min(...Object.values(setCounts));
-    
-    // Find all sets with the minimum count (least used sets)
-    const leastUsedSets = setArray.filter(setNum => setCounts[setNum] === minCount);
-    
-    console.log(`🔵 Least used sets (count: ${minCount}):`, leastUsedSets);
-    
-    // Get last set data for round-robin logic (needed for tie-breaking)
+    // Get the last set number used for this survey (most recent completed CATI interview)
+    // CRITICAL: Query by survey ID and interviewMode='cati', sorted by most recent
     const lastSetData = await SetData.findOne({
       survey: new mongoose.Types.ObjectId(surveyId),
       interviewMode: 'cati'
     })
     .sort({ createdAt: -1 })
-    .select('setNumber')
+    .select('setNumber createdAt')
     .lean();
+    
+    console.log(`🔵 SetData query result for survey ${surveyId}:`, lastSetData);
     
     const lastSetNumber = lastSetData && lastSetData.setNumber !== null && lastSetData.setNumber !== undefined 
       ? Number(lastSetData.setNumber) 
       : null;
     
+    console.log(`🔵 Last set number used for survey ${surveyId}:`, lastSetNumber);
+    console.log(`🔵 Available sets:`, setArray);
+    
+    // Debug: Check all SetData entries for this survey
+    const allSetData = await SetData.find({
+      survey: new mongoose.Types.ObjectId(surveyId),
+      interviewMode: 'cati'
+    })
+    .sort({ createdAt: -1 })
+    .select('setNumber createdAt')
+    .limit(5)
+    .lean();
+    console.log(`🔵 Last 5 SetData entries for survey ${surveyId}:`, allSetData);
+    
     let nextSetNumber;
     
-    if (leastUsedSets.length === 1) {
-      // Only one set has the minimum count - use it
-      nextSetNumber = leastUsedSets[0];
-      console.log(`🔵 Only one least-used set found: ${nextSetNumber}`);
+    if (lastSetNumber === null) {
+      // No previous set data - this is the first interview, use Set 1 (first set)
+      nextSetNumber = setArray[0];
+      console.log(`🔵 No previous set data - using first set: ${nextSetNumber}`);
     } else {
-      // Multiple sets have the same minimum count - use round-robin based on last used set
-      if (lastSetNumber !== null) {
-        const lastSetIndex = leastUsedSets.indexOf(lastSetNumber);
-        
-        if (lastSetIndex !== -1) {
-          // Last set is one of the least used - rotate to next one in the list
-          const nextIndex = (lastSetIndex + 1) % leastUsedSets.length;
-          nextSetNumber = leastUsedSets[nextIndex];
-          console.log(`🔵 Round-robin among least-used sets - Last: ${lastSetNumber}, Next: ${nextSetNumber}`);
-        } else {
-          // Last set is not in least-used sets - pick first least-used set
-          nextSetNumber = leastUsedSets[0];
-          console.log(`🔵 Last set ${lastSetNumber} not in least-used sets, picking first: ${nextSetNumber}`);
-        }
+      // Find the index of the last set in the sorted array
+      const lastSetIndex = setArray.indexOf(lastSetNumber);
+      
+      if (lastSetIndex === -1) {
+        // Last set is not in available sets (shouldn't happen, but handle gracefully)
+        nextSetNumber = setArray[0];
+        console.log(`🔵 Last set ${lastSetNumber} not found in available sets - using first set: ${nextSetNumber}`);
       } else {
-        // No previous set data - pick first least-used set
-        nextSetNumber = leastUsedSets[0];
-        console.log(`🔵 No previous set data, picking first least-used set: ${nextSetNumber}`);
+        // Rotate to the next set in the array (circular rotation)
+        const nextIndex = (lastSetIndex + 1) % setArray.length;
+        nextSetNumber = setArray[nextIndex];
+        console.log(`🔵 Simple rotation - Last: ${lastSetNumber} (index ${lastSetIndex}), Next: ${nextSetNumber} (index ${nextIndex})`);
       }
     }
     
-    console.log(`🔵 Balanced rotation result - Last: ${lastSetNumber}, Next: ${nextSetNumber}, Set counts:`, setCounts);
+    console.log(`🔵 Rotation result - Last: ${lastSetNumber}, Next: ${nextSetNumber}`);
 
     res.status(200).json({
       success: true,
       data: {
         lastSetNumber: lastSetNumber,
-        nextSetNumber: nextSetNumber,
-        setCounts: setCounts // Include counts for debugging/monitoring
+        nextSetNumber: nextSetNumber
       }
     });
 

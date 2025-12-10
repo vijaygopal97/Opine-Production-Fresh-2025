@@ -1,125 +1,146 @@
 /**
- * Script to bulk create approved CATI interviewer users from CSV
+ * Script to bulk create approved CAPI interviewer users with AC assignments
  * 
- * CSV Format:
- * - Column 1: teleform_user_id (memberId)
- * - Column 2: name (full name - split into firstName and lastName)
- * - Column 3: mobile_number (phone and password)
- * 
- * Creates users with:
- * - memberId from column 1
- * - firstName and lastName from column 2
- * - phone and password from column 3
- * - email: {memberId}@gmail.com
- * - userType: interviewer
- * - companyCode: TEST001
- * - interviewModes: CATI (Telephonic interview)
- * - Approved status
- * - Assigned to survey 68fd1915d41841da463f0d46
+ * Creates CAPI interviewers with:
+ * - Interview Mode: CAPI (Face To Face)
+ * - AC (Assembly Constituency) assignments
+ * - State: West Bengal
+ * - Assigned to survey: 68fd1915d41841da463f0d46
  */
 
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
-const fs = require('fs');
-const path = require('path');
 const User = require('../models/User');
 const Survey = require('../models/Survey');
 require('dotenv').config();
 
-// Reference user ID to copy data from
 const REFERENCE_USER_ID = '68ebf124ab86ea29f3c0f1f8';
 const SURVEY_ID = '68fd1915d41841da463f0d46';
 const COMPANY_CODE = 'TEST001';
-const CSV_PATH = '/var/www/opine/frontend/src/data/CATI Caller list.csv';
+const STATE = 'West Bengal';
+const COUNTRY = 'India';
 
-// Parse CSV file
-const parseCSV = (filePath) => {
-  try {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const lines = content.split('\n').filter(line => line.trim());
-    
-    // Skip header row
-    const dataLines = lines.slice(1);
-    
-    const users = [];
-    for (const line of dataLines) {
-      if (!line.trim()) continue;
-      
-      // Parse CSV line (handle commas in names)
-      const parts = [];
-      let currentPart = '';
-      let inQuotes = false;
-      
-      for (let i = 0; i < line.length; i++) {
-        const char = line[i];
-        if (char === '"') {
-          inQuotes = !inQuotes;
-        } else if (char === ',' && !inQuotes) {
-          parts.push(currentPart.trim());
-          currentPart = '';
-        } else {
-          currentPart += char;
-        }
-      }
-      parts.push(currentPart.trim());
-      
-      if (parts.length >= 3) {
-        const teleformUserId = parts[0].trim();
-        const name = parts[1].trim();
-        const mobileNumber = parts[2].trim();
-        
-        if (teleformUserId && name && mobileNumber) {
-          // Split name into firstName and lastName
-          const nameParts = name.split(/\s+/);
-          const firstName = nameParts[0] || 'CATI';
-          const lastName = nameParts.slice(1).join(' ') || 'Interviewer';
-          
-          users.push({
-            memberId: teleformUserId,
-            firstName: firstName,
-            lastName: lastName,
-            phone: mobileNumber,
-            password: mobileNumber,
-            email: `${teleformUserId}@gmail.com`
-          });
-        }
-      }
-    }
-    
-    return users;
-  } catch (error) {
-    throw new Error(`Error parsing CSV: ${error.message}`);
+// Interviewer data from WhatsApp messages
+const interviewersData = [
+  {
+    name: 'Shamsher Alam',
+    phone: '7541058361',
+    email: 'shamsheralam548744@gmail.com',
+    location: 'Howrah Madhya'
+  },
+  {
+    name: 'Naim SK',
+    phone: '8515961315',
+    email: 'noimsk453@gmail.com',
+    location: 'Howrah Madhya'
+  },
+  {
+    name: 'Kantilal pradhan',
+    phone: '8597269224',
+    email: 'lalprodhan@gmail.com',
+    location: 'Howrah Madhya'
+  },
+  {
+    name: 'Kanhaiya Kumar',
+    phone: '7004615861',
+    email: 'kumarkanhaiya567@gmail.com',
+    location: 'Howrah Madhya'
+  },
+  {
+    name: 'Saheb SK',
+    phone: '7700036321',
+    email: 'sarif9987sk@gmail.com',
+    location: 'Howrah Madhya'
+  },
+  {
+    name: 'Sarif Sk',
+    phone: '8536073269',
+    email: 'sarifsk2277@gmail.com',
+    location: 'Howrah Madhya' // Not mentioned but likely same as others
+  },
+  {
+    name: 'Murshad alam',
+    phone: '6296708215',
+    email: 'nsk847195@gmail.com',
+    location: 'Howrah Madhya'
+  },
+  {
+    name: 'Md. Akil',
+    phone: '8768128791',
+    email: 'akil99870md@gmail.com',
+    location: 'Howrah Madhya'
+  },
+  {
+    name: 'Sahil SK',
+    phone: '7384832352',
+    email: 'moimsk56@gmail.com',
+    location: 'Howrah Madhya'
+  },
+  {
+    name: 'Moim SK',
+    phone: '7699929833',
+    email: 'moimsk09@gmail.com',
+    location: 'Howrah Madhya'
   }
+];
+
+// Generate unique member ID (starting from 5000 to avoid conflicts)
+let memberIdCounter = 5000;
+
+// Helper function to find next available member ID
+const findNextAvailableMemberId = async (startId) => {
+  let candidateId = startId;
+  let exists = true;
+  
+  while (exists) {
+    const existingUser = await User.findOne({ memberId: String(candidateId) });
+    if (!existingUser) {
+      exists = false;
+    } else {
+      candidateId++;
+    }
+  }
+  
+  return String(candidateId);
 };
 
 // Create interviewer user
 const createInterviewer = async (userData, referenceUser, assignedBy) => {
   try {
+    // Split name into firstName and lastName
+    const nameParts = userData.name.trim().split(/\s+/);
+    const firstName = nameParts[0] || 'CAPI';
+    const lastName = nameParts.slice(1).join(' ') || 'Interviewer';
+    
+    // Generate unique member ID
+    const startId = memberIdCounter++;
+    const memberId = await findNextAvailableMemberId(startId);
+    
     // Check if user already exists
     const existingUser = await User.findOne({ 
       $or: [
         { email: userData.email.toLowerCase() },
         { phone: userData.phone },
-        { memberId: userData.memberId }
+        { memberId: memberId }
       ]
     }).select('+password');
 
     if (existingUser) {
       // Update existing user
       const salt = await bcrypt.genSalt(12);
-      const hashedPassword = await bcrypt.hash(userData.password, salt);
+      const hashedPassword = await bcrypt.hash(userData.phone, salt);
       
       await User.updateOne(
         { _id: existingUser._id },
         {
           $set: {
-            firstName: userData.firstName,
-            lastName: userData.lastName,
+            firstName: firstName,
+            lastName: lastName,
             email: userData.email.toLowerCase(),
             phone: userData.phone,
-            memberId: userData.memberId,
+            memberId: existingUser.memberId || memberId, // Keep existing memberId if available
             userType: 'interviewer',
-            interviewModes: 'CATI (Telephonic interview)',
+            interviewModes: 'CAPI (Face To Face)',
             password: hashedPassword,
             companyCode: COMPANY_CODE,
             status: 'active',
@@ -129,11 +150,11 @@ const createInterviewer = async (userData, referenceUser, assignedBy) => {
       );
       
       const updatedUser = await User.findById(existingUser._id).select('+password');
-      const passwordValid = await updatedUser.comparePassword(userData.password);
+      const passwordValid = await updatedUser.comparePassword(userData.phone);
       
       if (!passwordValid) {
         const retrySalt = await bcrypt.genSalt(12);
-        const retryHashedPassword = await bcrypt.hash(userData.password, retrySalt);
+        const retryHashedPassword = await bcrypt.hash(userData.phone, retrySalt);
         await User.updateOne(
           { _id: existingUser._id },
           { $set: { password: retryHashedPassword } }
@@ -145,7 +166,7 @@ const createInterviewer = async (userData, referenceUser, assignedBy) => {
         updatedUser.interviewerProfile = {};
       }
       updatedUser.interviewerProfile.approvalStatus = 'approved';
-      updatedUser.interviewerProfile.approvalFeedback = 'Bulk import - Auto approved for CATI';
+      updatedUser.interviewerProfile.approvalFeedback = 'Bulk import - Auto approved for CAPI';
       updatedUser.interviewerProfile.approvedBy = referenceUser.interviewerProfile?.approvedBy || assignedBy;
       updatedUser.interviewerProfile.approvedAt = new Date();
       updatedUser.interviewerProfile.lastSubmittedAt = new Date();
@@ -178,7 +199,7 @@ const createInterviewer = async (userData, referenceUser, assignedBy) => {
             year: 2019
           };
         }
-        updatedUser.interviewerProfile.bankAccountHolderName = `${userData.firstName.toUpperCase()} ${userData.lastName.toUpperCase()}`;
+        updatedUser.interviewerProfile.bankAccountHolderName = `${firstName.toUpperCase()} ${lastName.toUpperCase()}`;
       }
       
       if (!updatedUser.company) {
@@ -196,28 +217,28 @@ const createInterviewer = async (userData, referenceUser, assignedBy) => {
       }
       
       await updatedUser.save({ runValidators: false });
-      return { success: true, user: updatedUser, isUpdate: true };
+      return { success: true, user: updatedUser, isUpdate: true, memberId: updatedUser.memberId || memberId };
     }
 
     // Create new user
     const salt = await bcrypt.genSalt(12);
-    const hashedPassword = await bcrypt.hash(userData.password, salt);
+    const hashedPassword = await bcrypt.hash(userData.phone, salt);
     const companyId = referenceUser.company || new mongoose.Types.ObjectId('68d33a0cd5e4634e58c4e678');
 
     const newUser = new User({
-      firstName: userData.firstName,
-      lastName: userData.lastName,
+      firstName: firstName,
+      lastName: lastName,
       email: userData.email.toLowerCase(),
       phone: userData.phone,
       password: hashedPassword,
       isEmailVerified: referenceUser.isEmailVerified || false,
       isPhoneVerified: referenceUser.isPhoneVerified || false,
       userType: 'interviewer',
-      interviewModes: 'CATI (Telephonic interview)',
+      interviewModes: 'CAPI (Face To Face)',
       canSelectMode: referenceUser.canSelectMode || false,
       company: companyId,
       companyCode: COMPANY_CODE,
-      memberId: userData.memberId,
+      memberId: memberId,
       profile: referenceUser.profile || {
         languages: [],
         education: [],
@@ -288,7 +309,7 @@ const createInterviewer = async (userData, referenceUser, assignedBy) => {
           ? referenceUser.interviewerProfile.hasSurveyExperience 
           : true,
         surveyExperienceYears: referenceUser.interviewerProfile?.surveyExperienceYears || 3,
-        surveyExperienceDescription: referenceUser.interviewerProfile?.surveyExperienceDescription || 'Experienced in telephonic surveys and CATI operations',
+        surveyExperienceDescription: referenceUser.interviewerProfile?.surveyExperienceDescription || 'Experienced in face-to-face surveys and CAPI operations',
         cvUpload: referenceUser.interviewerProfile?.cvUpload || 'cvUpload-1764630127133-571761495.docx',
         ownsSmartphone: referenceUser.interviewerProfile?.ownsSmartphone !== undefined 
           ? referenceUser.interviewerProfile.ownsSmartphone 
@@ -309,7 +330,7 @@ const createInterviewer = async (userData, referenceUser, assignedBy) => {
           ? referenceUser.interviewerProfile.agreesToRemuneration 
           : true,
         bankAccountNumber: referenceUser.interviewerProfile?.bankAccountNumber || '786897980',
-        bankAccountHolderName: `${userData.firstName.toUpperCase()} ${userData.lastName.toUpperCase()}`,
+        bankAccountHolderName: `${firstName.toUpperCase()} ${lastName.toUpperCase()}`,
         bankName: referenceUser.interviewerProfile?.bankName || 'HDFC',
         bankIfscCode: referenceUser.interviewerProfile?.bankIfscCode || 'HDFC0001234',
         bankDocumentUpload: referenceUser.interviewerProfile?.bankDocumentUpload || 'bankDocumentUpload-1764630178675-881719772.png',
@@ -325,7 +346,7 @@ const createInterviewer = async (userData, referenceUser, assignedBy) => {
           ? referenceUser.interviewerProfile.agreesToParticipateInSurvey 
           : true,
         approvalStatus: 'approved',
-        approvalFeedback: 'Bulk import - Auto approved for CATI',
+        approvalFeedback: 'Bulk import - Auto approved for CAPI',
         approvedBy: referenceUser.interviewerProfile?.approvedBy || assignedBy,
         approvedAt: new Date(),
         lastSubmittedAt: new Date()
@@ -338,25 +359,25 @@ const createInterviewer = async (userData, referenceUser, assignedBy) => {
     
     // Verify password
     const savedUser = await User.findById(newUser._id).select('+password');
-    const passwordValid = await savedUser.comparePassword(userData.password);
+    const passwordValid = await savedUser.comparePassword(userData.phone);
     
     if (!passwordValid) {
       const retrySalt = await bcrypt.genSalt(12);
-      const retryHashedPassword = await bcrypt.hash(userData.password, retrySalt);
+      const retryHashedPassword = await bcrypt.hash(userData.phone, retrySalt);
       await User.updateOne(
         { _id: savedUser._id },
         { $set: { password: retryHashedPassword } }
       );
     }
     
-    return { success: true, user: savedUser, isUpdate: false };
+    return { success: true, user: savedUser, isUpdate: false, memberId: memberId };
   } catch (error) {
     return { success: false, error: error.message };
   }
 };
 
-// Assign interviewer to survey
-const assignToSurvey = async (interviewerId, assignedById) => {
+// Assign CAPI interviewer to survey with AC
+const assignToSurvey = async (interviewerId, assignedById, acName) => {
   try {
     const survey = await Survey.findById(SURVEY_ID);
     if (!survey) {
@@ -364,22 +385,33 @@ const assignToSurvey = async (interviewerId, assignedById) => {
     }
     
     // Check if already assigned
-    const existingAssignment = survey.catiInterviewers?.find(
+    const existingAssignment = survey.capiInterviewers?.find(
       assignment => assignment.interviewer.toString() === interviewerId.toString()
     );
     
     if (existingAssignment) {
-      return; // Already assigned
+      // Update existing assignment with AC
+      existingAssignment.assignedACs = [acName];
+      existingAssignment.selectedState = STATE;
+      existingAssignment.selectedCountry = COUNTRY;
+      existingAssignment.assignedBy = assignedById;
+      existingAssignment.assignedAt = new Date();
+      existingAssignment.status = 'assigned';
+      await survey.save();
+      return; // Already assigned and updated
     }
     
-    if (!survey.catiInterviewers) {
-      survey.catiInterviewers = [];
+    if (!survey.capiInterviewers) {
+      survey.capiInterviewers = [];
     }
     
-    survey.catiInterviewers.push({
+    survey.capiInterviewers.push({
       interviewer: interviewerId,
       assignedBy: assignedById,
       assignedAt: new Date(),
+      assignedACs: [acName], // Array of AC names
+      selectedState: STATE, // West Bengal
+      selectedCountry: COUNTRY, // India
       status: 'assigned',
       maxInterviews: 0,
       completedInterviews: 0
@@ -417,29 +449,24 @@ const main = async () => {
     });
     const assignedBy = companyAdmin ? companyAdmin._id : referenceUser._id;
 
-    // Parse CSV
-    console.log(`📄 Reading CSV file: ${CSV_PATH}...`);
-    const usersData = parseCSV(CSV_PATH);
-    console.log(`✅ Found ${usersData.length} users in CSV\n`);
-
-    console.log(`🚀 Starting bulk creation...\n`);
+    console.log(`🚀 Starting bulk creation of CAPI interviewers...\n`);
     console.log('='.repeat(80));
 
     const results = [];
     const createdUsers = [];
 
-    for (let i = 0; i < usersData.length; i++) {
-      const userData = usersData[i];
-      const progress = `[${i + 1}/${usersData.length}]`;
+    for (let i = 0; i < interviewersData.length; i++) {
+      const userData = interviewersData[i];
+      const progress = `[${i + 1}/${interviewersData.length}]`;
       
       try {
         const result = await createInterviewer(userData, referenceUser, assignedBy);
         
         if (result.success) {
-          // Assign to survey
-          await assignToSurvey(result.user._id, assignedBy);
+          // Assign to survey with AC
+          await assignToSurvey(result.user._id, assignedBy, userData.location);
           
-          const fullName = `${userData.firstName} ${userData.lastName}`;
+          const fullName = `${userData.name}`;
           results.push({
             ...result,
             userData,
@@ -447,18 +474,21 @@ const main = async () => {
           });
           
           createdUsers.push({
-            interviewerID: userData.memberId,
-            Password: userData.password,
-            Name: fullName
+            interviewerID: result.memberId,
+            Password: userData.phone,
+            Name: fullName,
+            Email: userData.email,
+            AC: userData.location,
+            State: STATE
           });
           
-          console.log(`${progress} ✅ ${fullName} (${userData.memberId}) - ${result.isUpdate ? 'Updated' : 'Created'}`);
+          console.log(`${progress} ✅ ${fullName} (${result.memberId}) - ${result.isUpdate ? 'Updated' : 'Created'} - AC: ${userData.location}`);
         } else {
-          console.log(`${progress} ❌ ${userData.firstName} ${userData.lastName} (${userData.memberId}): ${result.error}`);
+          console.log(`${progress} ❌ ${userData.name}: ${result.error}`);
           results.push({ ...result, userData });
         }
       } catch (error) {
-        console.log(`${progress} ❌ ${userData.firstName} ${userData.lastName} (${userData.memberId}): ${error.message}`);
+        console.log(`${progress} ❌ ${userData.name}: ${error.message}`);
         results.push({ success: false, error: error.message, userData });
       }
     }
@@ -473,12 +503,15 @@ const main = async () => {
     console.log(`❌ Failed: ${failed.length}\n`);
 
     // Output all created users in requested format
-    console.log('📋 All Created Users:');
+    console.log('📋 All Created CAPI Interviewers:');
     console.log('='.repeat(80));
     createdUsers.forEach((user, index) => {
       console.log(`${index + 1}. InterviewerID: ${user.interviewerID}`);
       console.log(`   Password: ${user.Password}`);
       console.log(`   Name: ${user.Name}`);
+      console.log(`   Email: ${user.Email}`);
+      console.log(`   AC: ${user.AC}`);
+      console.log(`   State: ${user.State}`);
       console.log('');
     });
 
@@ -501,5 +534,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { createInterviewer, assignToSurvey, parseCSV };
-
+module.exports = { createInterviewer, assignToSurvey };
