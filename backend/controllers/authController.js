@@ -1124,12 +1124,23 @@ exports.addCompanyAdmin = async (req, res) => {
       });
     }
 
+    // Sanitize phone number (remove spaces and special characters except digits)
+    const sanitizedPhone = phone ? phone.replace(/\s+/g, '').replace(/[^\d]/g, '') : phone;
+
+    // Validate required fields
+    if (!firstName || !lastName || !email || !sanitizedPhone || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide all required fields'
+      });
+    }
+
     // Create new company admin
     const companyAdmin = new User({
       firstName,
       lastName,
       email,
-      phone,
+      phone: sanitizedPhone,
       password,
       userType: 'company_admin',
       company: companyId,
@@ -1151,6 +1162,35 @@ exports.addCompanyAdmin = async (req, res) => {
     });
   } catch (error) {
     console.error('Add company admin error:', error);
+    
+    // Handle validation errors specifically
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(val => val.message);
+      const phoneError = messages.find(msg => msg.toLowerCase().includes('phone'));
+      
+      if (phoneError) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid phone number. Please enter a valid phone number without spaces.'
+        });
+      }
+      
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: messages
+      });
+    }
+
+    // Handle duplicate key errors
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
+      return res.status(400).json({
+        success: false,
+        message: `${field} already exists`
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Server error',

@@ -154,8 +154,19 @@ const getAudioSignedUrl = async (audioUrl, expiresIn = 3600) => {
       return null;
     }
 
-    // If it's already a full URL (http/https), return as is
+    // Skip mock/test URLs - these are not real files
+    if (audioUrl.startsWith('mock://') || audioUrl.includes('mock://')) {
+      console.warn('⚠️ Skipping mock URL:', audioUrl);
+      return null;
+    }
+
+    // If it's already a full URL (http/https), return as is (unless it's a mock URL)
     if (audioUrl.startsWith('http://') || audioUrl.startsWith('https://')) {
+      // Check if it's a mock URL that was URL-encoded
+      if (audioUrl.includes('mock%3A//') || audioUrl.includes('mock://')) {
+        console.warn('⚠️ Skipping mock URL (encoded):', audioUrl);
+        return null;
+      }
       return audioUrl;
     }
 
@@ -177,8 +188,11 @@ const getAudioSignedUrl = async (audioUrl, expiresIn = 3600) => {
     return await getSignedUrl(audioUrl, expiresIn);
   } catch (error) {
     console.error('Error getting audio signed URL:', error);
-    // Fallback to original URL
-    return audioUrl;
+    // Fallback to original URL (but check if it's a mock URL first)
+    if (audioUrl && !audioUrl.startsWith('mock://') && !audioUrl.includes('mock://')) {
+      return audioUrl;
+    }
+    return null;
   }
 };
 

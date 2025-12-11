@@ -220,6 +220,12 @@ const SurveyApprovals = () => {
       const audioUrl = selectedInterview?.audioRecording?.audioUrl;
       if (!audioUrl) return;
       
+      // Skip mock URLs - don't try to fetch signed URLs for them
+      if (audioUrl.startsWith('mock://') || audioUrl.includes('mock://')) {
+        console.warn('⚠️ Mock URL detected, skipping signed URL fetch');
+        return;
+      }
+      
       // If we already have a signed URL (from backend or cache), use it
       if (selectedInterview.audioRecording.signedUrl) {
         setAudioSignedUrls(prev => ({ ...prev, [selectedInterview._id]: selectedInterview.audioRecording.signedUrl }));
@@ -1746,6 +1752,12 @@ const SurveyApprovals = () => {
 
   // Audio playback functions - now controls the HTML audio element
   const handlePlayAudio = async (audioUrl, interviewId, signedUrl = null) => {
+    // Check for mock URLs
+    if (audioUrl && (audioUrl.startsWith('mock://') || audioUrl.includes('mock://') || audioUrl.includes('mock%3A//'))) {
+      alert('Audio recording is not available. This appears to be a test/mock recording.');
+      return;
+    }
+
     if (audioPlaying === interviewId) {
       // Pause current audio
       const audioEl = document.querySelector(`audio[data-interview-id="${interviewId}"]`);
@@ -1781,6 +1793,11 @@ const SurveyApprovals = () => {
           audioSrc = '';
           audioEl.src = audioSrc;
         } else if (audioUrl.startsWith('http://') || audioUrl.startsWith('https://')) {
+          // Check for mock URLs in full URLs
+          if (audioUrl.includes('mock%3A//') || audioUrl.includes('mock://')) {
+            alert('Audio recording is not available. This appears to be a test/mock recording.');
+            return;
+          }
           // If it's already a full S3 signed URL, use it directly
           if (audioUrl.includes('.s3.')) {
             audioSrc = audioUrl;
@@ -1820,6 +1837,11 @@ const SurveyApprovals = () => {
             showError('Failed to get audio URL. Please try again.');
             setAudioPlaying(null);
           });
+        } else if (audioUrl.startsWith('mock://') || audioUrl.includes('mock://')) {
+          // Mock URL - don't try to load it
+          alert('Audio recording is not available. This appears to be a test/mock recording.');
+          setAudioPlaying(null);
+          return;
         } else {
           // Local path (starts with /)
           const isProduction = window.location.protocol === 'https:' || window.location.hostname !== 'localhost';
@@ -1837,6 +1859,12 @@ const SurveyApprovals = () => {
         };
         audioEl.onerror = async (e) => {
           console.error('Audio element error:', e);
+          // Check for mock URLs first
+          if (audioUrl && (audioUrl.startsWith('mock://') || audioUrl.includes('mock://'))) {
+            alert('Audio recording is not available. This appears to be a test/mock recording.');
+            setAudioPlaying(null);
+            return;
+          }
           // If audioUrl is an S3 key, try to get signed URL
           if (audioUrl && (audioUrl.startsWith('audio/') || audioUrl.startsWith('documents/') || audioUrl.startsWith('reports/'))) {
             try {
@@ -3528,6 +3556,14 @@ const SurveyApprovals = () => {
                       key={`audio-${selectedInterview._id}-${audioSignedUrls[selectedInterview._id] ? 'signed' : 'pending'}`}
                       data-interview-id={selectedInterview._id}
                       src={(() => {
+                        const audioUrl = selectedInterview.audioRecording.audioUrl;
+                        
+                        // Check for mock URLs
+                        if (audioUrl && (audioUrl.startsWith('mock://') || audioUrl.includes('mock://') || audioUrl.includes('mock%3A//'))) {
+                          console.warn('⚠️ Mock URL detected, skipping audio playback');
+                          return null;
+                        }
+                        
                         // Priority: cached signed URL > backend provided signedUrl > local path/full URL > empty
                         const cachedSignedUrl = audioSignedUrls[selectedInterview._id];
                         if (cachedSignedUrl) {
@@ -3541,12 +3577,16 @@ const SurveyApprovals = () => {
                           return backendSignedUrl;
                         }
                         
-                        const audioUrl = selectedInterview.audioRecording.audioUrl;
                         // NEVER set S3 keys directly - they will be resolved relative to current page
                         if (audioUrl && (audioUrl.startsWith('audio/') || audioUrl.startsWith('documents/') || audioUrl.startsWith('reports/'))) {
                           // This is an S3 key - return empty, will be fetched in useEffect or onError
                           console.log('⚠️ S3 key detected, waiting for signed URL...');
                           return '';
+                        }
+                        // Check for mock URLs - return null to prevent browser from trying to load them
+                        if (audioUrl && (audioUrl.startsWith('mock://') || audioUrl.includes('mock://'))) {
+                          console.warn('⚠️ Mock URL detected, skipping audio playback');
+                          return null;
                         }
                         // Only return if it's a local path (starts with /) or full URL (starts with http)
                         if (audioUrl && (audioUrl.startsWith('/') || audioUrl.startsWith('http'))) {
@@ -3561,6 +3601,13 @@ const SurveyApprovals = () => {
                         console.error('Audio element error:', e);
                         const audioEl = e.target;
                         const audioUrl = selectedInterview.audioRecording.audioUrl;
+                        
+                        // Check for mock URLs first
+                        if (audioUrl && (audioUrl.startsWith('mock://') || audioUrl.includes('mock://'))) {
+                          console.warn('⚠️ Mock URL detected in onError, skipping');
+                          setAudioPlaying(null);
+                          return;
+                        }
                         
                         // If audioUrl is an S3 key, try to get signed URL
                         if (audioUrl && (audioUrl.startsWith('audio/') || audioUrl.startsWith('documents/') || audioUrl.startsWith('reports/')) && !audioSignedUrls[selectedInterview._id]) {

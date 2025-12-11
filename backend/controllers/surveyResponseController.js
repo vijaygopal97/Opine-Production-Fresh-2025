@@ -824,12 +824,13 @@ const getGenderResponseCounts = async (req, res) => {
 // Upload audio file for interview
 const uploadAudioFile = async (req, res) => {
   try {
-    console.log('Audio upload request received:', {
+    console.log('📤 Audio upload request received:', {
       hasFile: !!req.file,
       fileSize: req.file?.size,
       sessionId: req.body.sessionId,
       surveyId: req.body.surveyId,
       interviewerId: req.user?.id,
+      contentType: req.headers['content-type'],
       fileDetails: req.file ? {
         originalname: req.file.originalname,
         mimetype: req.file.mimetype,
@@ -844,12 +845,13 @@ const uploadAudioFile = async (req, res) => {
     const interviewerId = req.user.id;
 
     if (!req.file) {
-      console.error('No file received in request');
+      console.error('❌ No file received in request');
       console.error('Request body:', req.body);
       console.error('Request files:', req.files);
+      console.error('Request headers:', req.headers);
       return res.status(400).json({
         success: false,
-        message: 'No audio file provided'
+        message: 'No audio file provided. Please ensure the file is being sent correctly.'
       });
     }
 
@@ -907,10 +909,12 @@ const uploadAudioFile = async (req, res) => {
         }
         
       } catch (s3Error) {
-        console.error('❌ S3 upload failed, falling back to local storage:', s3Error.message);
+        console.error('❌ S3 upload failed:', s3Error.message);
         console.error('S3 Error details:', s3Error);
+        console.error('S3 Error stack:', s3Error.stack);
         // Fall back to local storage
         storageType = 'local';
+        console.log('🔄 Falling back to local storage...');
       }
     }
     
@@ -941,7 +945,9 @@ const uploadAudioFile = async (req, res) => {
       audioUrl = `/uploads/audio/${filename}`;
     }
     
-    console.log('Upload response - File size:', req.file.size, 'bytes');
+    console.log('✅ Upload successful - File size:', req.file.size, 'bytes');
+    console.log('✅ Audio URL:', audioUrl);
+    console.log('✅ Storage type:', storageType);
     
     res.status(200).json({
       success: true,
@@ -958,7 +964,9 @@ const uploadAudioFile = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error uploading audio file:', error);
+    console.error('❌ Error uploading audio file:', error);
+    console.error('❌ Error message:', error.message);
+    console.error('❌ Error stack:', error.stack);
     res.status(500).json({
       success: false,
       message: 'Failed to upload audio file',
@@ -1147,6 +1155,16 @@ const getMyInterviews = async (req, res) => {
     const addSignedUrlToAudio = async (audioRecording) => {
       if (!audioRecording || !audioRecording.audioUrl) {
         return audioRecording;
+      }
+      
+      // Skip mock URLs - these are test URLs, not real files
+      if (audioRecording.audioUrl.startsWith('mock://') || audioRecording.audioUrl.includes('mock://')) {
+        return {
+          ...audioRecording,
+          signedUrl: null, // No signed URL for mock URLs
+          originalUrl: audioRecording.audioUrl,
+          isMock: true // Flag to indicate this is a mock URL
+        };
       }
       
       try {
@@ -2698,15 +2716,26 @@ const getSurveyResponseById = async (req, res) => {
     // Add signed URL to audio recording if present
     const { getAudioSignedUrl } = require('../utils/cloudStorage');
     if (surveyResponse.audioRecording && surveyResponse.audioRecording.audioUrl) {
-      try {
-        const signedUrl = await getAudioSignedUrl(surveyResponse.audioRecording.audioUrl, 3600);
+      // Skip mock URLs
+      const audioUrl = surveyResponse.audioRecording.audioUrl;
+      if (!audioUrl.startsWith('mock://') && !audioUrl.includes('mock://')) {
+        try {
+          const signedUrl = await getAudioSignedUrl(audioUrl, 3600);
+          surveyResponse.audioRecording = {
+            ...surveyResponse.audioRecording.toObject ? surveyResponse.audioRecording.toObject() : surveyResponse.audioRecording,
+            signedUrl,
+            originalUrl: audioUrl
+          };
+        } catch (error) {
+          console.error('Error generating signed URL for audio:', error);
+        }
+      } else {
+        // Mark as mock URL
         surveyResponse.audioRecording = {
           ...surveyResponse.audioRecording.toObject ? surveyResponse.audioRecording.toObject() : surveyResponse.audioRecording,
-          signedUrl,
-          originalUrl: surveyResponse.audioRecording.audioUrl
+          signedUrl: null,
+          isMock: true
         };
-      } catch (error) {
-        console.error('Error generating signed URL for audio:', error);
       }
     }
 
@@ -2879,15 +2908,25 @@ const getSurveyResponses = async (req, res) => {
     const { getAudioSignedUrl } = require('../utils/cloudStorage');
     responses = await Promise.all(responses.map(async (response) => {
       if (response.audioRecording && response.audioRecording.audioUrl) {
-        try {
-          const signedUrl = await getAudioSignedUrl(response.audioRecording.audioUrl, 3600);
+        const audioUrl = response.audioRecording.audioUrl;
+        // Skip mock URLs
+        if (audioUrl.startsWith('mock://') || audioUrl.includes('mock://')) {
           response.audioRecording = {
             ...response.audioRecording,
-            signedUrl,
-            originalUrl: response.audioRecording.audioUrl
+            signedUrl: null,
+            isMock: true
           };
-        } catch (error) {
-          console.error('Error generating signed URL for response:', response._id, error);
+        } else {
+          try {
+            const signedUrl = await getAudioSignedUrl(audioUrl, 3600);
+            response.audioRecording = {
+              ...response.audioRecording,
+              signedUrl,
+              originalUrl: audioUrl
+            };
+          } catch (error) {
+            console.error('Error generating signed URL for response:', response._id, error);
+          }
         }
       }
       return response;
@@ -3842,8 +3881,23 @@ const getAudioSignedUrl = async (req, res) => {
       });
     }
 
+    // Skip mock URLs
+    if (audioUrlToUse.startsWith('mock://') || audioUrlToUse.includes('mock://')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Mock/test audio URLs are not supported'
+      });
+    }
+
     const { getAudioSignedUrl: getSignedUrl } = require('../utils/cloudStorage');
     const signedUrl = await getSignedUrl(audioUrlToUse, 3600); // 1 hour expiry
+
+    if (!signedUrl) {
+      return res.status(404).json({
+        success: false,
+        message: 'Could not generate signed URL for this audio file'
+      });
+    }
 
     res.json({
       success: true,
