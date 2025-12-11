@@ -47,16 +47,58 @@ router.post('/upload-documents', protect, upload.fields([
   { name: 'bankDocumentUpload', maxCount: 1 }
 ]), async (req, res) => {
   try {
+    const fs = require('fs');
+    const path = require('path');
+    const { uploadToS3, isS3Configured, generateDocumentKey } = require('../utils/cloudStorage');
+    
     const uploadedFiles = {};
+    const userId = req.user._id.toString();
+
     if (req.files) {
-      Object.keys(req.files).forEach(key => {
-        uploadedFiles[key] = req.files[key][0].filename;
-      });
+      // Upload each file to S3 if configured
+      for (const [fieldName, fileArray] of Object.entries(req.files)) {
+        if (fileArray && fileArray.length > 0) {
+          const file = fileArray[0];
+          
+          if (isS3Configured()) {
+            try {
+              // Generate S3 key for document
+              const s3Key = generateDocumentKey(fieldName, userId, file.originalname);
+              
+              // Upload to S3
+              const uploadResult = await uploadToS3(file.path, s3Key, {
+                contentType: file.mimetype,
+                metadata: {
+                  userId: userId,
+                  documentType: fieldName,
+                  originalFilename: file.originalname
+                }
+              });
+              
+              // Store S3 key instead of local filename
+              uploadedFiles[fieldName] = uploadResult.key;
+              
+              // Clean up local temp file
+              if (fs.existsSync(file.path)) {
+                fs.unlinkSync(file.path);
+              }
+              
+              console.log(`✅ ${fieldName} uploaded to S3: ${uploadResult.key}`);
+            } catch (s3Error) {
+              console.error(`❌ S3 upload failed for ${fieldName}, using local storage:`, s3Error.message);
+              // Fall back to local filename
+              uploadedFiles[fieldName] = file.filename;
+            }
+          } else {
+            // Use local storage if S3 not configured
+            uploadedFiles[fieldName] = file.filename;
+          }
+        }
+      }
     }
 
     // Update the user's profile with the uploaded files and check for verification changes
     const User = require('../models/User');
-    const userId = req.user._id;
     
     const currentUser = await User.findById(userId);
     if (!currentUser) {

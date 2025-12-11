@@ -872,30 +872,43 @@ const uploadAudioFile = async (req, res) => {
     const filename = `interview_${sessionId}_${timestamp}${originalExt}`;
     
     const fs = require('fs');
-    const { uploadToS3, isS3Configured } = require('../utils/cloudStorage');
+    const { uploadToS3, isS3Configured, generateAudioKey } = require('../utils/cloudStorage');
     
-    let audioUrl;
+    let audioUrl; // Will store S3 key, not full URL
     let storageType = 'local';
     
     // Try to upload to S3 if configured, otherwise use local storage
     if (isS3Configured()) {
       try {
-        const s3Key = `audio-recordings/${filename}`;
+        // Generate S3 key with organized folder structure
+        const s3Key = generateAudioKey(sessionId, filename);
         const metadata = {
           sessionId,
           surveyId,
-          interviewerId,
-          uploadedBy: 'interview-interface'
+          interviewerId: interviewerId.toString(),
+          uploadedBy: 'interview-interface',
+          originalFilename: req.file.originalname
         };
         
-        audioUrl = await uploadToS3(req.file.path, s3Key, metadata);
+        const uploadResult = await uploadToS3(req.file.path, s3Key, {
+          contentType: req.file.mimetype || 'audio/webm',
+          metadata
+        });
+        
+        // Store S3 key (not full URL) - we'll generate signed URLs when needed
+        audioUrl = uploadResult.key;
         storageType = 's3';
         
+        console.log('✅ Audio uploaded to S3:', audioUrl);
+        
         // Clean up local temp file
-        fs.unlinkSync(req.file.path);
+        if (fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
+        }
         
       } catch (s3Error) {
-        console.warn('S3 upload failed, falling back to local storage:', s3Error.message);
+        console.error('❌ S3 upload failed, falling back to local storage:', s3Error.message);
+        console.error('S3 Error details:', s3Error);
         // Fall back to local storage
         storageType = 'local';
       }
@@ -914,13 +927,6 @@ const uploadAudioFile = async (req, res) => {
       const finalPath = path.join(uploadDir, filename);
       
       console.log('Moving file from:', tempPath, 'to:', finalPath);
-      console.log('File details:', {
-        originalname: req.file.originalname,
-        mimetype: req.file.mimetype,
-        size: req.file.size,
-        path: req.file.path,
-        fieldname: req.file.fieldname
-      });
       
       // Check if temp file exists
       if (fs.existsSync(tempPath)) {
@@ -928,15 +934,6 @@ const uploadAudioFile = async (req, res) => {
         console.log('File moved successfully');
       } else {
         console.error('Temp file does not exist:', tempPath);
-        const tempDir = path.dirname(tempPath);
-        if (fs.existsSync(tempDir)) {
-          console.error('Available files in temp directory:', fs.readdirSync(tempDir));
-        } else {
-          console.error('Temp directory does not exist:', tempDir);
-          // Try to create it
-          fs.mkdirSync(tempDir, { recursive: true });
-          console.log('Created temp directory:', tempDir);
-        }
         throw new Error(`Temporary file not found at: ${tempPath}. File may not have been uploaded correctly.`);
       }
       
@@ -1145,8 +1142,28 @@ const getMyInterviews = async (req, res) => {
       return null;
     };
 
+    // Helper function to add signed URL to audio recording
+    const { getAudioSignedUrl } = require('../utils/cloudStorage');
+    const addSignedUrlToAudio = async (audioRecording) => {
+      if (!audioRecording || !audioRecording.audioUrl) {
+        return audioRecording;
+      }
+      
+      try {
+        const signedUrl = await getAudioSignedUrl(audioRecording.audioUrl, 3600);
+        return {
+          ...audioRecording,
+          signedUrl, // Add signed URL for S3 files
+          originalUrl: audioRecording.audioUrl // Keep original for reference
+        };
+      } catch (error) {
+        console.error('Error generating signed URL for audio:', error);
+        return audioRecording; // Return original if signed URL generation fails
+      }
+    };
+
     // Transform the data to include calculated fields
-    const transformedInterviews = interviews.map(interview => {
+    const transformedInterviews = await Promise.all(interviews.map(async (interview) => {
       // Calculate effective questions (only questions that were actually shown to the user)
       const effectiveQuestions = interview.responses?.filter(r => {
         // If not skipped, it was shown and answered
@@ -1173,13 +1190,20 @@ const getMyInterviews = async (req, res) => {
       const answeredQuestions = interview.responses?.filter(r => !r.isSkipped).length || 0;
       const completionPercentage = effectiveQuestions > 0 ? Math.round((answeredQuestions / effectiveQuestions) * 100) : 0;
 
+      // Add signed URL to audio recording if present
+      let audioRecording = interview.audioRecording;
+      if (audioRecording && audioRecording.audioUrl) {
+        audioRecording = await addSignedUrlToAudio(audioRecording);
+      }
+
       return {
         ...interview,
         totalQuestions: effectiveQuestions, // Use effective questions instead of all responses
         answeredQuestions,
-        completionPercentage
+        completionPercentage,
+        audioRecording // Include audio with signed URL
       };
-    });
+    }));
 
     res.status(200).json({
       success: true,
@@ -1677,11 +1701,29 @@ const getPendingApprovals = async (req, res) => {
       };
     });
 
+    // Add signed URLs to audio recordings
+    const { getAudioSignedUrl: getAudioUrl } = require('../utils/cloudStorage');
+    const interviewsWithSignedUrls = await Promise.all(transformedInterviews.map(async (interview) => {
+      if (interview.audioRecording && interview.audioRecording.audioUrl) {
+        try {
+          const signedUrl = await getAudioUrl(interview.audioRecording.audioUrl, 3600);
+          interview.audioRecording = {
+            ...interview.audioRecording,
+            signedUrl,
+            originalUrl: interview.audioRecording.audioUrl
+          };
+        } catch (error) {
+          console.error('Error generating signed URL for interview:', interview._id, error);
+        }
+      }
+      return interview;
+    }));
+
     res.status(200).json({
       success: true,
       data: {
-        interviews: transformedInterviews,
-        total: transformedInterviews.length
+        interviews: interviewsWithSignedUrls,
+        total: interviewsWithSignedUrls.length
       }
     });
 
@@ -2653,6 +2695,21 @@ const getSurveyResponseById = async (req, res) => {
       });
     }
 
+    // Add signed URL to audio recording if present
+    const { getAudioSignedUrl } = require('../utils/cloudStorage');
+    if (surveyResponse.audioRecording && surveyResponse.audioRecording.audioUrl) {
+      try {
+        const signedUrl = await getAudioSignedUrl(surveyResponse.audioRecording.audioUrl, 3600);
+        surveyResponse.audioRecording = {
+          ...surveyResponse.audioRecording.toObject ? surveyResponse.audioRecording.toObject() : surveyResponse.audioRecording,
+          signedUrl,
+          originalUrl: surveyResponse.audioRecording.audioUrl
+        };
+      } catch (error) {
+        console.error('Error generating signed URL for audio:', error);
+      }
+    }
+
     res.json({
       success: true,
       interview: surveyResponse
@@ -2807,15 +2864,34 @@ const getSurveyResponses = async (req, res) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
     
     // Get responses with pagination
-    const responses = await SurveyResponse.find(filter)
+    let responses = await SurveyResponse.find(filter)
       .populate('interviewer', 'firstName lastName email phone memberId companyCode')
       .populate('verificationData.reviewer', 'firstName lastName email')
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(parseInt(limit));
+      .limit(parseInt(limit))
+      .lean();
     
     console.log('🔍 getSurveyResponses - Found responses:', responses.length);
     console.log('🔍 getSurveyResponses - Response statuses:', responses.map(r => r.status));
+    
+    // Add signed URLs to audio recordings
+    const { getAudioSignedUrl } = require('../utils/cloudStorage');
+    responses = await Promise.all(responses.map(async (response) => {
+      if (response.audioRecording && response.audioRecording.audioUrl) {
+        try {
+          const signedUrl = await getAudioSignedUrl(response.audioRecording.audioUrl, 3600);
+          response.audioRecording = {
+            ...response.audioRecording,
+            signedUrl,
+            originalUrl: response.audioRecording.audioUrl
+          };
+        } catch (error) {
+          console.error('Error generating signed URL for response:', response._id, error);
+        }
+      }
+      return response;
+    }));
     
     // Get total count for pagination
     const totalResponses = await SurveyResponse.countDocuments(filter);
@@ -3732,6 +3808,58 @@ const getInterviewerPerformanceStats = async (req, res) => {
   }
 };
 
+// Get signed URL for audio file
+const getAudioSignedUrl = async (req, res) => {
+  try {
+    const { audioUrl } = req.query;
+    const { responseId } = req.params;
+
+    if (!audioUrl && !responseId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Either audioUrl query parameter or responseId is required'
+      });
+    }
+
+    let audioUrlToUse = audioUrl;
+
+    // If responseId is provided, fetch the audioUrl from the response
+    if (responseId && !audioUrl) {
+      const response = await SurveyResponse.findById(responseId);
+      if (!response) {
+        return res.status(404).json({
+          success: false,
+          message: 'Response not found'
+        });
+      }
+      audioUrlToUse = response.audioRecording?.audioUrl;
+    }
+
+    if (!audioUrlToUse) {
+      return res.status(404).json({
+        success: false,
+        message: 'Audio URL not found'
+      });
+    }
+
+    const { getAudioSignedUrl: getSignedUrl } = require('../utils/cloudStorage');
+    const signedUrl = await getSignedUrl(audioUrlToUse, 3600); // 1 hour expiry
+
+    res.json({
+      success: true,
+      signedUrl,
+      expiresIn: 3600
+    });
+  } catch (error) {
+    console.error('Error getting audio signed URL:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate signed URL',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getLastCatiSetNumber,
   startInterview,
@@ -3745,6 +3873,7 @@ module.exports = {
   abandonInterview,
   getGenderResponseCounts,
   uploadAudioFile,
+  getAudioSignedUrl,
   getMyInterviews,
   getPendingApprovals,
   getNextReviewAssignment,

@@ -26,7 +26,8 @@ const {
   rejectSurveyResponse,
   getACPerformanceStats,
   getInterviewerPerformanceStats,
-  getLastCatiSetNumber
+  getLastCatiSetNumber,
+  getAudioSignedUrl
 } = require('../controllers/surveyResponseController');
 const { protect } = require('../middleware/auth');
 
@@ -101,6 +102,10 @@ router.get('/survey/:surveyId/last-cati-set', getLastCatiSetNumber);
 
 // Upload audio file for interview
 router.post('/upload-audio', upload.single('audio'), uploadAudioFile);
+
+// Get signed URL for audio file
+router.get('/audio-signed-url', getAudioSignedUrl);
+router.get('/audio-signed-url/:responseId', getAudioSignedUrl);
 
 // Get all interviews conducted by the logged-in interviewer
 router.get('/my-interviews', getMyInterviews);

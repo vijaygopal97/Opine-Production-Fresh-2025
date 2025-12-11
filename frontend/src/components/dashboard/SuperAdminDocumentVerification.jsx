@@ -85,9 +85,38 @@ const SuperAdminDocumentVerification = () => {
     setPreviewBankDetails(null);
   };
 
-  const handleDocumentPreview = (documentPath, documentType, documentNumber = '', bankDetails = null) => {
+  const handleDocumentPreview = async (documentPath, documentType, documentNumber = '', bankDetails = null, signedUrl = null) => {
     if (documentPath) {
-      const documentUrl = getFileUrl(documentPath);
+      let documentUrl = signedUrl;
+      
+      // If no signed URL provided, try to get it
+      if (!documentUrl) {
+        // Check if it's an S3 key
+        if (documentPath.startsWith('documents/') || documentPath.startsWith('audio/') || documentPath.startsWith('reports/')) {
+          try {
+            const isProduction = window.location.protocol === 'https:' || window.location.hostname !== 'localhost';
+            const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (isProduction ? '' : 'http://localhost:5000');
+            const token = localStorage.getItem('token');
+            const response = await fetch(`${API_BASE_URL}/api/survey-responses/audio-signed-url?audioUrl=${encodeURIComponent(documentPath)}`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (response.ok) {
+              const data = await response.json();
+              if (data.signedUrl) {
+                documentUrl = data.signedUrl;
+              }
+            }
+          } catch (error) {
+            console.error('Error fetching signed URL:', error);
+          }
+        }
+      }
+      
+      // Fallback to getFileUrl if no signed URL
+      if (!documentUrl) {
+        documentUrl = getFileUrl(documentPath);
+      }
+      
       setPreviewDocument(documentUrl);
       setPreviewType(documentType);
       setPreviewDocumentNumber(documentNumber);
@@ -770,7 +799,13 @@ const SuperAdminDocumentVerification = () => {
                             <span className="text-sm font-medium text-gray-900">CV Document</span>
                           </div>
                           <button
-                            onClick={() => handleDocumentPreview(selectedProfile.interviewerProfile.cvUpload, 'CV Document')}
+                            onClick={() => handleDocumentPreview(
+                              selectedProfile.interviewerProfile.cvUpload, 
+                              'CV Document',
+                              '',
+                              null,
+                              selectedProfile.interviewerProfile.cvUploadSignedUrl
+                            )}
                             className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-blue-700 bg-[#E6F0F8] hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
                           >
                             <Eye className="h-4 w-4 mr-1" />
@@ -787,7 +822,13 @@ const SuperAdminDocumentVerification = () => {
                             <span className="text-sm font-medium text-gray-900">Aadhaar Card</span>
                           </div>
                           <button
-                            onClick={() => handleDocumentPreview(selectedProfile.interviewerProfile.aadhaarDocument, 'Aadhaar Card', selectedProfile.interviewerProfile.aadhaarNumber)}
+                            onClick={() => handleDocumentPreview(
+                              selectedProfile.interviewerProfile.aadhaarDocument, 
+                              'Aadhaar Card', 
+                              selectedProfile.interviewerProfile.aadhaarNumber,
+                              null,
+                              selectedProfile.interviewerProfile.aadhaarDocumentSignedUrl
+                            )}
                             className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-blue-700 bg-[#E6F0F8] hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
                           >
                             <Eye className="h-4 w-4 mr-1" />
@@ -804,7 +845,13 @@ const SuperAdminDocumentVerification = () => {
                             <span className="text-sm font-medium text-gray-900">PAN Card</span>
                           </div>
                           <button
-                            onClick={() => handleDocumentPreview(selectedProfile.interviewerProfile.panDocument, 'PAN Card', selectedProfile.interviewerProfile.panNumber)}
+                            onClick={() => handleDocumentPreview(
+                              selectedProfile.interviewerProfile.panDocument, 
+                              'PAN Card', 
+                              selectedProfile.interviewerProfile.panNumber,
+                              null,
+                              selectedProfile.interviewerProfile.panDocumentSignedUrl
+                            )}
                             className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-blue-700 bg-[#E6F0F8] hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
                           >
                             <Eye className="h-4 w-4 mr-1" />
@@ -821,7 +868,13 @@ const SuperAdminDocumentVerification = () => {
                             <span className="text-sm font-medium text-gray-900">Passport Photo</span>
                           </div>
                           <button
-                            onClick={() => handleDocumentPreview(selectedProfile.interviewerProfile.passportPhoto, 'Passport Photo')}
+                            onClick={() => handleDocumentPreview(
+                              selectedProfile.interviewerProfile.passportPhoto, 
+                              'Passport Photo',
+                              '',
+                              null,
+                              selectedProfile.interviewerProfile.passportPhotoSignedUrl
+                            )}
                             className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-blue-700 bg-[#E6F0F8] hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
                           >
                             <Eye className="h-4 w-4 mr-1" />
@@ -847,7 +900,8 @@ const SuperAdminDocumentVerification = () => {
                                 accountHolderName: selectedProfile.interviewerProfile.bankAccountHolderName,
                                 bankName: selectedProfile.interviewerProfile.bankName,
                                 ifscCode: selectedProfile.interviewerProfile.bankIfscCode
-                              }
+                              },
+                              selectedProfile.interviewerProfile.bankDocumentUploadSignedUrl
                             )}
                             className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-blue-700 bg-[#E6F0F8] hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
                           >

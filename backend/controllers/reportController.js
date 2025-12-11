@@ -123,13 +123,49 @@ const generateReport = async (req, res) => {
       });
     }
 
+    // Upload report to S3 if configured
+    const { uploadToS3, isS3Configured, generateReportKey, getSignedUrl } = require('../utils/cloudStorage');
+    let reportUrl = `/api/reports/download/${path.basename(outputPath)}`;
+    let reportKey = null;
+
+    if (isS3Configured()) {
+      try {
+        // Generate S3 key for report
+        const s3Key = generateReportKey('survey-reports', path.basename(outputPath));
+        
+        // Upload to S3
+        const uploadResult = await uploadToS3(outputPath, s3Key, {
+          contentType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          metadata: {
+            reportType: 'survey-report',
+            generatedAt: new Date().toISOString(),
+            excelSource: excelFileName
+          }
+        });
+        
+        reportKey = uploadResult.key;
+        
+        // Generate signed URL for immediate download
+        reportUrl = await getSignedUrl(reportKey, 3600); // 1 hour expiry
+        
+        console.log('✅ Report uploaded to S3:', reportKey);
+        
+        // Optionally delete local file after upload (or keep as backup)
+        // fs.unlinkSync(outputPath);
+      } catch (s3Error) {
+        console.error('❌ S3 upload failed for report, using local storage:', s3Error.message);
+        // Continue with local file path
+      }
+    }
+
     // Return success with file path
     res.json({
       success: true,
       message: 'Report generated successfully',
-      filePath: `/api/reports/download/${path.basename(outputPath)}`,
+      filePath: reportUrl, // S3 signed URL or local path
       fileName: path.basename(outputPath),
-      excelPath: excelFileName // Return the uploaded Excel filename for audit trail
+      excelPath: excelFileName, // Return the uploaded Excel filename for audit trail
+      s3Key: reportKey // Include S3 key if uploaded
     });
 
   } catch (error) {
@@ -219,12 +255,36 @@ const generateAuditTrail = async (req, res) => {
       });
     }
 
+    // Upload audit trail to S3 if configured
+    const { uploadToS3: uploadAuditToS3, isS3Configured: isS3ConfiguredAudit, generateReportKey: generateAuditKey, getSignedUrl: getAuditSignedUrl } = require('../utils/cloudStorage');
+    let auditUrl = `/api/reports/download/${path.basename(outputPath)}`;
+    let auditKey = null;
+
+    if (isS3ConfiguredAudit()) {
+      try {
+        const s3Key = generateAuditKey('audit-trails', path.basename(outputPath));
+        const uploadResult = await uploadAuditToS3(outputPath, s3Key, {
+          contentType: 'text/plain',
+          metadata: {
+            reportType: 'audit-trail',
+            generatedAt: new Date().toISOString()
+          }
+        });
+        auditKey = uploadResult.key;
+        auditUrl = await getAuditSignedUrl(auditKey, 3600);
+        console.log('✅ Audit trail uploaded to S3:', auditKey);
+      } catch (s3Error) {
+        console.error('❌ S3 upload failed for audit trail:', s3Error.message);
+      }
+    }
+
     // Return success with file path
     res.json({
       success: true,
       message: 'Audit trail generated successfully',
-      filePath: `/api/reports/download/${path.basename(outputPath)}`,
-      fileName: path.basename(outputPath)
+      filePath: auditUrl,
+      fileName: path.basename(outputPath),
+      s3Key: auditKey
     });
 
   } catch (error) {
@@ -243,6 +303,27 @@ const generateAuditTrail = async (req, res) => {
 const downloadReport = async (req, res) => {
   try {
     const { filename } = req.params;
+    const { s3Key } = req.query; // Optional S3 key parameter
+    
+    // If S3 key is provided, generate signed URL and redirect
+    if (s3Key) {
+      const { getSignedUrl, isS3Configured } = require('../utils/cloudStorage');
+      if (isS3Configured()) {
+        try {
+          const signedUrl = await getSignedUrl(s3Key, 3600);
+          return res.redirect(signedUrl);
+        } catch (error) {
+          console.error('Error generating S3 signed URL:', error);
+          return res.status(500).json({
+            success: false,
+            message: 'Error generating download URL',
+            error: error.message
+          });
+        }
+      }
+    }
+
+    // Fallback to local file
     const filePath = path.join(__dirname, '../../uploads/reports/output', filename);
 
     // Security check: prevent directory traversal

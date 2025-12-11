@@ -49,19 +49,37 @@ const getInterviewerProfileById = async (req, res) => {
       return res.status(400).json({ message: 'User is not an interviewer' });
     }
 
+    // Add signed URLs to document fields
+    const { getSignedUrl } = require('../utils/cloudStorage');
+    const profileObj = user.toObject ? user.toObject() : user;
+    if (profileObj.interviewerProfile) {
+      const docFields = ['cvUpload', 'aadhaarDocument', 'panDocument', 'passportPhoto', 'bankDocumentUpload'];
+      for (const field of docFields) {
+        if (profileObj.interviewerProfile[field]) {
+          try {
+            const signedUrl = await getSignedUrl(profileObj.interviewerProfile[field], 3600);
+            profileObj.interviewerProfile[field + 'SignedUrl'] = signedUrl;
+          } catch (error) {
+            console.error(`Error generating signed URL for ${field}:`, error);
+            // Continue without signed URL
+          }
+        }
+      }
+    }
+
     res.json({
       success: true,
       data: {
-        _id: user._id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        phone: user.phone,
-        userType: user.userType,
-        status: user.status,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt,
-        interviewerProfile: user.interviewerProfile || {}
+        _id: profileObj._id,
+        firstName: profileObj.firstName,
+        lastName: profileObj.lastName,
+        email: profileObj.email,
+        phone: profileObj.phone,
+        userType: profileObj.userType,
+        status: profileObj.status,
+        createdAt: profileObj.createdAt,
+        updatedAt: profileObj.updatedAt,
+        interviewerProfile: profileObj.interviewerProfile || {}
       }
     });
   } catch (error) {
@@ -236,9 +254,30 @@ const getPendingProfiles = async (req, res) => {
       'interviewerProfile.approvalStatus': 'pending'
     }).select('firstName lastName email phone interviewerProfile');
 
+    // Add signed URLs to document fields
+    const { getSignedUrl } = require('../utils/cloudStorage');
+    const profilesWithSignedUrls = await Promise.all(pendingProfiles.map(async (profile) => {
+      const profileObj = profile.toObject ? profile.toObject() : profile;
+      if (profileObj.interviewerProfile) {
+        const docFields = ['cvUpload', 'aadhaarDocument', 'panDocument', 'passportPhoto', 'bankDocumentUpload'];
+        for (const field of docFields) {
+          if (profileObj.interviewerProfile[field]) {
+            try {
+              const signedUrl = await getSignedUrl(profileObj.interviewerProfile[field], 3600);
+              profileObj.interviewerProfile[field + 'SignedUrl'] = signedUrl;
+            } catch (error) {
+              console.error(`Error generating signed URL for ${field}:`, error);
+              // Continue without signed URL
+            }
+          }
+        }
+      }
+      return profileObj;
+    }));
+
     res.json({
       success: true,
-      data: pendingProfiles
+      data: profilesWithSignedUrls
     });
   } catch (error) {
     console.error('Error fetching pending profiles:', error);
@@ -299,9 +338,30 @@ const getIndependentInterviewerProfiles = async (req, res) => {
       'interviewerProfile.approvalStatus': 'pending'
     }).select('firstName lastName email phone interviewerProfile');
 
+    // Add signed URLs to document fields
+    const { getSignedUrl } = require('../utils/cloudStorage');
+    const profilesWithSignedUrls = await Promise.all(pendingProfiles.map(async (profile) => {
+      const profileObj = profile.toObject ? profile.toObject() : profile;
+      if (profileObj.interviewerProfile) {
+        const docFields = ['cvUpload', 'aadhaarDocument', 'panDocument', 'passportPhoto', 'bankDocumentUpload'];
+        for (const field of docFields) {
+          if (profileObj.interviewerProfile[field]) {
+            try {
+              const signedUrl = await getSignedUrl(profileObj.interviewerProfile[field], 3600);
+              profileObj.interviewerProfile[field + 'SignedUrl'] = signedUrl;
+            } catch (error) {
+              console.error(`Error generating signed URL for ${field}:`, error);
+              // Continue without signed URL
+            }
+          }
+        }
+      }
+      return profileObj;
+    }));
+
     res.json({
       success: true,
-      data: pendingProfiles
+      data: profilesWithSignedUrls
     });
   } catch (error) {
     console.error('Error fetching independent interviewer profiles:', error);

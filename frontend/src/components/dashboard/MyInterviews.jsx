@@ -185,7 +185,7 @@ const MyInterviews = () => {
     };
   }, [catiRecordingBlobUrl]);
 
-  const handlePlayAudio = async (audioUrl, interviewId) => {
+  const handlePlayAudio = async (audioUrl, interviewId, signedUrl = null) => {
     if (audioPlaying === interviewId) {
       // Pause current audio
       if (audioElement) {
@@ -200,33 +200,71 @@ const MyInterviews = () => {
       }
       
       try {
-        // Create full URL for audio file
-        const fullAudioUrl = audioUrl.startsWith('http') 
-          ? audioUrl 
-          : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}${audioUrl}`;
-        
-        // First check if the file exists
-        try {
-          const response = await fetch(fullAudioUrl, { method: 'HEAD' });
-          if (!response.ok) {
-            if (response.status === 404) {
-              showError('Audio file not found. The file may have been deleted or moved.');
-              setAudioPlaying(null);
-              setAudioElement(null);
-              return;
+        // Use signedUrl if available (from S3), otherwise construct URL from audioUrl
+        let fullAudioUrl;
+        if (signedUrl) {
+          // Use S3 signed URL directly
+          fullAudioUrl = signedUrl;
+        } else if (audioUrl.startsWith('http')) {
+          // Already a full URL
+          fullAudioUrl = audioUrl;
+        } else if (audioUrl.startsWith('audio/') || audioUrl.startsWith('documents/') || audioUrl.startsWith('reports/')) {
+          // This is an S3 key, not a local path - need to get signed URL from API
+          const isProduction = window.location.protocol === 'https:' || window.location.hostname !== 'localhost';
+          const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (isProduction ? '' : 'http://localhost:5000');
+          try {
+            const response = await fetch(`${API_BASE_URL}/api/survey-responses/audio-signed-url?audioUrl=${encodeURIComponent(audioUrl)}`, {
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+              }
+            });
+            if (response.ok) {
+              const data = await response.json();
+              fullAudioUrl = data.signedUrl || audioUrl;
             } else {
-              showError(`Failed to access audio file. Server returned ${response.status}.`);
+              console.error('Failed to get signed URL:', response.status);
+              showError('Failed to get audio URL. Please try again.');
               setAudioPlaying(null);
               setAudioElement(null);
               return;
             }
+          } catch (error) {
+            console.error('Error fetching signed URL:', error);
+            showError('Failed to get audio URL. Please try again.');
+            setAudioPlaying(null);
+            setAudioElement(null);
+            return;
           }
-        } catch (fetchError) {
-          console.error('Error checking audio file:', fetchError);
-          showError('Failed to access audio file. Please check your connection.');
-          setAudioPlaying(null);
-          setAudioElement(null);
-          return;
+        } else {
+          // Local file path - construct full URL
+          fullAudioUrl = `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}${audioUrl}`;
+        }
+        
+        // For S3 signed URLs, skip HEAD check (they're always valid for the expiry period)
+        if (!signedUrl) {
+          // Only check local files
+          try {
+            const response = await fetch(fullAudioUrl, { method: 'HEAD' });
+            if (!response.ok) {
+              if (response.status === 404) {
+                showError('Audio file not found. The file may have been deleted or moved.');
+                setAudioPlaying(null);
+                setAudioElement(null);
+                return;
+              } else {
+                showError(`Failed to access audio file. Server returned ${response.status}.`);
+                setAudioPlaying(null);
+                setAudioElement(null);
+                return;
+              }
+            }
+          } catch (fetchError) {
+            console.error('Error checking audio file:', fetchError);
+            showError('Failed to access audio file. Please check your connection.');
+            setAudioPlaying(null);
+            setAudioElement(null);
+            return;
+          }
         }
         
         // Always use video element for WebM files (which are actually video/webm)
@@ -1191,7 +1229,11 @@ const MyInterviews = () => {
                       <td className="px-6 py-4 whitespace-nowrap">
                         {interview.audioRecording?.hasAudio ? (
                           <button
-                            onClick={() => handlePlayAudio(interview.audioRecording.audioUrl, interview._id)}
+                            onClick={() => handlePlayAudio(
+                              interview.audioRecording.audioUrl, 
+                              interview._id,
+                              interview.audioRecording.signedUrl
+                            )}
                             className="inline-flex items-center px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                           >
                             {audioPlaying === interview._id ? (

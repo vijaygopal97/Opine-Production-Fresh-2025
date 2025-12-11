@@ -3,6 +3,7 @@ import { Play, Pause, Volume2, VolumeX, Download } from 'lucide-react';
 
 const AudioPlayer = ({ 
   audioUrl, 
+  signedUrl, // S3 signed URL (preferred)
   title = "Audio Recording", 
   showDownload = true,
   className = "" 
@@ -13,6 +14,9 @@ const AudioPlayer = ({
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
   const audioRef = useRef(null);
+
+  // Use signedUrl if available, otherwise fallback to audioUrl
+  const effectiveAudioUrl = signedUrl || audioUrl;
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -31,7 +35,7 @@ const AudioPlayer = ({
       audio.removeEventListener('loadedmetadata', updateDuration);
       audio.removeEventListener('ended', handleEnded);
     };
-  }, [audioUrl]);
+  }, [effectiveAudioUrl]);
 
   const togglePlayPause = () => {
     const audio = audioRef.current;
@@ -82,9 +86,9 @@ const AudioPlayer = ({
   };
 
   const handleDownload = () => {
-    if (audioUrl) {
+    if (effectiveAudioUrl) {
       const link = document.createElement('a');
-      link.href = audioUrl;
+      link.href = effectiveAudioUrl;
       link.download = `${title.replace(/\s+/g, '_')}.webm`;
       document.body.appendChild(link);
       link.click();
@@ -92,7 +96,7 @@ const AudioPlayer = ({
     }
   };
 
-  if (!audioUrl) {
+  if (!effectiveAudioUrl) {
     return (
       <div className={`p-4 bg-gray-100 rounded-lg text-center text-gray-500 ${className}`}>
         No audio recording available
@@ -104,7 +108,7 @@ const AudioPlayer = ({
     <div className={`bg-white border border-gray-200 rounded-lg p-4 ${className}`}>
       <audio
         ref={audioRef}
-        src={audioUrl}
+        src={effectiveAudioUrl}
         preload="metadata"
         className="hidden"
       />

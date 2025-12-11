@@ -12,6 +12,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
   const [rejectReason, setRejectReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [audioPlaying, setAudioPlaying] = useState(false);
+  const [audioSignedUrl, setAudioSignedUrl] = useState(null);
   const [catiCallDetails, setCatiCallDetails] = useState(null);
   const [catiRecordingBlobUrl, setCatiRecordingBlobUrl] = useState(null);
   const { showSuccess, showError } = useToast();
@@ -68,6 +69,54 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
       }
     };
   }, [response?._id, response?.interviewMode, response?.call_id]);
+
+  // Fetch signed URL for S3 audio if needed
+  useEffect(() => {
+    const fetchSignedUrl = async () => {
+      // Reset audioSignedUrl when response changes
+      setAudioSignedUrl(null);
+      
+      if (response?.audioRecording?.audioUrl) {
+        const audioUrl = response.audioRecording.audioUrl;
+        
+        // If we already have a signedUrl from backend, use it
+        if (response.audioRecording.signedUrl) {
+          setAudioSignedUrl(response.audioRecording.signedUrl);
+          return;
+        }
+        
+        // Check if it's an S3 key (not a local path or full URL)
+        if ((audioUrl.startsWith('audio/') || audioUrl.startsWith('documents/') || audioUrl.startsWith('reports/')) && 
+            !audioUrl.startsWith('http') && !audioUrl.startsWith('/')) {
+          try {
+            const isProduction = window.location.protocol === 'https:' || window.location.hostname !== 'localhost';
+            const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (isProduction ? '' : 'http://localhost:5000');
+            const token = localStorage.getItem('token');
+            const fetchResponse = await fetch(`${API_BASE_URL}/api/survey-responses/audio-signed-url?audioUrl=${encodeURIComponent(audioUrl)}`, {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            });
+            if (fetchResponse.ok) {
+              const data = await fetchResponse.json();
+              if (data.signedUrl) {
+                setAudioSignedUrl(data.signedUrl);
+              }
+            }
+          } catch (error) {
+            console.error('Error fetching signed URL:', error);
+          }
+        } else if (audioUrl.startsWith('/') || audioUrl.startsWith('http')) {
+          // For local paths or full URLs, we can use them directly
+          // But we don't need to set audioSignedUrl for these
+        }
+      } else if (response?.audioRecording?.signedUrl) {
+        setAudioSignedUrl(response.audioRecording.signedUrl);
+      }
+    };
+
+    fetchSignedUrl();
+  }, [response?._id, response?.audioRecording?.audioUrl, response?.audioRecording?.signedUrl]);
 
   // Helper function to format duration
   const formatDuration = (seconds) => {
@@ -1358,62 +1407,73 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                       <div>File Size: {(response.audioRecording.fileSize / 1024 / 1024).toFixed(2)} MB</div>
                     )}
                   </div>
-                    <audio
-                    data-response-id={response._id || response.responseId}
-                      src={(() => {
-                        let audioUrl = response.audioRecording.audioUrl || '';
-                        if (!audioUrl) return '';
-                        
-                        // Handle localhost URLs in production - replace with current origin
-                        if (audioUrl.includes('localhost')) {
-                          // Extract the path from the localhost URL
-                          const urlMatch = audioUrl.match(/https?:\/\/localhost:\d+(.+)/);
-                          if (urlMatch && urlMatch[1]) {
-                            // Use current origin (which is https://opine.exypnossolutions.com in production)
-                            audioUrl = `${window.location.origin}${urlMatch[1]}`;
-                          } else {
-                            // If no path found, try to replace the entire localhost URL
-                            audioUrl = audioUrl.replace(/https?:\/\/localhost:\d+/, window.location.origin);
+                    {(audioSignedUrl || response.audioRecording.signedUrl || response.audioRecording.audioUrl) && (
+                      <audio
+                        data-response-id={response._id || response.responseId}
+                        src={audioSignedUrl || response.audioRecording.signedUrl || (() => {
+                          // Only return valid URLs, not S3 keys or empty strings
+                          const audioUrl = response.audioRecording.audioUrl;
+                          if (!audioUrl) return null;
+                          // If it's a local path or full URL, return it
+                          if (audioUrl.startsWith('/') || audioUrl.startsWith('http')) {
+                            return audioUrl;
                           }
-                        }
-                        // Handle relative paths (starting with /)
-                        else if (audioUrl.startsWith('/')) {
-                          // In production, use current origin; in dev, use API base URL
-                          if (window.location.origin.includes('https://')) {
-                            audioUrl = `${window.location.origin}${audioUrl}`;
-                          } else {
-                            const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
-                            audioUrl = `${apiBaseUrl}${audioUrl}`;
+                          // If it's an S3 key, return null (will be fetched in useEffect or onError)
+                          return null;
+                        })()}
+                        onEnded={() => setAudioPlaying(false)}
+                        onPause={() => setAudioPlaying(false)}
+                        onPlay={() => setAudioPlaying(true)}
+                        onError={async (e) => {
+                          console.error('Audio element error:', e);
+                          // If audioUrl is an S3 key, try to get signed URL
+                          const audioUrl = response.audioRecording?.audioUrl;
+                          if (audioUrl && (audioUrl.startsWith('audio/') || audioUrl.startsWith('documents/') || audioUrl.startsWith('reports/')) && !audioSignedUrl) {
+                            try {
+                              const isProduction = window.location.protocol === 'https:' || window.location.hostname !== 'localhost';
+                              const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (isProduction ? '' : 'http://localhost:5000');
+                              const token = localStorage.getItem('token');
+                              const signedUrlResponse = await fetch(`${API_BASE_URL}/api/survey-responses/audio-signed-url?audioUrl=${encodeURIComponent(audioUrl)}`, {
+                                headers: {
+                                  'Authorization': `Bearer ${token}`
+                                }
+                              });
+                              if (signedUrlResponse.ok) {
+                                const data = await signedUrlResponse.json();
+                                if (data.signedUrl) {
+                                  // Update the audio element src with signed URL
+                                  setAudioSignedUrl(data.signedUrl);
+                                  const audioEl = e.target;
+                                  audioEl.src = data.signedUrl;
+                                  audioEl.load();
+                                  // Try to play again
+                                  audioEl.play().catch(playError => {
+                                    console.error('Error playing audio after loading signed URL:', playError);
+                                  });
+                                  return;
+                                }
+                              }
+                            } catch (error) {
+                              console.error('Error fetching signed URL:', error);
+                            }
                           }
-                        }
-                        // If it's already a full HTTPS URL, use it as is
-                        else if (audioUrl.startsWith('https://')) {
-                          return audioUrl;
-                        }
-                        // If it's HTTP URL in production, convert to HTTPS
-                        else if (audioUrl.startsWith('http://') && window.location.origin.includes('https://')) {
-                          audioUrl = audioUrl.replace('http://', 'https://');
-                        }
-                        
-                        return audioUrl;
-                      })()}
-                      onEnded={() => setAudioPlaying(false)}
-                      onPause={() => setAudioPlaying(false)}
-                    onPlay={() => setAudioPlaying(true)}
-                      onError={(e) => {
-                        console.error('Audio element error:', e);
-                        showError('Failed to load audio file. The file may have been deleted or moved.');
-                        setAudioPlaying(false);
-                      }}
-                      className="w-full"
-                      controls
-                    />
-                  {response.audioRecording.audioUrl && (
+                          showError('Failed to load audio file. The file may have been deleted or moved.');
+                          setAudioPlaying(false);
+                        }}
+                        className="w-full"
+                        controls
+                      />
+                    )}
+                  {(response.audioRecording.audioUrl || audioSignedUrl) && (
                     <a
-                      href={(() => {
+                      href={audioSignedUrl || response.audioRecording.signedUrl || (() => {
                         let audioUrl = response.audioRecording.audioUrl || '';
                         if (audioUrl.startsWith('/')) {
                           return `${window.location.origin}${audioUrl}`;
+                        }
+                        // If it's an S3 key, use signed URL
+                        if (audioUrl.startsWith('audio/') || audioUrl.startsWith('documents/') || audioUrl.startsWith('reports/')) {
+                          return audioSignedUrl || audioUrl; // Will use signed URL if available
                         }
                         return audioUrl;
                       })()}

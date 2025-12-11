@@ -1291,13 +1291,34 @@ exports.getCompanyUsers = async (req, res) => {
     }
 
     // Get users with pagination
-    const users = await User.find(query)
+    let users = await User.find(query)
       .populate('company', 'companyName companyCode')
       .populate('assignedTeamMembers.user', 'firstName lastName email memberId userType')
       .select('-password -emailVerificationToken -phoneVerificationToken')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limitNum);
+
+    // Add signed URLs to document fields for users with interviewerProfile
+    const { getSignedUrl } = require('../utils/cloudStorage');
+    const usersWithSignedUrls = await Promise.all(users.map(async (user) => {
+      const userObj = user.toObject ? user.toObject() : user;
+      if (userObj.interviewerProfile) {
+        const docFields = ['cvUpload', 'aadhaarDocument', 'panDocument', 'passportPhoto', 'bankDocumentUpload'];
+        for (const field of docFields) {
+          if (userObj.interviewerProfile[field]) {
+            try {
+              const signedUrl = await getSignedUrl(userObj.interviewerProfile[field], 3600);
+              userObj.interviewerProfile[field + 'SignedUrl'] = signedUrl;
+            } catch (error) {
+              console.error(`Error generating signed URL for ${field}:`, error);
+              // Continue without signed URL
+            }
+          }
+        }
+      }
+      return userObj;
+    }));
 
     // Get total count
     const totalUsers = await User.countDocuments(query);
@@ -1315,7 +1336,7 @@ exports.getCompanyUsers = async (req, res) => {
     res.status(200).json({
       success: true,
       data: {
-        users,
+        users: usersWithSignedUrls,
         pagination: {
           currentPage: pageNum,
           totalPages: Math.ceil(totalUsers / limitNum),

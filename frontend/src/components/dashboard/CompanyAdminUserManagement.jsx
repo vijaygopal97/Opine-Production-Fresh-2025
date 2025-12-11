@@ -38,6 +38,7 @@ import {
 import { authAPI } from '../../services/api';
 import { useToast } from '../../contexts/ToastContext';
 import { getFileUrl } from '../../utils/config';
+import api from '../../services/api';
 import AddCompanyUser from './AddCompanyUser';
 import EditUserModal from './EditUserModal';
 
@@ -48,6 +49,47 @@ const CompanyAdminUserManagement = () => {
   const [error, setError] = useState(null);
   const [pagination, setPagination] = useState({});
   const [filters, setFilters] = useState({});
+  const [documentSignedUrls, setDocumentSignedUrls] = useState({}); // Cache for document signed URLs
+
+  // Helper function to get document URL (prioritizes signed URLs from backend, then fetches if needed)
+  const getDocumentUrl = async (docPath, docSignedUrl, userId, fieldName) => {
+    if (!docPath) return null;
+    
+    // If signed URL is already provided by backend, use it
+    if (docSignedUrl) {
+      return docSignedUrl;
+    }
+    
+    // Check cache
+    const cacheKey = `${userId}_${fieldName}`;
+    if (documentSignedUrls[cacheKey]) {
+      return documentSignedUrls[cacheKey];
+    }
+    
+    // If it's an S3 key, fetch signed URL
+    if (docPath.startsWith('documents/') || docPath.startsWith('audio/') || docPath.startsWith('reports/')) {
+      try {
+        const isProduction = window.location.protocol === 'https:' || window.location.hostname !== 'localhost';
+        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (isProduction ? '' : 'http://localhost:5000');
+        const token = localStorage.getItem('token');
+        const response = await fetch(`${API_BASE_URL}/api/survey-responses/audio-signed-url?audioUrl=${encodeURIComponent(docPath)}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data.signedUrl) {
+            setDocumentSignedUrls(prev => ({ ...prev, [cacheKey]: data.signedUrl }));
+            return data.signedUrl;
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching signed URL:', error);
+      }
+    }
+    
+    // Fallback to getFileUrl for local paths
+    return getFileUrl(docPath);
+  };
   
   // Search and filter states
   const [searchTerm, setSearchTerm] = useState('');
@@ -967,7 +1009,17 @@ const CompanyAdminUserManagement = () => {
                             <span className="text-sm font-medium text-gray-900">CV Document</span>
                           </div>
                           <button
-                            onClick={() => window.open(getFileUrl(selectedUser.interviewerProfile.cvUpload), '_blank')}
+                            onClick={async () => {
+                              const docUrl = await getDocumentUrl(
+                                selectedUser.interviewerProfile.cvUpload,
+                                selectedUser.interviewerProfile.cvUploadSignedUrl,
+                                selectedUser._id,
+                                'cvUpload'
+                              );
+                              if (docUrl) {
+                                window.open(docUrl, '_blank');
+                              }
+                            }}
                             className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-blue-700 bg-[#E6F0F8] hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
                           >
                             <Eye className="h-4 w-4 mr-1" />
@@ -984,7 +1036,17 @@ const CompanyAdminUserManagement = () => {
                             <span className="text-sm font-medium text-gray-900">Aadhaar Card</span>
                           </div>
                           <button
-                            onClick={() => window.open(getFileUrl(selectedUser.interviewerProfile.aadhaarDocument), '_blank')}
+                            onClick={async () => {
+                              const docUrl = await getDocumentUrl(
+                                selectedUser.interviewerProfile.aadhaarDocument,
+                                selectedUser.interviewerProfile.aadhaarDocumentSignedUrl,
+                                selectedUser._id,
+                                'aadhaarDocument'
+                              );
+                              if (docUrl) {
+                                window.open(docUrl, '_blank');
+                              }
+                            }}
                             className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-blue-700 bg-[#E6F0F8] hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
                           >
                             <Eye className="h-4 w-4 mr-1" />
@@ -1001,7 +1063,17 @@ const CompanyAdminUserManagement = () => {
                             <span className="text-sm font-medium text-gray-900">PAN Card</span>
                           </div>
                           <button
-                            onClick={() => window.open(getFileUrl(selectedUser.interviewerProfile.panDocument), '_blank')}
+                            onClick={async () => {
+                              const docUrl = await getDocumentUrl(
+                                selectedUser.interviewerProfile.panDocument,
+                                selectedUser.interviewerProfile.panDocumentSignedUrl,
+                                selectedUser._id,
+                                'panDocument'
+                              );
+                              if (docUrl) {
+                                window.open(docUrl, '_blank');
+                              }
+                            }}
                             className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-blue-700 bg-[#E6F0F8] hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
                           >
                             <Eye className="h-4 w-4 mr-1" />
@@ -1018,7 +1090,17 @@ const CompanyAdminUserManagement = () => {
                             <span className="text-sm font-medium text-gray-900">Passport Photo</span>
                           </div>
                           <button
-                            onClick={() => window.open(getFileUrl(selectedUser.interviewerProfile.passportPhoto), '_blank')}
+                            onClick={async () => {
+                              const docUrl = await getDocumentUrl(
+                                selectedUser.interviewerProfile.passportPhoto,
+                                selectedUser.interviewerProfile.passportPhotoSignedUrl,
+                                selectedUser._id,
+                                'passportPhoto'
+                              );
+                              if (docUrl) {
+                                window.open(docUrl, '_blank');
+                              }
+                            }}
                             className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-blue-700 bg-[#E6F0F8] hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
                           >
                             <Eye className="h-4 w-4 mr-1" />
@@ -1035,7 +1117,17 @@ const CompanyAdminUserManagement = () => {
                             <span className="text-sm font-medium text-gray-900">Bank Document</span>
                           </div>
                           <button
-                            onClick={() => window.open(getFileUrl(selectedUser.interviewerProfile.bankDocumentUpload), '_blank')}
+                            onClick={async () => {
+                              const docUrl = await getDocumentUrl(
+                                selectedUser.interviewerProfile.bankDocumentUpload,
+                                selectedUser.interviewerProfile.bankDocumentUploadSignedUrl,
+                                selectedUser._id,
+                                'bankDocumentUpload'
+                              );
+                              if (docUrl) {
+                                window.open(docUrl, '_blank');
+                              }
+                            }}
                             className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-blue-700 bg-[#E6F0F8] hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
                           >
                             <Eye className="h-4 w-4 mr-1" />
