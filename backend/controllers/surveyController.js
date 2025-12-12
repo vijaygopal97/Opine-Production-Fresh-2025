@@ -2899,13 +2899,12 @@ exports.getCatiStats = async (req, res) => {
       // Normalize call status
       const normalizedCallStatus = callStatus ? callStatus.toLowerCase().trim() : 'unknown';
       
-      // Count ALL dials EXCEPT "didnt_get_call" (API failure, not interviewer's fault)
+      // Count ALL dials INCLUDING "didnt_get_call" 
       // This includes ALL statuses: call_connected, busy, switched_off, not_reachable, 
-      // number_does_not_exist, did_not_pick_up, abandoned mid-way, etc.
+      // number_does_not_exist, did_not_pick_up, didnt_get_call, abandoned mid-way, etc.
       // Even if call status is 'unknown', count it as a dial attempt
-      if (normalizedCallStatus !== 'didnt_get_call' && normalizedCallStatus !== 'didn\'t_get_call') {
-        stat.numberOfDials += 1;
-      }
+      // IMPORTANT: Number of Dials = Ringing + Not Ringing + Call Not Received to Telecaller
+      stat.numberOfDials += 1;
     });
     
     // Step 3: Fetch batch information for all responses to determine QC status
@@ -3093,30 +3092,28 @@ exports.getCatiStats = async (req, res) => {
         // - Responses with status 'abandoned' or 'Terminated'
         // - Responses with call status that is NOT 'success'/'call_connected' (busy, switched_off, did_not_pick_up, etc.)
         // - Responses with no call status or 'unknown' call status (but were counted as dials)
+        // - Responses with call status 'didnt_get_call' (API failure - still an incomplete attempt)
         // EXCLUDE:
         // - Rejected (already counted in "Completed" and "Rejected")
         // - Approved (already counted in "Completed" and "Approved")
-        // - Responses with call status 'didnt_get_call' (not counted in "Number of Dials")
         // - Responses that are completed (call status 'success'/'call_connected') - already counted in "Completed"
         if (normalizedResponseStatus !== 'rejected' && 
-            normalizedResponseStatus !== 'approved' &&
-            normalizedCallStatus !== 'didnt_get_call' && 
-            normalizedCallStatus !== 'didn\'t_get_call') {
+            normalizedResponseStatus !== 'approved') {
           // This response was counted in "Number of Dials" but is not completed
-          // Count it in "Incomplete"
+          // Count it in "Incomplete" (including 'didnt_get_call' since it's now in Number of Dials)
           stat.incomplete += 1;
         }
         // Rejected and Approved responses are already counted in "Completed" above, so don't count here
       }
         
       // Call Status Breakdown
-      // IMPORTANT: These stats should cover ALL responses counted in "Number of Dials"
-      // "Number of Dials" = Ringing + Not Ringing (Call Not Received is excluded from Number of Dials)
-      // OR: Total Responses = Ringing + Not Ringing + Call Not Received
+      // IMPORTANT: These stats should cover ALL responses
+      // Number of Dials = Ringing + Not Ringing + Call Not Received to Telecaller
+      // Every response must be categorized into exactly one of these three categories
       
       if (normalizedCallStatus === 'didnt_get_call' || normalizedCallStatus === 'didn\'t_get_call') {
         // Call Not Received: API failure, not interviewer's fault
-        // NOTE: This is NOT counted in "Number of Dials" (excluded in Step 2)
+        // This IS counted in "Number of Dials"
         stat.callNotReceivedToTelecaller += 1;
       } else if (normalizedCallStatus === 'success' || normalizedCallStatus === 'call_connected' || 
                  normalizedCallStatus === 'busy' || normalizedCallStatus === 'did_not_pick_up') {
@@ -3129,11 +3126,11 @@ exports.getCatiStats = async (req, res) => {
         // These are counted in "Number of Dials"
         stat.notRinging += 1;
       } else {
-        // Other statuses (unknown, abandoned, etc.) that are counted in "Number of Dials"
+        // Other statuses (unknown, abandoned, terminated, etc.)
         // Categorize them based on common patterns:
         // - If it's 'unknown' or empty, it's likely an incomplete attempt - count as "Not Ringing"
-        // - If it's 'abandoned' or similar, it's likely an incomplete attempt - count as "Not Ringing"
-        // This ensures: Number of Dials = Ringing + Not Ringing
+        // - If it's 'abandoned' or 'terminated', it's an incomplete attempt - count as "Not Ringing"
+        // This ensures: Number of Dials = Ringing + Not Ringing + Call Not Received
         if (normalizedCallStatus === 'unknown' || normalizedCallStatus === '' || 
             normalizedCallStatus === 'abandoned' || normalizedCallStatus === 'terminated') {
           stat.notRinging += 1;
