@@ -1430,6 +1430,10 @@ const getPendingApprovals = async (req, res) => {
         }
       })
       .populate({
+        path: 'interviewer',
+        select: 'firstName lastName email phone memberId memberID'
+      })
+      .populate({
         path: 'qcBatch',
         select: '_id status batchDate batchConfig',
         lean: true

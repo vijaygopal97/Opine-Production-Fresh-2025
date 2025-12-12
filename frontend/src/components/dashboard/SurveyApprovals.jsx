@@ -2719,6 +2719,22 @@ const SurveyApprovals = () => {
                   
                   return (
                     <div className="grid grid-cols-2 gap-4 text-sm">
+                      {selectedInterview.interviewer && (
+                        <>
+                          <div>
+                            <span className="text-gray-600">Interviewer:</span>
+                            <span className="ml-2 font-medium">
+                              {selectedInterview.interviewer.firstName} {selectedInterview.interviewer.lastName}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-600">Interviewer ID:</span>
+                            <span className="ml-2 font-medium">
+                              {selectedInterview.interviewer.memberId || selectedInterview.interviewer.memberID || 'N/A'}
+                            </span>
+                          </div>
+                        </>
+                      )}
                       <div>
                         <span className="text-gray-600">Duration:</span>
                         <span className="ml-2 font-medium">{formatDuration(selectedInterview.totalTimeSpent)}</span>
