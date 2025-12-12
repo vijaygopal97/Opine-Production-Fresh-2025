@@ -1929,7 +1929,7 @@ const getNextReviewAssignment = async (req, res) => {
           select: 'firstName lastName email _id'
         }
       })
-      .populate('interviewer', 'firstName lastName email')
+      .populate('interviewer', 'firstName lastName email phone memberId')
       .sort({ 'reviewAssignment.assignedAt': 1 }) // Oldest assignment first
       .lean();
 
@@ -2034,8 +2034,17 @@ const getNextReviewAssignment = async (req, res) => {
         const answeredQuestions = activeAssignment.responses?.filter(r => !r.isSkipped).length || 0;
         const completionPercentage = effectiveQuestions > 0 ? Math.round((answeredQuestions / effectiveQuestions) * 100) : 0;
 
+        // Explicitly preserve interviewer field with memberId
         const transformedResponse = {
           ...activeAssignment,
+          interviewer: activeAssignment.interviewer ? {
+            _id: activeAssignment.interviewer._id,
+            firstName: activeAssignment.interviewer.firstName,
+            lastName: activeAssignment.interviewer.lastName,
+            email: activeAssignment.interviewer.email,
+            phone: activeAssignment.interviewer.phone,
+            memberId: activeAssignment.interviewer.memberId
+          } : activeAssignment.interviewer,
           totalQuestions: effectiveQuestions,
           answeredQuestions,
           completionPercentage
@@ -2064,7 +2073,7 @@ const getNextReviewAssignment = async (req, res) => {
           select: 'firstName lastName email _id'
         }
       })
-      .populate('interviewer', 'firstName lastName email')
+      .populate('interviewer', 'firstName lastName email phone memberId')
       .sort({ createdAt: 1 }) // Oldest first
       .lean();
 
@@ -2549,7 +2558,7 @@ const submitVerification = async (req, res) => {
     // Find the survey response
     const surveyResponse = await SurveyResponse.findOne({ responseId })
       .populate('survey', 'company surveyName')
-      .populate('interviewer', 'firstName lastName email');
+      .populate('interviewer', 'firstName lastName email phone memberId');
 
     if (!surveyResponse) {
       return res.status(404).json({
