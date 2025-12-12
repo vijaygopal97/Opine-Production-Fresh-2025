@@ -274,6 +274,7 @@ exports.getSurveys = async (req, res) => {
       });
       
       console.log(`✅ Found ${approvedResponses} approved responses for ${survey.surveyName}`);
+      console.log(`📊 Found ${allResponsesCount} total responses (all statuses) for ${survey.surveyName}`);
       console.log(`📊 All status counts for ${survey.surveyName}:`, statusCounts);
 
 
@@ -307,8 +308,9 @@ exports.getSurveys = async (req, res) => {
     // Debug: Log the analytics data being sent
     console.log('📊 Analytics data being sent to frontend:');
     surveysWithAnalytics.forEach(survey => {
-      console.log(`  ${survey.surveyName}:`, {
+      console.log(`  ${survey.surveyName} (${survey._id}):`, {
         approvedResponses: survey.analytics?.totalResponses,
+        allResponsesCount: survey.analytics?.allResponsesCount,
         completionRate: survey.analytics?.completionRate,
         assignedInterviewersCount: survey.analytics?.assignedInterviewersCount
       });

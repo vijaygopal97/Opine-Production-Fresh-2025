@@ -570,7 +570,25 @@ const CompanySurveysManagement = () => {
               {/* Vertical Action Buttons */}
               <div className="flex flex-col space-y-2 ml-4">
                 {/* View Responses Button - Show if there are ANY responses (approved, rejected, pending, terminated, abandoned, etc.) */}
-                {(survey.analytics?.allResponsesCount || survey.analytics?.totalResponses || 0) > 0 && (
+                {(() => {
+                  const allResponsesCount = survey.analytics?.allResponsesCount || 0;
+                  const totalResponses = survey.analytics?.totalResponses || 0;
+                  const shouldShow = allResponsesCount > 0 || totalResponses > 0;
+                  
+                  // Debug logging
+                  if (survey._id === '68fd1915d41841da463f0d46' || survey.id === '68fd1915d41841da463f0d46') {
+                    console.log('🔍 Survey button visibility check:', {
+                      surveyId: survey._id || survey.id,
+                      surveyName: survey.surveyName,
+                      allResponsesCount,
+                      totalResponses,
+                      shouldShow,
+                      analytics: survey.analytics
+                    });
+                  }
+                  
+                  return shouldShow;
+                })() && (
                   <>
                     <button
                       onClick={() => handleViewResponses(survey)}
