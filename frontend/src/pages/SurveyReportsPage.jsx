@@ -3446,7 +3446,7 @@ const SurveyReportsPage = () => {
                       'Caller Mobile No.': stat.interviewerPhone || 'N/A',
                       'Number of Dials': stat.numberOfDials || 0,
                       'Completed': stat.completed || 0,
-                      'Successful': stat.successful || 0,
+                      'Approved': stat.approved || 0,
                       'Under QC Queue': stat.underQCQueue || 0,
                       'Processing in Batch': stat.processingInBatch || 0,
                       'Rejected': stat.rejected || 0,
@@ -3491,7 +3491,7 @@ const SurveyReportsPage = () => {
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Caller Mobile No.</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Number of Dials</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Completed</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Successful</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Approved</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Under QC Queue</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Processing in Batch</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Rejected</th>
@@ -3515,7 +3515,7 @@ const SurveyReportsPage = () => {
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.interviewerPhone || 'N/A'}</td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.numberOfDials || 0}</td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.completed || 0}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.successful || 0}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.approved || 0}</td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.underQCQueue || 0}</td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.processingInBatch || 0}</td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.rejected || 0}</td>
