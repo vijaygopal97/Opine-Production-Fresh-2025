@@ -40,6 +40,18 @@ const userSchema = new mongoose.Schema({
     index: true
   },
 
+  // QA IDs (for Quality Agents)
+  'QA-capi-ID': {
+    type: String,
+    trim: true,
+    sparse: true
+  },
+  'QA-cati-ID': {
+    type: String,
+    trim: true,
+    sparse: true
+  },
+
   // Authentication
   password: {
     type: String,
