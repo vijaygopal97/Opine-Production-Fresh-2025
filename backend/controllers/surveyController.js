@@ -2996,6 +2996,8 @@ exports.getCatiStats = async (req, res) => {
       // IMPORTANT: Rejected responses should be counted regardless of call status
       // because they represent completed interviews that were later rejected during QC
       // They might not have call status set properly, but they are still completed interviews
+      // NOTE: Rejected responses are already counted in "Number of Dials" in Step 2
+      // They should be counted in "Completed" here, and NOT in "Incomplete"
       if (normalizedResponseStatus === 'rejected') {
         stat.rejected += 1;
         stat.completed += 1; // Rejected responses are also completed interviews
@@ -3008,6 +3010,7 @@ exports.getCatiStats = async (req, res) => {
         // Skip to call status breakdown - don't process as completed/incomplete again
         // Rejected responses are already counted in "Completed", so skip the isCompleted block
         // Continue to call status breakdown for stats
+        // DO NOT count in incomplete - they are already in completed
       } else if (isCompleted) {
         // Completed: Call was connected and interview completed
         stat.completed += 1;
@@ -3066,10 +3069,17 @@ exports.getCatiStats = async (req, res) => {
           console.warn(`⚠️ Completed interview with unexpected status: ${responseStatus} for response ${response._id}`);
           stat.processingInBatch += 1;
         }
-      } else if (normalizedResponseStatus !== 'rejected') {
+      } else {
         // Incomplete: All other responses (abandoned, not connected, etc.)
-        // EXCLUDE rejected responses (they are already counted in "Completed")
-        stat.incomplete += 1;
+        // This includes responses that:
+        // - Are NOT rejected (rejected are already counted in "Completed" above)
+        // - Are NOT completed (call status is not 'success' or 'call_connected')
+        // - Were counted in "Number of Dials" (call status is not 'didnt_get_call')
+        // EXCLUDE rejected responses - they are already counted in "Completed"
+        if (normalizedResponseStatus !== 'rejected') {
+          stat.incomplete += 1;
+        }
+        // If rejected, it's already counted in "Completed" above, so don't count here
       }
         
       // Call Status Breakdown
