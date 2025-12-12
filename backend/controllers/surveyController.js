@@ -3112,35 +3112,42 @@ exports.getCatiStats = async (req, res) => {
       // Every response must be categorized into exactly one of these three categories
       
       // CRITICAL LOGIC:
-      // - "Interviewer Picked up" (ringing) = All calls where interviewer picked up and respondent's phone RANG
-      //   This includes: call_connected, success, busy, did_not_pick_up
-      //   (These mean the respondent's phone actually rang)
+      // - "Interviewer Picked up" (ringing) = All calls where interviewer picked up the call
+      //   This includes: call_connected, success, busy, did_not_pick_up, switched_off
+      //   (switched_off means interviewer picked up and determined phone was off - they heard something)
       // - "Respondent Ph. Not Ringing" (notRinging) = Calls where respondent's phone didn't ring
       //   This includes: switched_off, not_reachable, number_does_not_exist
-      //   (switched_off = phone was off, not_reachable/number_does_not_exist = invalid number)
+      //   (switched_off = phone was off/didn't ring, not_reachable/number_does_not_exist = invalid number)
       // - "Call Not Received to Telecaller" = API failures
+      // NOTE: switched_off appears in BOTH "Interviewer Picked up" AND "Respondent Ph. Not Ringing"
+      // because interviewer picked up (heard it was off) but respondent's phone didn't ring
       
       if (normalizedCallStatus === 'didnt_get_call' || normalizedCallStatus === 'didn\'t_get_call') {
         // Call Not Received: API failure, not interviewer's fault
         // This IS counted in "Number of Dials"
         stat.callNotReceivedToTelecaller += 1;
-      } else if (normalizedCallStatus === 'switched_off' || 
-                 normalizedCallStatus === 'not_reachable' || 
+      } else if (normalizedCallStatus === 'not_reachable' || 
                  normalizedCallStatus === 'number_does_not_exist') {
-        // Not Ringing: These three statuses mean respondent's phone didn't ring
-        // - switched_off (Switch Off) - phone was off, didn't ring
+        // Not Ringing: ONLY these two statuses (phone didn't ring at all, interviewer may not have picked up)
         // - not_reachable (Number Not Reachable) - phone doesn't ring
         // - number_does_not_exist (Number Does Not Exist) - phone doesn't ring
         // These are counted in "Number of Dials"
         stat.notRinging += 1;
       } else {
-        // All other statuses go to "Ringing" (respondent's phone actually rang)
+        // All other statuses go to "Ringing" (interviewer picked up)
         // This includes:
         // - success, call_connected (respondent answered - phone rang)
         // - busy, did_not_pick_up (respondent's phone rang but didn't answer)
+        // - switched_off (interviewer picked up and determined phone was off - they heard something)
         // - unknown, abandoned, terminated, or any other status (default to Ringing)
         // This ensures: Number of Dials = Ringing + Not Ringing + Call Not Received
         stat.ringing += 1;
+      }
+      
+      // ALSO count switched_off in "Respondent Ph. Not Ringing" (notRinging)
+      // because the respondent's phone didn't ring (it was off)
+      if (normalizedCallStatus === 'switched_off') {
+        stat.notRinging += 1;
       }
       
       // Count individual statuses for breakdown (regardless of ringing/notRinging category)
@@ -3301,7 +3308,7 @@ exports.getCatiStats = async (req, res) => {
       },
       numberStats: {
         callNotReceived: totalCallNotReceivedFromStats || callNotReceived, // Use aggregated from interviewer stats, fallback to response-based calculation
-        ringing: (totalCallsAttendedFromStats || 0) - (totalNotRingingFromStats || 0), // Respondent Ph. Ringing = Interviewer Picked up - Respondent Ph. Not Ringing
+        ringing: (totalCallsAttendedFromStats || 0) - (totalNotRingingFromStats || 0), // Respondent Ph. Ringing = Interviewer Picked up - Respondent Ph. Not Ringing (switched_off is in both, so it cancels out)
         notRinging: totalNotRingingFromStats || notRinging // Respondent Ph. Not Ringing = Switch Off + Not Reachable + Number Does Not Exist (aggregated from interviewer stats)
         // Removed noResponseByTelecaller from Number Stats
       },
