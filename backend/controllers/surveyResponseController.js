@@ -2046,16 +2046,30 @@ const getNextReviewAssignment = async (req, res) => {
           fullInterviewer: JSON.stringify(activeAssignment.interviewer, null, 2)
         });
         
+        // Ensure interviewer is properly populated and has memberId
+        let interviewerData = null;
+        if (activeAssignment.interviewer) {
+          // If interviewer is an ObjectId (not populated), it will be a string/ObjectId
+          if (typeof activeAssignment.interviewer === 'object' && activeAssignment.interviewer.firstName) {
+            // It's populated, use it directly
+            interviewerData = {
+              _id: activeAssignment.interviewer._id,
+              firstName: activeAssignment.interviewer.firstName,
+              lastName: activeAssignment.interviewer.lastName,
+              email: activeAssignment.interviewer.email,
+              phone: activeAssignment.interviewer.phone,
+              memberId: activeAssignment.interviewer.memberId || activeAssignment.interviewer.memberID || null
+            };
+          } else {
+            // It's not populated, log warning but keep it as is
+            console.warn('⚠️ getNextReviewAssignment - Active assignment interviewer not populated, is ObjectId:', activeAssignment.interviewer);
+            interviewerData = activeAssignment.interviewer;
+          }
+        }
+        
         const transformedResponse = {
           ...activeAssignment,
-          interviewer: activeAssignment.interviewer ? {
-            _id: activeAssignment.interviewer._id,
-            firstName: activeAssignment.interviewer.firstName,
-            lastName: activeAssignment.interviewer.lastName,
-            email: activeAssignment.interviewer.email,
-            phone: activeAssignment.interviewer.phone,
-            memberId: activeAssignment.interviewer.memberId || activeAssignment.interviewer.memberID || null
-          } : activeAssignment.interviewer,
+          interviewer: interviewerData,
           totalQuestions: effectiveQuestions,
           answeredQuestions,
           completionPercentage
@@ -2337,16 +2351,30 @@ const getNextReviewAssignment = async (req, res) => {
       fullInterviewer: JSON.stringify(updatedResponse.interviewer, null, 2)
     });
     
+    // Ensure interviewer is properly populated and has memberId
+    let interviewerData = null;
+    if (updatedResponse.interviewer) {
+      // If interviewer is an ObjectId (not populated), it will be a string/ObjectId
+      if (typeof updatedResponse.interviewer === 'object' && updatedResponse.interviewer.firstName) {
+        // It's populated, use it directly
+        interviewerData = {
+          _id: updatedResponse.interviewer._id,
+          firstName: updatedResponse.interviewer.firstName,
+          lastName: updatedResponse.interviewer.lastName,
+          email: updatedResponse.interviewer.email,
+          phone: updatedResponse.interviewer.phone,
+          memberId: updatedResponse.interviewer.memberId || updatedResponse.interviewer.memberID || null
+        };
+      } else {
+        // It's not populated, log warning but keep it as is
+        console.warn('⚠️ getNextReviewAssignment - Interviewer not populated, is ObjectId:', updatedResponse.interviewer);
+        interviewerData = updatedResponse.interviewer;
+      }
+    }
+    
     const transformedResponse = {
       ...updatedResponse,
-      interviewer: updatedResponse.interviewer ? {
-        _id: updatedResponse.interviewer._id,
-        firstName: updatedResponse.interviewer.firstName,
-        lastName: updatedResponse.interviewer.lastName,
-        email: updatedResponse.interviewer.email,
-        phone: updatedResponse.interviewer.phone,
-        memberId: updatedResponse.interviewer.memberId || updatedResponse.interviewer.memberID || null
-      } : updatedResponse.interviewer,
+      interviewer: interviewerData,
       totalQuestions: effectiveQuestions,
       answeredQuestions,
       completionPercentage
