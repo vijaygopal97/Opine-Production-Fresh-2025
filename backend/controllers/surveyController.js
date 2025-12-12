@@ -2993,10 +2993,10 @@ exports.getCatiStats = async (req, res) => {
       // Check if this is a completed interview (call was connected)
       const isCompleted = normalizedCallStatus === 'success' || normalizedCallStatus === 'call_connected';
       
-      // IMPORTANT: Rejected responses should be counted regardless of call status
-      // because they represent completed interviews that were later rejected during QC
+      // IMPORTANT: Rejected and Approved responses should be counted regardless of call status
+      // because they represent completed interviews that were later rejected/approved during QC
       // They might not have call status set properly, but they are still completed interviews
-      // NOTE: Rejected responses are already counted in "Number of Dials" in Step 2
+      // NOTE: Rejected/Approved responses are already counted in "Number of Dials" in Step 2
       // They should be counted in "Completed" here, and NOT in "Incomplete"
       if (normalizedResponseStatus === 'rejected') {
         stat.rejected += 1;
@@ -3009,6 +3009,22 @@ exports.getCatiStats = async (req, res) => {
         }
         // Skip to call status breakdown - don't process as completed/incomplete again
         // Rejected responses are already counted in "Completed", so skip the isCompleted block
+        // Continue to call status breakdown for stats
+        // DO NOT count in incomplete - they are already in completed
+      } else if (normalizedResponseStatus === 'approved') {
+        // Approved: SurveyResponse with Approved status (from completed interviews)
+        // Count in "Approved" and "Completed" regardless of call status
+        // Approved responses are completed interviews, even if call status is missing
+        stat.approved += 1;
+        stat.completed += 1; // Approved responses are also completed interviews
+        
+        // Form Duration - Sum of all CATI interview durations (totalTimeSpent from timer)
+        if (response.totalTimeSpent) {
+          stat.formDuration += (response.totalTimeSpent || 0);
+          console.log(`⏱️  Adding form duration: ${response.totalTimeSpent || 0}s for interviewer ${interviewerId}, total now: ${stat.formDuration}s`);
+        }
+        // Skip to call status breakdown - don't process as completed/incomplete again
+        // Approved responses are already counted in "Completed", so skip the isCompleted block
         // Continue to call status breakdown for stats
         // DO NOT count in incomplete - they are already in completed
       } else if (isCompleted) {
