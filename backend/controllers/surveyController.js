@@ -2986,6 +2986,26 @@ exports.getCatiStats = async (req, res) => {
         responseToCallIdMap.set(response._id.toString(), { callRecordId, callId });
       }
       
+      // Get response status (normalized)
+      const responseStatus = response.status ? response.status.trim() : '';
+      const normalizedResponseStatus = responseStatus.toLowerCase();
+      
+      // IMPORTANT: Rejected responses should be counted regardless of call status
+      // because they represent completed interviews that were later rejected during QC
+      // They might not have call status set properly, but they are still completed interviews
+      if (normalizedResponseStatus === 'rejected') {
+        stat.rejected += 1;
+        stat.completed += 1; // Rejected responses are also completed interviews
+        
+        // Form Duration - Sum of all CATI interview durations (totalTimeSpent from timer)
+        if (response.totalTimeSpent) {
+          stat.formDuration += (response.totalTimeSpent || 0);
+          console.log(`⏱️  Adding form duration: ${response.totalTimeSpent || 0}s for interviewer ${interviewerId}, total now: ${stat.formDuration}s`);
+        }
+        // Skip to next response - rejected is already counted
+        return;
+      }
+      
       // Check if this is a completed interview (call was connected)
       const isCompleted = normalizedCallStatus === 'success' || normalizedCallStatus === 'call_connected';
       
@@ -2997,17 +3017,9 @@ exports.getCatiStats = async (req, res) => {
         stat.formDuration += (response.totalTimeSpent || 0);
         console.log(`⏱️  Adding form duration: ${response.totalTimeSpent || 0}s for interviewer ${interviewerId}, total now: ${stat.formDuration}s`);
         
-        // Categorize completed interviews into: Successful, Rejected, Under QC Queue, or Processing in Batch
-        // These categories should sum to equal "Completed"
-        const responseStatus = response.status ? response.status.trim() : '';
-        
+        // Categorize completed interviews into: Successful, Under QC Queue, or Processing in Batch
+        // (Rejected is already handled above)
         if (responseStatus === 'Approved') {
-          // Successful: SurveyResponse with Approved status (only from completed interviews)
-          stat.successful += 1;
-        } else if (responseStatus === 'Rejected') {
-          // Rejected: SurveyResponse with Rejected status (only from completed interviews)
-          stat.rejected += 1;
-        } else if (responseStatus === 'Pending_Approval') {
           // Split Under QC into two categories based on batch status (only for completed interviews)
           let batchId = null;
           if (response.qcBatch) {
