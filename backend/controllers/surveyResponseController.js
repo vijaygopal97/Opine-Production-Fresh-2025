@@ -2052,6 +2052,12 @@ const getNextReviewAssignment = async (req, res) => {
 
         console.log('🔍 getNextReviewAssignment - Active assignment call_id:', transformedResponse.call_id);
         console.log('🔍 getNextReviewAssignment - Active assignment interviewMode:', transformedResponse.interviewMode);
+        console.log('🔍 getNextReviewAssignment - Active assignment interviewer:', {
+          hasInterviewer: !!transformedResponse.interviewer,
+          interviewerId: transformedResponse.interviewer?._id?.toString(),
+          interviewerName: transformedResponse.interviewer ? `${transformedResponse.interviewer.firstName} ${transformedResponse.interviewer.lastName}` : 'null',
+          interviewerMemberId: transformedResponse.interviewer?.memberId || 'null'
+        });
 
         return res.status(200).json({
           success: true,
@@ -2325,6 +2331,12 @@ const getNextReviewAssignment = async (req, res) => {
 
     console.log('🔍 getNextReviewAssignment - New assignment call_id:', transformedResponse.call_id);
     console.log('🔍 getNextReviewAssignment - New assignment interviewMode:', transformedResponse.interviewMode);
+    console.log('🔍 getNextReviewAssignment - New assignment interviewer:', {
+      hasInterviewer: !!transformedResponse.interviewer,
+      interviewerId: transformedResponse.interviewer?._id?.toString(),
+      interviewerName: transformedResponse.interviewer ? `${transformedResponse.interviewer.firstName} ${transformedResponse.interviewer.lastName}` : 'null',
+      interviewerMemberId: transformedResponse.interviewer?.memberId || 'null'
+    });
 
     res.status(200).json({
       success: true,
