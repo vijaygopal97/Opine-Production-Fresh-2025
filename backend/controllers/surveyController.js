@@ -2986,7 +2986,7 @@ exports.getCatiStats = async (req, res) => {
         responseToCallIdMap.set(response._id.toString(), { callRecordId, callId });
       }
       
-      // Get response status (normalized)
+      // Get response status (normalized) - check early for rejected responses
       const responseStatus = response.status ? response.status.trim() : '';
       const normalizedResponseStatus = responseStatus.toLowerCase();
       
@@ -3002,8 +3002,8 @@ exports.getCatiStats = async (req, res) => {
           stat.formDuration += (response.totalTimeSpent || 0);
           console.log(`⏱️  Adding form duration: ${response.totalTimeSpent || 0}s for interviewer ${interviewerId}, total now: ${stat.formDuration}s`);
         }
-        // Skip to next response - rejected is already counted
-        return;
+        // Continue to call status breakdown (don't return early)
+        // We still want to count these in call status stats
       }
       
       // Check if this is a completed interview (call was connected)
