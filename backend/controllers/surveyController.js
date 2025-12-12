@@ -2997,59 +2997,64 @@ exports.getCatiStats = async (req, res) => {
         stat.formDuration += (response.totalTimeSpent || 0);
         console.log(`⏱️  Adding form duration: ${response.totalTimeSpent || 0}s for interviewer ${interviewerId}, total now: ${stat.formDuration}s`);
         
-        // Successful: SurveyResponse with Approved status (only from completed interviews)
-        if (response.status === 'Approved') {
+        // Categorize completed interviews into: Successful, Rejected, Under QC Queue, or Processing in Batch
+        // These categories should sum to equal "Completed"
+        const responseStatus = response.status ? response.status.trim() : '';
+        
+        if (responseStatus === 'Approved') {
+          // Successful: SurveyResponse with Approved status (only from completed interviews)
           stat.successful += 1;
-        }
-        
-        // Rejected: SurveyResponse with Rejected status (only from completed interviews)
-        if (response.status === 'Rejected') {
+        } else if (responseStatus === 'Rejected') {
+          // Rejected: SurveyResponse with Rejected status (only from completed interviews)
           stat.rejected += 1;
-        }
-        
-        // Split Under QC into two categories based on batch status (only for completed interviews)
-        if (response.status === 'Pending_Approval') {
-        let batchId = null;
-        if (response.qcBatch) {
-          if (typeof response.qcBatch === 'object' && response.qcBatch._id) {
-            batchId = response.qcBatch._id.toString();
-          } else if (typeof response.qcBatch === 'object') {
-            batchId = response.qcBatch.toString();
-          } else {
-            batchId = response.qcBatch.toString();
+        } else if (responseStatus === 'Pending_Approval') {
+          // Split Under QC into two categories based on batch status (only for completed interviews)
+          let batchId = null;
+          if (response.qcBatch) {
+            if (typeof response.qcBatch === 'object' && response.qcBatch._id) {
+              batchId = response.qcBatch._id.toString();
+            } else if (typeof response.qcBatch === 'object') {
+              batchId = response.qcBatch.toString();
+            } else {
+              batchId = response.qcBatch.toString();
+            }
           }
-        }
-        const batch = batchId ? batchesMap.get(batchId) : null;
-        const isSampleResponse = response.isSampleResponse || false;
-        
-        if (batch) {
-          const batchStatus = batch.status;
-          const remainingDecision = batch.remainingDecision?.decision;
+          const batch = batchId ? batchesMap.get(batchId) : null;
+          const isSampleResponse = response.isSampleResponse || false;
           
-          // "Under QC Queue": Batches completed and sent to review
-          // - Responses in batches with status 'queued_for_qc'
-          // - Sample responses (40%) in batches with status 'qc_in_progress' or 'completed'
-          // - Remaining responses (60%) in batches where remainingDecision is 'queued_for_qc'
-          if (batchStatus === 'queued_for_qc' ||
-              (isSampleResponse && (batchStatus === 'qc_in_progress' || batchStatus === 'completed')) ||
-              (!isSampleResponse && remainingDecision === 'queued_for_qc')) {
-            stat.underQCQueue += 1;
-          }
-          // "Processing in Batch": Responses still in collecting phase
-          // - Responses in batches with status 'collecting'
-          // - Responses in batches with status 'processing' that are not sample responses
-          else if (batchStatus === 'collecting' ||
-                   (batchStatus === 'processing' && !isSampleResponse)) {
-            stat.processingInBatch += 1;
-          }
-          // For other statuses, default to processingInBatch (safer fallback)
-          else {
+          if (batch) {
+            const batchStatus = batch.status;
+            const remainingDecision = batch.remainingDecision?.decision;
+            
+            // "Under QC Queue": Batches completed and sent to review
+            // - Responses in batches with status 'queued_for_qc'
+            // - Sample responses (40%) in batches with status 'qc_in_progress' or 'completed'
+            // - Remaining responses (60%) in batches where remainingDecision is 'queued_for_qc'
+            if (batchStatus === 'queued_for_qc' ||
+                (isSampleResponse && (batchStatus === 'qc_in_progress' || batchStatus === 'completed')) ||
+                (!isSampleResponse && remainingDecision === 'queued_for_qc')) {
+              stat.underQCQueue += 1;
+            }
+            // "Processing in Batch": Responses still in collecting phase
+            // - Responses in batches with status 'collecting'
+            // - Responses in batches with status 'processing' that are not sample responses
+            else if (batchStatus === 'collecting' ||
+                     (batchStatus === 'processing' && !isSampleResponse)) {
+              stat.processingInBatch += 1;
+            }
+            // For other statuses, default to processingInBatch (safer fallback)
+            else {
+              stat.processingInBatch += 1;
+            }
+          } else {
+            // Response not in any batch (legacy) - count as processingInBatch
             stat.processingInBatch += 1;
           }
         } else {
-          // Response not in any batch (legacy) - count as processingInBatch
+          // Completed interview but status is not Approved, Rejected, or Pending_Approval
+          // This shouldn't normally happen, but if it does, count as processingInBatch as fallback
+          console.warn(`⚠️ Completed interview with unexpected status: ${responseStatus} for response ${response._id}`);
           stat.processingInBatch += 1;
-        }
         }
       } else {
         // Incomplete: All other responses (abandoned, not connected, etc.)
