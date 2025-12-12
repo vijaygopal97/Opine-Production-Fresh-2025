@@ -1367,6 +1367,13 @@ const ViewResponsesPage = () => {
           const tomorrow = new Date(today);
           tomorrow.setDate(tomorrow.getDate() + 1);
           if (responseDate < today || responseDate >= tomorrow) return false;
+        } else if (filters.dateRange === 'yesterday') {
+          const yesterday = new Date(now);
+          yesterday.setDate(yesterday.getDate() - 1);
+          yesterday.setHours(0, 0, 0, 0);
+          const yesterdayEnd = new Date(yesterday);
+          yesterdayEnd.setHours(23, 59, 59, 999);
+          if (responseDate < yesterday || responseDate > yesterdayEnd) return false;
         } else if (filters.dateRange === 'week') {
           const weekAgo = new Date(now);
           weekAgo.setDate(weekAgo.getDate() - 7);
