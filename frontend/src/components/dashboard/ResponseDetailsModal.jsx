@@ -1648,12 +1648,52 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                       <div className="flex items-start space-x-2">
                         <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
                         <div className="flex-1">
-                          <div className="text-sm font-medium text-red-900 mb-1">
-                            {response.verificationData.autoRejected ? 'Auto Rejection Reason' : 'Rejection Reason'}
-                          </div>
-                          <div className="text-sm text-red-700 whitespace-pre-wrap">
-                            {response.verificationData.feedback}
-                          </div>
+                          {(() => {
+                            // Check if it's auto-rejected
+                            const isAutoRejected = response.verificationData.autoRejected === true || 
+                                                   (response.verificationData.autoRejectionReasons && 
+                                                    response.verificationData.autoRejectionReasons.length > 0) ||
+                                                   // Check feedback text for known auto-rejection reasons
+                                                   (response.verificationData.feedback && (
+                                                     response.verificationData.feedback.includes('Interview Too Short') ||
+                                                     response.verificationData.feedback.includes('Not Voter') ||
+                                                     response.verificationData.feedback.includes('Not a Registered Voter') ||
+                                                     response.verificationData.feedback.includes('Duplicate Response')
+                                                   ));
+                            
+                            // Only show label if we can determine it's auto-rejected, otherwise don't show label
+                            if (isAutoRejected) {
+                              return (
+                                <>
+                                  <div className="text-sm font-medium text-red-900 mb-1">
+                                    Auto Rejection Reason
+                                  </div>
+                                  <div className="text-sm text-red-700 whitespace-pre-wrap">
+                                    {response.verificationData.feedback}
+                                  </div>
+                                </>
+                              );
+                            } else if (response.verificationData.reviewer) {
+                              // Has a reviewer, so it's manual rejection
+                              return (
+                                <>
+                                  <div className="text-sm font-medium text-red-900 mb-1">
+                                    Rejection Reason
+                                  </div>
+                                  <div className="text-sm text-red-700 whitespace-pre-wrap">
+                                    {response.verificationData.feedback}
+                                  </div>
+                                </>
+                              );
+                            } else {
+                              // Can't determine, just show feedback without label
+                              return (
+                                <div className="text-sm text-red-700 whitespace-pre-wrap">
+                                  {response.verificationData.feedback}
+                                </div>
+                              );
+                            }
+                          })()}
                         </div>
                       </div>
                     </div>

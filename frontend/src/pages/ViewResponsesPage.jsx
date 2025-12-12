@@ -2852,12 +2852,52 @@ const ViewResponsesPage = () => {
                               <div className="text-sm text-gray-900">
                                 {response.verificationData?.feedback ? (
                                   <div className="max-w-xs">
-                                    <div className="text-xs text-gray-600 mb-1">
-                                      {response.verificationData.autoRejected === true ? 'Auto Rejected' : 'Rejected by QC'}
-                                    </div>
-                                    <div className="text-sm text-red-700 truncate" title={response.verificationData.feedback}>
-                                      {response.verificationData.feedback}
-                                    </div>
+                                    {(() => {
+                                      // Check if it's auto-rejected
+                                      const isAutoRejected = response.verificationData.autoRejected === true || 
+                                                             (response.verificationData.autoRejectionReasons && 
+                                                              response.verificationData.autoRejectionReasons.length > 0) ||
+                                                             // Check feedback text for known auto-rejection reasons
+                                                             (response.verificationData.feedback && (
+                                                               response.verificationData.feedback.includes('Interview Too Short') ||
+                                                               response.verificationData.feedback.includes('Not Voter') ||
+                                                               response.verificationData.feedback.includes('Not a Registered Voter') ||
+                                                               response.verificationData.feedback.includes('Duplicate Response')
+                                                             ));
+                                      
+                                      // Only show label if we can determine it's auto-rejected, otherwise don't show label
+                                      if (isAutoRejected) {
+                                        return (
+                                          <>
+                                            <div className="text-xs text-gray-600 mb-1">
+                                              Auto Rejected
+                                            </div>
+                                            <div className="text-sm text-red-700 truncate" title={response.verificationData.feedback}>
+                                              {response.verificationData.feedback}
+                                            </div>
+                                          </>
+                                        );
+                                      } else if (response.verificationData.reviewer) {
+                                        // Has a reviewer, so it's manual rejection
+                                        return (
+                                          <>
+                                            <div className="text-xs text-gray-600 mb-1">
+                                              Rejected by QC
+                                            </div>
+                                            <div className="text-sm text-red-700 truncate" title={response.verificationData.feedback}>
+                                              {response.verificationData.feedback}
+                                            </div>
+                                          </>
+                                        );
+                                      } else {
+                                        // Can't determine, just show feedback without label
+                                        return (
+                                          <div className="text-sm text-red-700 truncate" title={response.verificationData.feedback}>
+                                            {response.verificationData.feedback}
+                                          </div>
+                                        );
+                                      }
+                                    })()}
                                   </div>
                                 ) : (
                                   <span className="text-xs text-gray-400">No reason provided</span>
