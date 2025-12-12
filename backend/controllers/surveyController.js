@@ -3110,18 +3110,38 @@ exports.getCatiStats = async (req, res) => {
       }
         
       // Call Status Breakdown
+      // IMPORTANT: These stats should cover ALL responses counted in "Number of Dials"
+      // "Number of Dials" = Ringing + Not Ringing (Call Not Received is excluded from Number of Dials)
+      // OR: Total Responses = Ringing + Not Ringing + Call Not Received
+      
       if (normalizedCallStatus === 'didnt_get_call' || normalizedCallStatus === 'didn\'t_get_call') {
+        // Call Not Received: API failure, not interviewer's fault
+        // NOTE: This is NOT counted in "Number of Dials" (excluded in Step 2)
         stat.callNotReceivedToTelecaller += 1;
-      }
-      
-      if (normalizedCallStatus === 'success' || normalizedCallStatus === 'call_connected' || 
-          normalizedCallStatus === 'busy' || normalizedCallStatus === 'did_not_pick_up') {
+      } else if (normalizedCallStatus === 'success' || normalizedCallStatus === 'call_connected' || 
+                 normalizedCallStatus === 'busy' || normalizedCallStatus === 'did_not_pick_up') {
+        // Ringing: Call rang (success, call_connected, busy, did_not_pick_up)
+        // These are counted in "Number of Dials"
         stat.ringing += 1;
-      }
-      
-      if (normalizedCallStatus === 'switched_off' || normalizedCallStatus === 'not_reachable' || 
-          normalizedCallStatus === 'number_does_not_exist') {
+      } else if (normalizedCallStatus === 'switched_off' || normalizedCallStatus === 'not_reachable' || 
+                 normalizedCallStatus === 'number_does_not_exist') {
+        // Not Ringing: Number issues (switched_off, not_reachable, number_does_not_exist)
+        // These are counted in "Number of Dials"
         stat.notRinging += 1;
+      } else {
+        // Other statuses (unknown, abandoned, etc.) that are counted in "Number of Dials"
+        // Categorize them based on common patterns:
+        // - If it's 'unknown' or empty, it's likely an incomplete attempt - count as "Not Ringing"
+        // - If it's 'abandoned' or similar, it's likely an incomplete attempt - count as "Not Ringing"
+        // This ensures: Number of Dials = Ringing + Not Ringing
+        if (normalizedCallStatus === 'unknown' || normalizedCallStatus === '' || 
+            normalizedCallStatus === 'abandoned' || normalizedCallStatus === 'terminated') {
+          stat.notRinging += 1;
+        } else {
+          // For any other unknown status, default to "Not Ringing" to ensure completeness
+          console.warn(`⚠️ Unknown call status "${normalizedCallStatus}" for response ${response._id} - counting as "Not Ringing"`);
+          stat.notRinging += 1;
+        }
       }
       
       if (normalizedCallStatus === 'switched_off') {
