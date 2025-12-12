@@ -1719,12 +1719,33 @@ const getPendingApprovals = async (req, res) => {
       const answeredQuestions = interview.responses?.filter(r => !r.isSkipped).length || 0;
       const completionPercentage = effectiveQuestions > 0 ? Math.round((answeredQuestions / effectiveQuestions) * 100) : 0;
 
-      return {
+      // Explicitly preserve interviewer field to ensure it's not lost during transformation
+      const transformed = {
         ...interview,
+        interviewer: interview.interviewer ? {
+          _id: interview.interviewer._id,
+          firstName: interview.interviewer.firstName,
+          lastName: interview.interviewer.lastName,
+          email: interview.interviewer.email,
+          phone: interview.interviewer.phone,
+          memberId: interview.interviewer.memberId
+        } : interview.interviewer,
         totalQuestions: effectiveQuestions, // Use effective questions instead of all responses
         answeredQuestions,
         completionPercentage
       };
+      
+      // Debug log for quality agents
+      if (userType === 'quality_agent' && transformed.interviewer) {
+        console.log('getPendingApprovals - Quality Agent - Interviewer data preserved:', {
+          responseId: transformed.responseId,
+          interviewerId: transformed.interviewer._id?.toString(),
+          interviewerName: `${transformed.interviewer.firstName} ${transformed.interviewer.lastName}`,
+          interviewerMemberId: transformed.interviewer.memberId
+        });
+      }
+      
+      return transformed;
     });
 
     // Add signed URLs to audio recordings
