@@ -30,7 +30,13 @@ export default defineConfig({
       }
     },
     // Copy public assets to dist
-    copyPublicDir: true
+    copyPublicDir: true,
+    // Ensure JSON files are properly inlined in the bundle
+    assetsInlineLimit: 4096
+  },
+  // Optimize dependencies to ensure JSON is bundled
+  optimizeDeps: {
+    include: ['../data/assemblyConstituencies.json']
   },
   // Ensure public files are accessible
   publicDir: 'public'
