@@ -1629,7 +1629,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
             {/* Response Status */}
             <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
               <div className="flex items-center justify-between">
-                <div>
+                <div className="flex-1">
                   <h3 className="text-lg font-semibold text-gray-900">Response Status</h3>
                   <div className="flex items-center space-x-2 mt-2">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -1642,6 +1642,22 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                       {response.status === 'Pending_Approval' ? 'Pending Approval' : response.status}
                     </span>
                   </div>
+                  {/* Rejection Reason */}
+                  {response.status === 'Rejected' && response.verificationData?.feedback && (
+                    <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                      <div className="flex items-start space-x-2">
+                        <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                          <div className="text-sm font-medium text-red-900 mb-1">
+                            {response.verificationData.autoRejected ? 'Auto Rejection Reason' : 'Rejection Reason'}
+                          </div>
+                          <div className="text-sm text-red-700 whitespace-pre-wrap">
+                            {response.verificationData.feedback}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

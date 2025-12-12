@@ -1405,8 +1405,11 @@ const ViewResponsesPage = () => {
         const interviewerName = response.interviewer 
           ? `${response.interviewer.firstName} ${response.interviewer.lastName}`.toLowerCase()
           : '';
+        const responseId = (response.responseId || response._id?.toString() || '').toLowerCase();
         
-        if (!respondentName.includes(searchTerm) && !interviewerName.includes(searchTerm)) {
+        if (!respondentName.includes(searchTerm) && 
+            !interviewerName.includes(searchTerm) && 
+            !responseId.includes(searchTerm)) {
           return false;
         }
       }
@@ -2475,7 +2478,7 @@ const ViewResponsesPage = () => {
                       type="text"
                       value={filters.search}
                       onChange={(e) => handleFilterChange('search', e.target.value)}
-                      placeholder="Search by name..."
+                      placeholder="Search by name, interviewer, or Response ID..."
                       className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
@@ -2683,6 +2686,11 @@ const ViewResponsesPage = () => {
                       <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider hidden lg:table-cell">
                         Mode
                       </th>
+                      {filters.status === 'Rejected' && (
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          Rejection Reason
+                        </th>
+                      )}
                       <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Actions
                       </th>
@@ -2837,6 +2845,26 @@ const ViewResponsesPage = () => {
                               </span>
                             </div>
                           </td>
+                          
+                          {/* Rejection Reason - Only shown when status filter is 'Rejected' */}
+                          {filters.status === 'Rejected' && (
+                            <td className="px-4 py-4">
+                              <div className="text-sm text-gray-900">
+                                {response.verificationData?.feedback ? (
+                                  <div className="max-w-xs">
+                                    <div className="text-xs text-gray-600 mb-1">
+                                      {response.verificationData.autoRejected ? 'Auto Rejected' : 'Rejected by QC'}
+                                    </div>
+                                    <div className="text-sm text-red-700 truncate" title={response.verificationData.feedback}>
+                                      {response.verificationData.feedback}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-gray-400">No reason provided</span>
+                                )}
+                              </div>
+                            </td>
+                          )}
                           
                           {/* Actions */}
                           <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
