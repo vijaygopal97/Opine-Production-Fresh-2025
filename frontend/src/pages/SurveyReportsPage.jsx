@@ -885,12 +885,19 @@ const SurveyReportsPage = () => {
         
         switch (filters.dateRange) {
           case 'today':
-            if (responseDate.toDateString() !== now.toDateString()) return false;
+            const today = new Date(now);
+            today.setHours(0, 0, 0, 0);
+            const tomorrow = new Date(today);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            if (responseDate < today || responseDate >= tomorrow) return false;
             break;
           case 'yesterday':
             const yesterday = new Date(now);
             yesterday.setDate(yesterday.getDate() - 1);
-            if (responseDate.toDateString() !== yesterday.toDateString()) return false;
+            yesterday.setHours(0, 0, 0, 0);
+            const yesterdayEnd = new Date(yesterday);
+            yesterdayEnd.setHours(23, 59, 59, 999);
+            if (responseDate < yesterday || responseDate > yesterdayEnd) return false;
             break;
           case 'week':
             const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
