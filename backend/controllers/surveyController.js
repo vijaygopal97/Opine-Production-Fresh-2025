@@ -3088,16 +3088,19 @@ exports.getCatiStats = async (req, res) => {
           stat.processingInBatch += 1;
         }
       } else {
-        // Incomplete: All other responses (abandoned, not connected, etc.)
-        // This includes responses that:
-        // - Are NOT rejected (rejected are already counted in "Completed" above)
-        // - Are NOT completed (call status is not 'success' or 'call_connected')
-        // - Were counted in "Number of Dials" (call status is not 'didnt_get_call')
-        // EXCLUDE rejected responses - they are already counted in "Completed"
-        if (normalizedResponseStatus !== 'rejected') {
+        // Incomplete: Only responses with 'abandoned' or 'Terminated' status
+        // These are interviews that were started but not completed
+        // EXCLUDE:
+        // - Rejected (already counted in "Completed" and "Rejected")
+        // - Approved (already counted in "Completed" and "Approved")
+        // - Pending_Approval (counted in "Under QC Queue" or "Processing in Batch")
+        // - completed (counted in "Completed")
+        // - Responses with call status 'success' or 'call_connected' (counted in "Completed")
+        if (normalizedResponseStatus === 'abandoned' || normalizedResponseStatus === 'terminated') {
           stat.incomplete += 1;
         }
-        // If rejected, it's already counted in "Completed" above, so don't count here
+        // All other responses (rejected, approved, pending_approval, completed, or unknown statuses)
+        // are already counted in their respective categories above, so don't count in incomplete
       }
         
       // Call Status Breakdown
