@@ -2942,10 +2942,57 @@ exports.getCatiStats = async (req, res) => {
     const callIdToResponseMap = new Map();
     const responseToCallIdMap = new Map();
     
+    // CRITICAL FIX: Ensure ALL interviewers from responses are in the map BEFORE processing
+    // This ensures we count ALL responses with Approved/Rejected/Pending_Approval status
+    // regardless of whether they have CatiCall records
     catiResponses.forEach(response => {
       if (!response.interviewer || !response.interviewer._id) return;
       
       const interviewerId = response.interviewer._id.toString();
+      
+      // If interviewer is not in map, add them now
+      if (!interviewerStatsMap.has(interviewerId)) {
+        // Check if should include (for project managers)
+        if (!shouldIncludeInterviewer(interviewerId)) return;
+        
+        const interviewer = response.interviewer;
+        const interviewerName = interviewer.firstName && interviewer.lastName
+          ? `${interviewer.firstName} ${interviewer.lastName}`.trim()
+          : interviewer.name || 'Unknown';
+        const interviewerPhone = interviewer.phone || '';
+        const memberID = interviewer.memberId || interviewer.memberID || '';
+        
+        interviewerStatsMap.set(interviewerId, {
+          interviewerId: interviewerId,
+          interviewerName: interviewerName,
+          interviewerPhone: interviewerPhone,
+          memberID: memberID,
+          numberOfDials: 0,
+          completed: 0,
+          approved: 0,
+          underQCQueue: 0,
+          processingInBatch: 0,
+          rejected: 0,
+          incomplete: 0,
+          formDuration: 0,
+          callNotReceivedToTelecaller: 0,
+          ringing: 0,
+          notRinging: 0,
+          switchOff: 0,
+          numberNotReachable: 0,
+          numberDoesNotExist: 0,
+          noResponseByTelecaller: 0
+        });
+      }
+    });
+    
+    // Now process all responses - ALL interviewers should be in the map now
+    catiResponses.forEach(response => {
+      if (!response.interviewer || !response.interviewer._id) return;
+      
+      const interviewerId = response.interviewer._id.toString();
+      
+      // Skip if interviewer was filtered out (project manager filter)
       if (!interviewerStatsMap.has(interviewerId)) return;
       
       const stat = interviewerStatsMap.get(interviewerId);
