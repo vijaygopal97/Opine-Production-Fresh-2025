@@ -91,9 +91,20 @@ const getOrCreateBatch = async (surveyId, interviewerId) => {
  */
 const addResponseToBatch = async (responseId, surveyId, interviewerId) => {
   try {
+    // CRITICAL: Check if response is auto-rejected or rejected before adding to batch
+    const response = await SurveyResponse.findById(responseId).select('status verificationData interviewer');
+    if (!response) {
+      throw new Error(`Response ${responseId} not found`);
+    }
+    
+    // Skip if response is rejected (auto-rejected or manually rejected)
+    if (response.status === 'Rejected' || response.verificationData?.autoRejected === true) {
+      console.log(`⏭️  Skipping batch addition for rejected response ${responseId} (status: ${response.status}, autoRejected: ${response.verificationData?.autoRejected})`);
+      return; // Don't add rejected responses to batches
+    }
+    
     if (!interviewerId) {
       // Try to get interviewer from the response
-      const response = await SurveyResponse.findById(responseId).select('interviewer');
       if (response && response.interviewer) {
         interviewerId = response.interviewer.toString();
       } else {
