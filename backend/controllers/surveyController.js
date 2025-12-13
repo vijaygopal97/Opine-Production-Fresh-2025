@@ -2992,8 +2992,41 @@ exports.getCatiStats = async (req, res) => {
       
       const interviewerId = response.interviewer._id.toString();
       
-      // Skip if interviewer was filtered out (project manager filter)
-      if (!interviewerStatsMap.has(interviewerId)) return;
+      // Ensure interviewer is in the map (add if missing, but check project manager filter)
+      if (!interviewerStatsMap.has(interviewerId)) {
+        // Check if should include (for project managers)
+        if (!shouldIncludeInterviewer(interviewerId)) return;
+        
+        // Add interviewer to map from response data
+        const interviewer = response.interviewer;
+        const interviewerName = interviewer.firstName && interviewer.lastName
+          ? `${interviewer.firstName} ${interviewer.lastName}`.trim()
+          : interviewer.name || 'Unknown';
+        const interviewerPhone = interviewer.phone || '';
+        const memberID = interviewer.memberId || interviewer.memberID || '';
+        
+        interviewerStatsMap.set(interviewerId, {
+          interviewerId: interviewerId,
+          interviewerName: interviewerName,
+          interviewerPhone: interviewerPhone,
+          memberID: memberID,
+          numberOfDials: 0,
+          completed: 0,
+          approved: 0,
+          underQCQueue: 0,
+          processingInBatch: 0,
+          rejected: 0,
+          incomplete: 0,
+          formDuration: 0,
+          callNotReceivedToTelecaller: 0,
+          ringing: 0,
+          notRinging: 0,
+          switchOff: 0,
+          numberNotReachable: 0,
+          numberDoesNotExist: 0,
+          noResponseByTelecaller: 0
+        });
+      }
       
       const stat = interviewerStatsMap.get(interviewerId);
       
@@ -3042,17 +3075,12 @@ exports.getCatiStats = async (req, res) => {
       const responseStatus = response.status ? response.status.trim() : '';
       const normalizedResponseStatus = responseStatus.toLowerCase();
       
-      // Check if this is a completed interview (call was connected)
-      const isCompleted = normalizedCallStatus === 'success' || normalizedCallStatus === 'call_connected';
-      
-      // IMPORTANT: Rejected and Approved responses should be counted regardless of call status
-      // because they represent completed interviews that were later rejected/approved during QC
-      // They might not have call status set properly, but they are still completed interviews
-      // NOTE: Rejected/Approved responses are already counted in "Number of Dials" in Step 2
-      // They should be counted in "Completed" here, and NOT in "Incomplete"
+      // SIMPLIFIED "Completed" CALCULATION: Match Top CATI Responses logic
+      // Count ONLY based on status: Approved, Rejected, or Pending_Approval
+      // This matches the frontend calculation: filteredResponses with status filter 'approved_rejected_pending'
       if (normalizedResponseStatus === 'rejected') {
         stat.rejected += 1;
-        stat.completed += 1; // Rejected responses are also completed interviews
+        stat.completed += 1; // Rejected responses are completed interviews
         
         // Form Duration - Sum of all CATI interview durations (totalTimeSpent from timer)
         if (response.totalTimeSpent) {
