@@ -261,7 +261,7 @@ const SurveyQuestionBuilder = ({ onSave, onUpdate, initialData, surveyData }) =>
       description: '',
       required: true,
       order: globalOrder, // Add order number
-      questionNumber: generateAutoQuestionNumber(currentSection, updatedSections[currentSection].questions.length),
+      questionNumber: generateAutoQuestionNumber(currentSection, sections[currentSection].questions.length),
       enabledForCAPI: true, // Default: enabled for CAPI
       enabledForCATI: true, // Default: enabled for CATI
       setsForThisQuestion: false, // Default: not a sets question

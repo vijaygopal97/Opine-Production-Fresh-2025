@@ -30,3 +30,4 @@ for record in records:
             record[key] = None
 
 print(json.dumps(records, default=str))
+
