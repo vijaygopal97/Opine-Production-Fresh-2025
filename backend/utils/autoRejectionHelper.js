@@ -81,28 +81,46 @@ const checkAutoRejection = async (surveyResponse, responses, surveyId) => {
   }
   
   // Condition 2: Voter check - reject if respondent is not a registered voter
-  const VOTER_QUESTION_KEYWORDS = [
-    'registered voter',
-    'assembly constituency',
-    'assembly Constituency',
-    'নিবন্ধিত ভোটার',
-    'বিধানসভা কেন্দ্র'
-  ];
-  
   // Find the voter question in responses
-  const voterResponse = responses.find(r => {
+  // Priority: Look for the specific "Are you a registered voter" question first
+  let voterResponse = responses.find(r => {
     const questionText = getMainText(r.questionText || r.question?.text || '').toLowerCase();
-    // Check if question contains voter-related keywords
-    return VOTER_QUESTION_KEYWORDS.some(keyword => 
-      questionText.includes(keyword.toLowerCase())
-    );
+    // Check for the specific registered voter question text
+    return (questionText.includes('are you a registered voter') && 
+            questionText.includes('assembly constituency')) ||
+           (questionText.includes('নিবন্ধিত ভোটার') && 
+            questionText.includes('বিধানসভা কেন্দ্র'));
   });
+  
+  // Fallback: If not found, look for any question with registered voter keywords
+  if (!voterResponse) {
+    const VOTER_QUESTION_KEYWORDS = [
+      'registered voter',
+      'assembly constituency',
+      'assembly Constituency',
+      'নিবন্ধিত ভোটার',
+      'বিধানসভা কেন্দ্র'
+    ];
+    
+    voterResponse = responses.find(r => {
+      const questionText = getMainText(r.questionText || r.question?.text || '').toLowerCase();
+      // Check if question contains voter-related keywords
+      return VOTER_QUESTION_KEYWORDS.some(keyword => 
+        questionText.includes(keyword.toLowerCase())
+      );
+    });
+  }
   
   if (voterResponse && voterResponse.response !== null && voterResponse.response !== undefined) {
     // SPECIAL CHECK FOR SURVEY "68fd1915d41841da463f0d46":
     // If responseCodes is '2', auto-reject with specific reason
     const TARGET_SURVEY_ID = '68fd1915d41841da463f0d46';
     if (surveyId && surveyId.toString() === TARGET_SURVEY_ID) {
+      console.log(`🔍 Auto-rejection check for survey ${TARGET_SURVEY_ID} - Found voter question`);
+      console.log(`🔍 Voter question text: ${voterResponse.questionText?.substring(0, 80)}`);
+      console.log(`🔍 Voter response: ${voterResponse.response}`);
+      console.log(`🔍 Voter responseCodes: ${voterResponse.responseCodes} (type: ${typeof voterResponse.responseCodes})`);
+      
       // Check responseCodes field (can be string, array, or null)
       let responseCode = null;
       if (voterResponse.responseCodes !== null && voterResponse.responseCodes !== undefined) {
@@ -126,12 +144,17 @@ const checkAutoRejection = async (surveyResponse, responses, surveyId) => {
         responseValue = responseValue ? String(responseValue).trim() : null;
       }
       
+      console.log(`🔍 Extracted responseCode: ${responseCode}, responseValue: ${responseValue}`);
+      
       // If responseCodes is '2' OR response value is '2', reject
       if (responseCode === '2' || responseValue === '2') {
+        console.log(`✅ Auto-rejecting response ${surveyResponse._id} - Not a Registered Voter in Given AC`);
         rejectionReasons.push({
           reason: 'Not a Registered Voter in Given AC',
           condition: 'not_registered_voter_ac'
         });
+      } else {
+        console.log(`⏭️  Not rejecting - responseCode: ${responseCode}, responseValue: ${responseValue}`);
       }
     } else {
       // For other surveys, use the existing "no" check logic
