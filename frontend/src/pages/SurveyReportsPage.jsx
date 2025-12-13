@@ -3470,6 +3470,7 @@ const SurveyReportsPage = () => {
                       'Caller Name': stat.interviewerName || 'N/A',
                       'Caller Mobile No.': stat.interviewerPhone || 'N/A',
                       'Number of Dials': stat.numberOfDials || 0,
+                      'Calls Connected': stat.callsConnected || 0,
                       'Completed': stat.completed || 0,
                       'Approved': stat.approved || 0,
                       'Under QC Queue': stat.underQCQueue || 0,
@@ -3515,6 +3516,7 @@ const SurveyReportsPage = () => {
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Caller Name</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Caller Mobile No.</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Number of Dials</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Calls Connected</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Completed</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Approved</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Under QC Queue</th>
@@ -3536,6 +3538,7 @@ const SurveyReportsPage = () => {
                       // Calculate totals for all columns
                       const totals = catiStats.interviewerStats.reduce((acc, stat) => {
                         acc.numberOfDials += stat.numberOfDials || 0;
+                        acc.callsConnected += stat.callsConnected || 0;
                         acc.completed += stat.completed || 0;
                         acc.approved += stat.approved || 0;
                         acc.underQCQueue += stat.underQCQueue || 0;
@@ -3575,6 +3578,7 @@ const SurveyReportsPage = () => {
                         return acc;
                       }, {
                         numberOfDials: 0,
+                        callsConnected: 0,
                         completed: 0,
                         approved: 0,
                         underQCQueue: 0,
@@ -3608,6 +3612,7 @@ const SurveyReportsPage = () => {
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">-</td>
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">-</td>
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.numberOfDials}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.callsConnected}</td>
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.completed}</td>
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.approved}</td>
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.underQCQueue}</td>
@@ -3631,6 +3636,7 @@ const SurveyReportsPage = () => {
                               <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.interviewerName || 'N/A'}</td>
                               <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.interviewerPhone || 'N/A'}</td>
                               <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.numberOfDials || 0}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.callsConnected || 0}</td>
                               <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.completed || 0}</td>
                               <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.approved || 0}</td>
                               <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.underQCQueue || 0}</td>

@@ -99,23 +99,60 @@ const checkAutoRejection = async (surveyResponse, responses, surveyId) => {
   });
   
   if (voterResponse && voterResponse.response !== null && voterResponse.response !== undefined) {
-    // Normalize the response value
-    const normalizedResponse = normalizeResponseValue(voterResponse.response);
-    
-    // Check if response is "no" (case-insensitive, ignoring translations)
-    // Common variations: "no", "না", "no.", "না।", etc.
-    const noVariations = ['no', 'না', 'non', 'nein', 'нет'];
-    const isNo = noVariations.some(noWord => {
-      // Check if normalized response starts with or equals "no" (ignoring punctuation)
-      const cleanedResponse = normalizedResponse.replace(/[।.,!?]/g, '').trim();
-      return cleanedResponse === noWord || cleanedResponse.startsWith(noWord + ' ');
-    });
-    
-    if (isNo) {
-      rejectionReasons.push({
-        reason: 'Not Voter',
-        condition: 'not_voter'
+    // SPECIAL CHECK FOR SURVEY "68fd1915d41841da463f0d46":
+    // If responseCodes is '2', auto-reject with specific reason
+    const TARGET_SURVEY_ID = '68fd1915d41841da463f0d46';
+    if (surveyId && surveyId.toString() === TARGET_SURVEY_ID) {
+      // Check responseCodes field (can be string, array, or null)
+      let responseCode = null;
+      if (voterResponse.responseCodes !== null && voterResponse.responseCodes !== undefined) {
+        if (Array.isArray(voterResponse.responseCodes)) {
+          responseCode = voterResponse.responseCodes[0] || null;
+        } else {
+          responseCode = voterResponse.responseCodes;
+        }
+        // Convert to string for comparison
+        responseCode = responseCode ? String(responseCode).trim() : null;
+      }
+      
+      // Also check if response value itself is '2'
+      let responseValue = null;
+      if (voterResponse.response !== null && voterResponse.response !== undefined) {
+        if (Array.isArray(voterResponse.response)) {
+          responseValue = voterResponse.response[0] || null;
+        } else {
+          responseValue = voterResponse.response;
+        }
+        responseValue = responseValue ? String(responseValue).trim() : null;
+      }
+      
+      // If responseCodes is '2' OR response value is '2', reject
+      if (responseCode === '2' || responseValue === '2') {
+        rejectionReasons.push({
+          reason: 'Not a Registered Voter in Given AC',
+          condition: 'not_registered_voter_ac'
+        });
+      }
+    } else {
+      // For other surveys, use the existing "no" check logic
+      // Normalize the response value
+      const normalizedResponse = normalizeResponseValue(voterResponse.response);
+      
+      // Check if response is "no" (case-insensitive, ignoring translations)
+      // Common variations: "no", "না", "no.", "না।", etc.
+      const noVariations = ['no', 'না', 'non', 'nein', 'нет'];
+      const isNo = noVariations.some(noWord => {
+        // Check if normalized response starts with or equals "no" (ignoring punctuation)
+        const cleanedResponse = normalizedResponse.replace(/[।.,!?]/g, '').trim();
+        return cleanedResponse === noWord || cleanedResponse.startsWith(noWord + ' ');
       });
+      
+      if (isNo) {
+        rejectionReasons.push({
+          reason: 'Not Voter',
+          condition: 'not_voter'
+        });
+      }
     }
   }
   

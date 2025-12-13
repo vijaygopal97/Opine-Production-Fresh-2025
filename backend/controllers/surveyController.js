@@ -2860,6 +2860,7 @@ exports.getCatiStats = async (req, res) => {
         interviewerPhone: info.interviewerPhone,
         memberID: info.memberID || '',
         numberOfDials: 0, // Total calls attempted (from CatiCall)
+        callsConnected: 0, // Responses with knownCallStatus = 'call_connected' or 'success'
         completed: 0, // Interviews completed (call_connected status only)
         approved: 0, // SurveyResponse with Approved status (from completed interviews, regardless of batch status)
         underQCQueue: 0, // Responses in batches completed and sent to review (from completed interviews with Pending_Approval status)
@@ -2983,6 +2984,7 @@ exports.getCatiStats = async (req, res) => {
           interviewerPhone: interviewerPhone,
           memberID: memberID,
           numberOfDials: 0,
+          callsConnected: 0,
           completed: 0,
           approved: 0,
           underQCQueue: 0,
@@ -3026,6 +3028,7 @@ exports.getCatiStats = async (req, res) => {
           interviewerPhone: interviewerPhone,
           memberID: memberID,
           numberOfDials: 0,
+          callsConnected: 0,
           completed: 0,
           approved: 0,
           underQCQueue: 0,
@@ -3078,6 +3081,15 @@ exports.getCatiStats = async (req, res) => {
       }
       
       const normalizedCallStatus = callStatus.toLowerCase().trim();
+      
+      // Count Calls Connected: Responses with knownCallStatus = 'call_connected' or 'success'
+      // The callStatus variable already comes from knownCallStatus (priority 1), metadata.callStatus (priority 2), or responses array (priority 3)
+      // So we just need to check the normalized call status
+      const isCallConnected = normalizedCallStatus === 'call_connected' || normalizedCallStatus === 'success';
+      
+      if (isCallConnected) {
+        stat.callsConnected += 1;
+      }
       
       // Link response to call record (for duration calculation)
       const callRecordId = response.metadata?.callRecordId;

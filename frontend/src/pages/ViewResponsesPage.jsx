@@ -372,11 +372,15 @@ const ViewResponsesPage = () => {
   const getDistrictFromAC = (acName) => {
     if (!acName || acName === 'N/A' || !assemblyConstituencies.states) return 'N/A';
     
+    const acNameStr = String(acName);
     for (const state of Object.values(assemblyConstituencies.states)) {
       if (state.assemblyConstituencies) {
-        const constituency = state.assemblyConstituencies.find(ac => 
-          ac.acName === acName || ac.acName.toLowerCase() === acName.toLowerCase()
-        );
+        const constituency = state.assemblyConstituencies.find(ac => {
+          if (!ac || !ac.acName) return false;
+          const acNameLower = String(ac.acName).toLowerCase();
+          const searchNameLower = acNameStr.toLowerCase();
+          return ac.acName === acName || acNameLower === searchNameLower;
+        });
         if (constituency && constituency.district) {
           return constituency.district;
         }
@@ -389,11 +393,15 @@ const ViewResponsesPage = () => {
   const getLokSabhaFromAC = (acName) => {
     if (!acName || acName === 'N/A' || !assemblyConstituencies.states) return 'N/A';
     
+    const acNameStr = String(acName);
     for (const state of Object.values(assemblyConstituencies.states)) {
       if (state.assemblyConstituencies) {
-        const constituency = state.assemblyConstituencies.find(ac => 
-          ac.acName === acName || ac.acName.toLowerCase() === acName.toLowerCase()
-        );
+        const constituency = state.assemblyConstituencies.find(ac => {
+          if (!ac || !ac.acName) return false;
+          const acNameLower = String(ac.acName).toLowerCase();
+          const searchNameLower = acNameStr.toLowerCase();
+          return ac.acName === acName || acNameLower === searchNameLower;
+        });
         if (constituency && constituency.lokSabha) {
           return constituency.lokSabha;
         }
@@ -782,9 +790,14 @@ const ViewResponsesPage = () => {
     // Helper to find response by question text (ignoring translations)
     const findResponseByQuestionText = (responses, searchTexts) => {
       return responses.find(r => {
-        if (!r.questionText) return false;
-        const mainText = getMainText(r.questionText).toLowerCase();
-        return searchTexts.some(text => mainText.includes(text.toLowerCase()));
+        if (!r || !r.questionText) return false;
+        const mainTextRaw = getMainText(r.questionText);
+        if (!mainTextRaw) return false;
+        const mainText = String(mainTextRaw).toLowerCase();
+        return searchTexts.some(text => {
+          if (!text) return false;
+          return mainText.includes(String(text).toLowerCase());
+        });
       });
     };
 
@@ -835,7 +848,9 @@ const ViewResponsesPage = () => {
       // Get gender question ID to exclude it from name search - CRITICAL
       const genderQuestionId = genderResponse?.questionId;
       const genderResponseId = genderResponse?._id || genderResponse?.id;
-      const genderQuestionText = genderResponse ? getMainText(genderResponse.questionText || '').toLowerCase() : '';
+      const genderQuestionText = genderResponse && genderResponse.questionText 
+        ? String(getMainText(genderResponse.questionText || '') || '').toLowerCase() 
+        : '';
       
       // Create a set of gender identifiers for fast lookup
       const genderIdentifiers = new Set();
@@ -876,9 +891,15 @@ const ViewResponsesPage = () => {
                             genderIdentifiers.has(String(nameResponseById._id)) ||
                             genderIdentifiers.has(String(nameResponseById.id));
         const isGenderByValue = isGenderResponseValue(nameResponseById.response);
-        const isGenderByText = nameResponseById.questionText && 
-                              (getMainText(nameResponseById.questionText).toLowerCase().includes('gender') ||
-                               getMainText(nameResponseById.questionText).toLowerCase().includes('respondent\'s gender'));
+        const isGenderByText = nameResponseById.questionText && (() => {
+          const qText1 = getMainText(nameResponseById.questionText);
+          const qText2 = getMainText(nameResponseById.questionText);
+          if (!qText1 && !qText2) return false;
+          const lower1 = qText1 ? String(qText1).toLowerCase() : '';
+          const lower2 = qText2 ? String(qText2).toLowerCase() : '';
+          return lower1.includes('gender') || lower1.includes('respondent\'s gender') || 
+                 lower2.includes('gender') || lower2.includes('respondent\'s gender');
+        })();
         
         // Only use if it passes ALL checks
         if (!isGenderById && !isGenderByValue && !isGenderByText) {
@@ -901,11 +922,16 @@ const ViewResponsesPage = () => {
             if (!isGenderResponse && !isGenderResponseValue(foundResponse.response)) {
               // Verify question text is not about gender
               if (foundResponse.questionText) {
-                const qText = getMainText(foundResponse.questionText).toLowerCase();
-                if (!qText.includes('gender') && 
-                    !qText.includes('respondent\'s gender') && 
-                    !qText.includes('note the gender') &&
-                    !qText.includes('note the respondent')) {
+                const qTextRaw = getMainText(foundResponse.questionText);
+                if (qTextRaw) {
+                  const qText = String(qTextRaw).toLowerCase();
+                  if (!qText.includes('gender') && 
+                      !qText.includes('respondent\'s gender') && 
+                      !qText.includes('note the gender') &&
+                      !qText.includes('note the respondent')) {
+                    nameResponse = foundResponse;
+                  }
+                } else {
                   nameResponse = foundResponse;
                 }
               } else {
@@ -933,18 +959,23 @@ const ViewResponsesPage = () => {
           
           // Skip if question text contains gender keywords
           if (response.questionText) {
-            const qText = getMainText(response.questionText).toLowerCase();
-            if (qText.includes('gender') || 
-                qText.includes('respondent\'s gender') || 
-                qText.includes('note the gender') ||
-                qText.includes('note the respondent')) {
-              continue;
+            const qTextRaw = getMainText(response.questionText);
+            if (qTextRaw) {
+              const qText = String(qTextRaw).toLowerCase();
+              if (qText.includes('gender') || 
+                  qText.includes('respondent\'s gender') || 
+                  qText.includes('note the gender') ||
+                  qText.includes('note the respondent')) {
+                continue;
+              }
             }
           }
           
           // Check for name question text pattern - be very specific
           if (response.questionText) {
-            const qText = getMainText(response.questionText).toLowerCase();
+            const qTextRaw = getMainText(response.questionText);
+            if (!qTextRaw) continue;
+            const qText = String(qTextRaw).toLowerCase();
             // Look for name question text patterns - must have "share your name" AND ("confidential" OR "assure")
             const hasShareName = qText.includes('share your name') || 
                                 qText.includes('would you like to share your name');
@@ -977,20 +1008,23 @@ const ViewResponsesPage = () => {
           
           // Skip if question text contains gender keywords
           if (response.questionText) {
-            const qText = getMainText(response.questionText).toLowerCase();
-            if (qText.includes('gender') || 
-                qText.includes('respondent\'s gender') || 
-                qText.includes('note the gender') ||
-                qText.includes('note the respondent')) {
-              continue;
-            }
-            
-            // Check for "share your name" pattern
-            if (qText.includes('would you like to share your name') ||
-                qText.includes('share your name with us') ||
-                (qText.includes('share your name') && !qText.includes('gender'))) {
-              nameResponse = response;
-              break;
+            const qTextRaw = getMainText(response.questionText);
+            if (qTextRaw) {
+              const qText = String(qTextRaw).toLowerCase();
+              if (qText.includes('gender') || 
+                  qText.includes('respondent\'s gender') || 
+                  qText.includes('note the gender') ||
+                  qText.includes('note the respondent')) {
+                continue;
+              }
+              
+              // Check for "share your name" pattern
+              if (qText.includes('would you like to share your name') ||
+                  qText.includes('share your name with us') ||
+                  (qText.includes('share your name') && !qText.includes('gender'))) {
+                nameResponse = response;
+                break;
+              }
             }
           }
         }
@@ -1007,10 +1041,14 @@ const ViewResponsesPage = () => {
         }
         // Check by question text match
         else if (nameResponse.questionText && genderResponse && genderResponse.questionText) {
-          const nameText = getMainText(nameResponse.questionText).toLowerCase();
-          const genderText = getMainText(genderResponse.questionText).toLowerCase();
-          if (nameText === genderText) {
-            nameResponse = null;
+          const nameTextRaw = getMainText(nameResponse.questionText);
+          const genderTextRaw = getMainText(genderResponse.questionText);
+          if (nameTextRaw && genderTextRaw) {
+            const nameText = String(nameTextRaw).toLowerCase();
+            const genderText = String(genderTextRaw).toLowerCase();
+            if (nameText === genderText) {
+              nameResponse = null;
+            }
           }
         }
         
@@ -1021,13 +1059,16 @@ const ViewResponsesPage = () => {
         
         // Check 3: Does the question text contain gender keywords?
         if (nameResponse && nameResponse.questionText) {
-          const qText = getMainText(nameResponse.questionText).toLowerCase();
-          if (qText.includes('gender') || 
-              qText.includes('respondent\'s gender') || 
-              qText.includes('note the gender') ||
-              qText.includes('note the respondent') ||
-              (qText.includes('respondent') && qText.includes('gender'))) {
-            nameResponse = null;
+          const qTextRaw = getMainText(nameResponse.questionText);
+          if (qTextRaw) {
+            const qText = String(qTextRaw).toLowerCase();
+            if (qText.includes('gender') || 
+                qText.includes('respondent\'s gender') || 
+                qText.includes('note the gender') ||
+                qText.includes('note the respondent') ||
+                (qText.includes('respondent') && qText.includes('gender'))) {
+              nameResponse = null;
+            }
           }
         }
       }
@@ -1055,12 +1096,15 @@ const ViewResponsesPage = () => {
         }
         // Check 3: Is the question text about gender?
         else if (nameResponse.questionText) {
-          const qText = getMainText(nameResponse.questionText).toLowerCase();
-          if (qText.includes('gender') || 
-              qText.includes('respondent\'s gender') || 
-              qText.includes('note the gender') ||
-              qText.includes('note the respondent')) {
-            nameResponse = null; // Clear it - this is a gender question
+          const qTextRaw = getMainText(nameResponse.questionText);
+          if (qTextRaw) {
+            const qText = String(qTextRaw).toLowerCase();
+            if (qText.includes('gender') || 
+                qText.includes('respondent\'s gender') || 
+                qText.includes('note the gender') ||
+                qText.includes('note the respondent')) {
+              nameResponse = null; // Clear it - this is a gender question
+            }
           }
         }
       }
@@ -1080,12 +1124,15 @@ const ViewResponsesPage = () => {
         }
         // Check if question text is about gender
         else if (nameResponse.questionText) {
-          const qText = getMainText(nameResponse.questionText).toLowerCase();
-          if (qText.includes('gender') || 
-              qText.includes('respondent\'s gender') || 
-              qText.includes('note the gender') ||
-              qText.includes('note the respondent')) {
-            nameResponse = null; // Clear it
+          const qTextRaw = getMainText(nameResponse.questionText);
+          if (qTextRaw) {
+            const qText = String(qTextRaw).toLowerCase();
+            if (qText.includes('gender') || 
+                qText.includes('respondent\'s gender') || 
+                qText.includes('note the gender') ||
+                qText.includes('note the respondent')) {
+              nameResponse = null; // Clear it
+            }
           }
         }
       }
@@ -1112,7 +1159,10 @@ const ViewResponsesPage = () => {
       if (genderResponse?.response) {
         // Try to find the gender question in survey
         const genderQuestion = surveyObj ? getAllSurveyQuestions(surveyObj).find(q => {
-          const qText = getMainText(q.text || '').toLowerCase();
+          if (!q) return false;
+          const qTextRaw = getMainText(q.text || '');
+          if (!qTextRaw) return false;
+          const qText = String(qTextRaw).toLowerCase();
           return qText.includes('gender') || qText.includes('respondent');
         }) : null;
         
@@ -1127,10 +1177,13 @@ const ViewResponsesPage = () => {
         'age'
       ]);
 
-      const acResponse = responses.find(r => 
-        getMainText(r.questionText || '').toLowerCase().includes('assembly') ||
-        getMainText(r.questionText || '').toLowerCase().includes('constituency')
-      );
+      const acResponse = responses.find(r => {
+        if (!r || !r.questionText) return false;
+        const questionText = getMainText(r.questionText || '');
+        if (!questionText) return false;
+        const lowerText = String(questionText).toLowerCase();
+        return lowerText.includes('assembly') || lowerText.includes('constituency');
+      });
 
       // Get city from GPS location if available, otherwise from responses
       let city = 'N/A';
@@ -1168,17 +1221,25 @@ const ViewResponsesPage = () => {
 
     // Default behavior for other surveys
     // IMPORTANT: Exclude gender responses from name search
-    const genderResponse = responses.find(r => 
-      getMainText(r.questionText || '').toLowerCase().includes('gender') || 
-      getMainText(r.questionText || '').toLowerCase().includes('sex')
-    );
+    const genderResponse = responses.find(r => {
+      if (!r || !r.questionText) return false;
+      const qText1 = getMainText(r.questionText || '');
+      const qText2 = getMainText(r.questionText || '');
+      if (!qText1 && !qText2) return false;
+      const lower1 = qText1 ? String(qText1).toLowerCase() : '';
+      const lower2 = qText2 ? String(qText2).toLowerCase() : '';
+      return lower1.includes('gender') || lower1.includes('sex') || lower2.includes('gender') || lower2.includes('sex');
+    });
     const genderQuestionId = genderResponse?.questionId;
     
     const nameResponse = responses.find(r => {
       // Skip if this is the gender response
       if (genderQuestionId && r.questionId === genderQuestionId) return false;
       // Skip if question text is about gender
-      const qText = getMainText(r.questionText || '').toLowerCase();
+      if (!r || !r.questionText) return false;
+      const qTextRaw = getMainText(r.questionText || '');
+      if (!qTextRaw) return false;
+      const qText = String(qTextRaw).toLowerCase();
       if (qText.includes('gender') || qText.includes('sex')) return false;
       // Look for name-related questions
       return qText.includes('name') || 
@@ -1187,30 +1248,41 @@ const ViewResponsesPage = () => {
     });
     
     // Get gender response (already found above if not in special survey section)
-    const genderResponseForDefault = responses.find(r => 
-      getMainText(r.questionText || '').toLowerCase().includes('gender') || 
-      getMainText(r.questionText || '').toLowerCase().includes('sex')
-    );
+    const genderResponseForDefault = responses.find(r => {
+      if (!r || !r.questionText) return false;
+      const qText = getMainText(r.questionText || '');
+      if (!qText) return false;
+      const lower = String(qText).toLowerCase();
+      return lower.includes('gender') || lower.includes('sex');
+    });
     
     // Get gender option text (without translation)
     let gender = 'N/A';
     if (genderResponseForDefault?.response) {
       const genderQuestion = survey ? getAllSurveyQuestions(survey).find(q => {
-        const qText = getMainText(q.text || '').toLowerCase();
+        if (!q) return false;
+        const qTextRaw = getMainText(q.text || '');
+        if (!qTextRaw) return false;
+        const qText = String(qTextRaw).toLowerCase();
         return qText.includes('gender') || qText.includes('sex');
       }) : null;
       
       gender = getOptionTextFromValue(genderResponseForDefault.response, genderQuestion);
     }
     
-    const ageResponse = responses.find(r => 
-      getMainText(r.questionText || '').toLowerCase().includes('age') || 
-      getMainText(r.questionText || '').toLowerCase().includes('year')
-    );
+    const ageResponse = responses.find(r => {
+      if (!r || !r.questionText) return false;
+      const qText = getMainText(r.questionText || '');
+      if (!qText) return false;
+      const lower = String(qText).toLowerCase();
+      return lower.includes('age') || lower.includes('year');
+    });
 
     const acResponse = responses.find(r => 
-      r.questionText.toLowerCase().includes('assembly') ||
-      r.questionText.toLowerCase().includes('constituency')
+      r.questionText && (
+        r.questionText.toLowerCase().includes('assembly') ||
+        r.questionText.toLowerCase().includes('constituency')
+      )
     );
 
     // Get city from GPS location if available, otherwise from responses
@@ -1219,8 +1291,10 @@ const ViewResponsesPage = () => {
       city = responseData.location.city;
     } else {
       const cityResponse = responses.find(r => 
-        r.questionText.toLowerCase().includes('city') || 
-        r.questionText.toLowerCase().includes('location')
+        r.questionText && (
+          r.questionText.toLowerCase().includes('city') || 
+          r.questionText.toLowerCase().includes('location')
+        )
       );
       city = cityResponse?.response || 'N/A';
     }
@@ -1401,9 +1475,9 @@ const ViewResponsesPage = () => {
       // Search filter
       if (filters.search) {
         const searchTerm = filters.search.toLowerCase().trim();
-        const respondentName = respondentInfo.name.toLowerCase();
+        const respondentName = (respondentInfo.name || '').toLowerCase();
         const interviewerName = response.interviewer 
-          ? `${response.interviewer.firstName} ${response.interviewer.lastName}`.toLowerCase()
+          ? `${response.interviewer.firstName || ''} ${response.interviewer.lastName || ''}`.toLowerCase()
           : '';
         const responseId = (response.responseId || response._id?.toString() || '').toLowerCase();
         
@@ -1415,8 +1489,10 @@ const ViewResponsesPage = () => {
       }
 
       // Gender filter - case insensitive
-      if (filters.gender && respondentInfo.gender.toLowerCase() !== filters.gender.toLowerCase()) {
-        return false;
+      if (filters.gender && respondentInfo.gender && filters.gender) {
+        if (String(respondentInfo.gender).toLowerCase() !== String(filters.gender).toLowerCase()) {
+          return false;
+        }
       }
 
       // Age filter
@@ -1428,28 +1504,38 @@ const ViewResponsesPage = () => {
       }
 
       // AC filter - case insensitive
-      if (filters.ac && respondentInfo.ac.toLowerCase() !== filters.ac.toLowerCase()) {
-        return false;
+      if (filters.ac && respondentInfo.ac && filters.ac) {
+        if (String(respondentInfo.ac).toLowerCase() !== String(filters.ac).toLowerCase()) {
+          return false;
+        }
       }
 
       // City filter - case insensitive
-      if (filters.city && respondentInfo.city.toLowerCase() !== filters.city.toLowerCase()) {
-        return false;
+      if (filters.city && respondentInfo.city && filters.city) {
+        if (String(respondentInfo.city).toLowerCase() !== String(filters.city).toLowerCase()) {
+          return false;
+        }
       }
 
       // District filter - case insensitive
-      if (filters.district && respondentInfo.district.toLowerCase() !== filters.district.toLowerCase()) {
-        return false;
+      if (filters.district && respondentInfo.district && filters.district) {
+        if (String(respondentInfo.district).toLowerCase() !== String(filters.district).toLowerCase()) {
+          return false;
+        }
       }
 
       // Lok Sabha filter - case insensitive
-      if (filters.lokSabha && lokSabha.toLowerCase() !== filters.lokSabha.toLowerCase()) {
-        return false;
+      if (filters.lokSabha && lokSabha && filters.lokSabha) {
+        if (String(lokSabha).toLowerCase() !== String(filters.lokSabha).toLowerCase()) {
+          return false;
+        }
       }
 
       // State filter - case insensitive
-      if (filters.state && state.toLowerCase() !== filters.state.toLowerCase()) {
-        return false;
+      if (filters.state && state && filters.state) {
+        if (String(state).toLowerCase() !== String(filters.state).toLowerCase()) {
+          return false;
+        }
       }
 
       // Interview Mode filter
