@@ -472,9 +472,15 @@ const SurveyReportsPage = () => {
         if (isCatiSurvey) {
           try {
             console.log('🔍🔍🔍 Fetching CATI stats for survey:', surveyId);
-            // Pass CATI-specific filters
-            const catiStartDate = catiFilters.startDate || null;
-            const catiEndDate = catiFilters.endDate || null;
+            // Calculate dates from main filters (in case catiFilters haven't synced yet)
+            const { startDate: calculatedStartDate, endDate: calculatedEndDate } = calculateDatesFromRange(
+              filters.dateRange, 
+              filters.startDate, 
+              filters.endDate
+            );
+            // Use catiFilters if available, otherwise use calculated dates from main filters
+            const catiStartDate = catiFilters.startDate || calculatedStartDate || null;
+            const catiEndDate = catiFilters.endDate || calculatedEndDate || null;
             const catiStatsResponse = await surveyAPI.getCatiStats(
               surveyId, 
               catiStartDate, 
@@ -559,8 +565,15 @@ const SurveyReportsPage = () => {
     if (isCatiSurvey) {
       const fetchCatiStats = async () => {
         try {
-          const catiStartDate = catiFilters.startDate || null;
-          const catiEndDate = catiFilters.endDate || null;
+          // Calculate dates from main filters (in case catiFilters haven't synced yet)
+          const { startDate: calculatedStartDate, endDate: calculatedEndDate } = calculateDatesFromRange(
+            filters.dateRange, 
+            filters.startDate, 
+            filters.endDate
+          );
+          // Use catiFilters if available, otherwise use calculated dates from main filters
+          const catiStartDate = catiFilters.startDate || calculatedStartDate || null;
+          const catiEndDate = catiFilters.endDate || calculatedEndDate || null;
           const catiStatsResponse = await surveyAPI.getCatiStats(
             surveyId, 
             catiStartDate, 
@@ -580,6 +593,69 @@ const SurveyReportsPage = () => {
       fetchCatiStats();
     }
   }, [surveyId, survey, catiFilters.startDate, catiFilters.endDate, catiFilters.interviewerIds, catiFilters.interviewerMode, catiFilters.ac]);
+
+  // Helper function to calculate dates from dateRange
+  const calculateDatesFromRange = (dateRange, customStartDate, customEndDate) => {
+    const now = new Date();
+    let startDate = '';
+    let endDate = '';
+    
+    switch (dateRange) {
+      case 'today':
+        const today = new Date(now);
+        today.setHours(0, 0, 0, 0);
+        startDate = today.toISOString().split('T')[0];
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        endDate = tomorrow.toISOString().split('T')[0];
+        break;
+      case 'yesterday':
+        const yesterday = new Date(now);
+        yesterday.setDate(yesterday.getDate() - 1);
+        yesterday.setHours(0, 0, 0, 0);
+        startDate = yesterday.toISOString().split('T')[0];
+        const yesterdayEnd = new Date(yesterday);
+        yesterdayEnd.setHours(23, 59, 59, 999);
+        endDate = yesterdayEnd.toISOString().split('T')[0];
+        break;
+      case 'week':
+        const weekAgo = new Date(now);
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        startDate = weekAgo.toISOString().split('T')[0];
+        endDate = now.toISOString().split('T')[0];
+        break;
+      case 'month':
+        const monthAgo = new Date(now);
+        monthAgo.setMonth(monthAgo.getMonth() - 1);
+        startDate = monthAgo.toISOString().split('T')[0];
+        endDate = now.toISOString().split('T')[0];
+        break;
+      case 'custom':
+        startDate = customStartDate || '';
+        endDate = customEndDate || '';
+        break;
+      default:
+        startDate = '';
+        endDate = '';
+    }
+    
+    return { startDate, endDate };
+  };
+
+  // Sync CATI filters with main filters when main date filter changes
+  useEffect(() => {
+    const { startDate, endDate } = calculateDatesFromRange(filters.dateRange, filters.startDate, filters.endDate);
+    
+    // Only update if dates actually changed to avoid infinite loops
+    if (catiFilters.startDate !== startDate || catiFilters.endDate !== endDate) {
+      setCatiFilters(prev => ({
+        ...prev,
+        startDate,
+        endDate,
+        dateRange: filters.dateRange === 'custom' ? 'custom' : filters.dateRange
+      }));
+    }
+  }, [filters.dateRange, filters.startDate, filters.endDate]);
 
   // Helper functions
   const getStateFromGPS = (location) => {
@@ -3529,29 +3605,124 @@ const SurveyReportsPage = () => {
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
-                    {catiStats.interviewerStats.map((stat, index) => (
-                      <tr key={stat.interviewerId || index} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.sNo || index + 1}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.memberID || 'N/A'}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.interviewerName || 'N/A'}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.interviewerPhone || 'N/A'}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.numberOfDials || 0}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.completed || 0}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.approved || 0}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.underQCQueue || 0}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.processingInBatch || 0}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.rejected || 0}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.incomplete || 0}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.formDuration || '0:00:00'}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.callNotReceivedToTelecaller || 0}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.ringing || 0}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.notRinging || 0}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.switchOff || 0}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.numberNotReachable || 0}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.numberDoesNotExist || 0}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.noResponseByTelecaller || 0}</td>
+                    {(() => {
+                      // Calculate totals for all columns
+                      const totals = catiStats.interviewerStats.reduce((acc, stat) => {
+                        acc.numberOfDials += stat.numberOfDials || 0;
+                        acc.completed += stat.completed || 0;
+                        acc.approved += stat.approved || 0;
+                        acc.underQCQueue += stat.underQCQueue || 0;
+                        acc.processingInBatch += stat.processingInBatch || 0;
+                        acc.rejected += stat.rejected || 0;
+                        acc.incomplete += stat.incomplete || 0;
+                        acc.callNotReceivedToTelecaller += stat.callNotReceivedToTelecaller || 0;
+                        acc.ringing += stat.ringing || 0;
+                        acc.notRinging += stat.notRinging || 0;
+                        acc.switchOff += stat.switchOff || 0;
+                        acc.numberNotReachable += stat.numberNotReachable || 0;
+                        acc.numberDoesNotExist += stat.numberDoesNotExist || 0;
+                        acc.noResponseByTelecaller += stat.noResponseByTelecaller || 0;
+                        
+                        // Parse and sum form duration (format: "HH:MM:SS" or seconds as number)
+                        let durationSeconds = 0;
+                        if (stat.formDuration) {
+                          if (typeof stat.formDuration === 'number') {
+                            durationSeconds += stat.formDuration;
+                          } else if (typeof stat.formDuration === 'string') {
+                            const parts = stat.formDuration.split(':');
+                            if (parts.length === 3) {
+                              // Format: "HH:MM:SS"
+                              durationSeconds += parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseInt(parts[2]);
+                            } else if (parts.length === 2) {
+                              // Format: "MM:SS"
+                              durationSeconds += parseInt(parts[0]) * 60 + parseInt(parts[1]);
+                            } else {
+                              // Try parsing as seconds
+                              const parsed = parseInt(stat.formDuration);
+                              if (!isNaN(parsed)) durationSeconds += parsed;
+                            }
+                          }
+                        }
+                        acc.totalFormDurationSeconds += durationSeconds;
+                        
+                        return acc;
+                      }, {
+                        numberOfDials: 0,
+                        completed: 0,
+                        approved: 0,
+                        underQCQueue: 0,
+                        processingInBatch: 0,
+                        rejected: 0,
+                        incomplete: 0,
+                        callNotReceivedToTelecaller: 0,
+                        ringing: 0,
+                        notRinging: 0,
+                        switchOff: 0,
+                        numberNotReachable: 0,
+                        numberDoesNotExist: 0,
+                        noResponseByTelecaller: 0,
+                        totalFormDurationSeconds: 0
+                      });
+                      
+                      // Format total form duration
+                      const formatDuration = (seconds) => {
+                        const hours = Math.floor(seconds / 3600);
+                        const minutes = Math.floor((seconds % 3600) / 60);
+                        const secs = seconds % 60;
+                        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+                      };
+                      
+                      return (
+                        <>
+                          {/* Total Row */}
+                          <tr className="bg-[#E6F0F8] border-b-2 border-[#373177] font-semibold">
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">Total</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">-</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">-</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">-</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.numberOfDials}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.completed}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.approved}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.underQCQueue}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.processingInBatch}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.rejected}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.incomplete}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{formatDuration(totals.totalFormDurationSeconds)}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.callNotReceivedToTelecaller}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.ringing}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.notRinging}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.switchOff}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.numberNotReachable}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.numberDoesNotExist}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.noResponseByTelecaller}</td>
+                          </tr>
+                          {/* Individual Interviewer Rows */}
+                          {catiStats.interviewerStats.map((stat, index) => (
+                            <tr key={stat.interviewerId || index} className="hover:bg-gray-50">
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.sNo || index + 1}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.memberID || 'N/A'}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.interviewerName || 'N/A'}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.interviewerPhone || 'N/A'}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.numberOfDials || 0}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.completed || 0}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.approved || 0}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.underQCQueue || 0}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.processingInBatch || 0}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.rejected || 0}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.incomplete || 0}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.formDuration || '0:00:00'}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.callNotReceivedToTelecaller || 0}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.ringing || 0}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.notRinging || 0}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.switchOff || 0}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.numberNotReachable || 0}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.numberDoesNotExist || 0}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.noResponseByTelecaller || 0}</td>
                             </tr>
-                    ))}
+                          ))}
+                        </>
+                      );
+                    })()}
                       </tbody>
                     </table>
                   </div>

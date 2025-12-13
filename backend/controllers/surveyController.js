@@ -2863,6 +2863,7 @@ exports.getCatiStats = async (req, res) => {
     });
     
     // Step 2: Count Total Dials from SurveyResponse objects (BETTER APPROACH)
+
     // This ensures we count ALL call attempts including abandoned interviews
     // SurveyResponse objects are created for every call attempt (completed or abandoned)
     // This is more accurate than counting CatiCall objects because:
@@ -3031,18 +3032,19 @@ exports.getCatiStats = async (req, res) => {
         // Approved responses are already counted in "Completed", so skip the isCompleted block
         // Continue to call status breakdown for stats
         // DO NOT count in incomplete - they are already in completed
-      } else if (isCompleted) {
-        // Completed: Call was connected and interview completed
+      } else if (normalizedResponseStatus === 'pending_approval') {
+        // Pending_Approval: Count in "Completed" and categorize by batch status
+        // IMPORTANT: Count ALL Pending_Approval responses as completed, regardless of call status
         stat.completed += 1;
         
         // Form Duration - Sum of all CATI interview durations (totalTimeSpent from timer)
-        stat.formDuration += (response.totalTimeSpent || 0);
-        console.log(`⏱️  Adding form duration: ${response.totalTimeSpent || 0}s for interviewer ${interviewerId}, total now: ${stat.formDuration}s`);
+        if (response.totalTimeSpent) {
+          stat.formDuration += (response.totalTimeSpent || 0);
+          console.log(`⏱️  Adding form duration: ${response.totalTimeSpent || 0}s for interviewer ${interviewerId}, total now: ${stat.formDuration}s`);
+        }
         
-        // Categorize completed interviews into: Under QC Queue, or Processing in Batch
-        // NOTE: Approved and Rejected responses are already handled above (before isCompleted check)
-        // Only Pending_Approval responses should be categorized by batch status here
-        if (responseStatus === 'Pending_Approval') {
+        // Categorize Pending_Approval responses into: Under QC Queue, or Processing in Batch
+        {
           // Split Under QC into two categories based on batch status (only for Pending_Approval responses)
           let batchId = null;
           if (response.qcBatch) {
@@ -3085,30 +3087,21 @@ exports.getCatiStats = async (req, res) => {
             // Response not in any batch (legacy) - count as processingInBatch
             stat.processingInBatch += 1;
           }
-        } else {
-          // Completed interview but status is not Approved, Rejected, or Pending_Approval
-          // This shouldn't normally happen, but if it does, count as processingInBatch as fallback
-          console.warn(`⚠️ Completed interview with unexpected status: ${responseStatus} for response ${response._id}`);
-          stat.processingInBatch += 1;
         }
       } else {
-        // Incomplete: All responses that were counted in "Number of Dials" but are NOT completed
+        // Incomplete: All responses that are NOT Approved, Rejected, or Pending_Approval
         // This includes:
-        // - Responses with status 'abandoned' or 'Terminated'
-        // - Responses with call status that is NOT 'success'/'call_connected' (busy, switched_off, did_not_pick_up, etc.)
-        // - Responses with no call status or 'unknown' call status (but were counted as dials)
-        // - Responses with call status 'didnt_get_call' (API failure - still an incomplete attempt)
+        // - Responses with status 'abandoned' or 'Terminated' (regardless of call status)
+        // - Responses with any other status (null, unknown, etc.)
+        // - Even if call status is 'call_connected', if status is abandoned/terminated, it's incomplete
         // EXCLUDE:
         // - Rejected (already counted in "Completed" and "Rejected")
         // - Approved (already counted in "Completed" and "Approved")
-        // - Responses that are completed (call status 'success'/'call_connected') - already counted in "Completed"
-        if (normalizedResponseStatus !== 'rejected' && 
-            normalizedResponseStatus !== 'approved') {
-          // This response was counted in "Number of Dials" but is not completed
-          // Count it in "Incomplete" (including 'didnt_get_call' since it's now in Number of Dials)
-          stat.incomplete += 1;
-        }
-        // Rejected and Approved responses are already counted in "Completed" above, so don't count here
+        // - Pending_Approval (already counted in "Completed")
+        
+        // Count ALL non-completed responses as incomplete
+        // This includes abandoned, terminated, and any other status
+        stat.incomplete += 1;
       }
         
       // Call Status Breakdown
