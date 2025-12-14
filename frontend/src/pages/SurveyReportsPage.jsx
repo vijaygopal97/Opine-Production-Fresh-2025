@@ -3926,7 +3926,7 @@ const SurveyReportsPage = () => {
                           'GPS Fail': displayStat.gpsFail || 0,
                           'Number of Interviewers Worked': displayStat.interviewersCount || stat.interviewersCount || 0,
                           'Approved': displayStat.approved || stat.approved || 0,
-                          'Rejected': displayStat.rejected || stat.rejected || 0,
+                          'Rejected': displayStat.rejected || stat.manualRejected || 0, // Use manualRejected for Rejected column
                           'Under QC': displayStat.underQC || stat.underQC || 0,
                           'CAPI Responses': displayStat.capi || stat.capi || 0,
                           'CATI Responses': displayStat.cati || stat.cati || 0,
@@ -4101,6 +4101,8 @@ const SurveyReportsPage = () => {
                         countsAfterRejection: stat.count,
                         gpsPending: 0, // Not calculated in frontend
                         gpsFail: 0, // Not calculated in frontend
+                        rejected: stat.manualRejected || 0, // Override: Use manualRejected (exclude auto-rejected)
+                        underQC: stat.underQC || 0, // Use underQC (Pending_Approval status)
                         // Use demographic percentages from stat (already calculated from filtered responses)
                         femalePercentage: stat.femalePercentage || 0,
                         withoutPhonePercentage: stat.withoutPhonePercentage || 0,
@@ -4129,8 +4131,8 @@ const SurveyReportsPage = () => {
                           <td className="py-3 px-4 text-right font-semibold text-gray-900">{displayStat.gpsFail || 0}</td>
                           <td className="py-3 px-4 text-right font-semibold text-gray-900">{displayStat.interviewersCount || stat.interviewersCount || 0}</td>
                           <td className="py-3 px-4 text-right font-semibold text-green-600">{displayStat.approved || stat.approved || 0}</td>
-                          <td className="py-3 px-4 text-right font-semibold text-red-600">{displayStat.rejected || stat.manualRejected || 0}</td>
-                          <td className="py-3 px-4 text-right font-semibold text-yellow-600">{displayStat.underQC || stat.underQC || 0}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-red-600">{displayStat.rejected || 0}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-yellow-600">{displayStat.underQC || 0}</td>
                           <td className="py-3 px-4 text-right font-semibold text-green-600">{displayStat.capi || stat.capi || 0}</td>
                           <td className="py-3 px-4 text-right font-semibold text-orange-600">{displayStat.cati || stat.cati || 0}</td>
                           <td className="py-3 px-4 text-right text-gray-600">{displayStat.femalePercentage?.toFixed(2) || stat.femalePercentage?.toFixed(2) || '0.00'}%</td>
@@ -4376,8 +4378,8 @@ const SurveyReportsPage = () => {
                           <td className="py-3 px-4 text-right font-semibold text-gray-900">{displayStat.gpsPending || 0}</td>
                           <td className="py-3 px-4 text-right font-semibold text-gray-900">{displayStat.gpsFail || 0}</td>
                           <td className="py-3 px-4 text-right font-semibold text-green-600">{displayStat.approved || stat.approved || 0}</td>
-                          <td className="py-3 px-4 text-right font-semibold text-red-600">{displayStat.rejected || stat.manualRejected || 0}</td>
-                          <td className="py-3 px-4 text-right font-semibold text-yellow-600">{displayStat.underQC || stat.pending || 0}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-red-600">{displayStat.rejected || 0}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-yellow-600">{displayStat.underQC || 0}</td>
                           <td className="py-3 px-4 text-right font-semibold text-green-600">{displayStat.capi || stat.capi || 0}</td>
                           <td className="py-3 px-4 text-right font-semibold text-orange-600">{displayStat.cati || stat.cati || 0}</td>
                           <td className="py-3 px-4 text-right text-gray-600">{displayStat.femalePercentage?.toFixed(2) || stat.femalePercentage?.toFixed(2) || '0.00'}%</td>
