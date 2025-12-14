@@ -1521,6 +1521,8 @@ const SurveyReportsPage = () => {
           // Keep rejected for backward compatibility (total rejected = auto + manual)
           currentCount.rejected += 1;
         } else if (response.status === 'Pending_Approval') {
+          // Count ALL Pending_Approval responses as Under QC
+          // This includes responses in batches (collecting phase) and those queued for QC
           currentCount.underQC += 1;
         }
 
@@ -1668,6 +1670,8 @@ const SurveyReportsPage = () => {
           // Keep rejected for backward compatibility (total rejected = auto + manual)
           currentCount.rejected += 1;
         } else if (response.status === 'Pending_Approval') {
+          // Count ALL Pending_Approval responses as Under QC (pending)
+          // This includes responses in batches (collecting phase) and those queued for QC
           currentCount.pending += 1;
         }
         
@@ -1945,7 +1949,8 @@ const SurveyReportsPage = () => {
           rejected: rejected,
           autoRejected: autoRejected,
           manualRejected: manualRejected,
-          pending: pending,
+          pending: pending, // This is Under QC (Pending_Approval status)
+          underQC: pending, // Alias for consistency with AC stats
           capi: capi,
           cati: cati,
           percentage: totalResponses > 0 ? (total / totalResponses) * 100 : 0,
@@ -4021,8 +4026,8 @@ const SurveyReportsPage = () => {
                           gpsFail: 0,
                           interviewersCount: stat.interviewersCount || 0,
                           approved: stat.approved || 0,
-                          rejected: stat.manualRejected || 0, // Use manualRejected for Rejected column
-                          underQC: stat.underQC || 0,
+                        rejected: stat.manualRejected || 0, // Use manualRejected for Rejected column (exclude auto-rejected, exclude pending)
+                        underQC: (stat.underQC || stat.pending || 0), // Use underQC or pending (Pending_Approval status - includes all in batches)
                           capi: stat.capi || 0,
                           cati: stat.cati || 0
                         };
@@ -4101,8 +4106,8 @@ const SurveyReportsPage = () => {
                         countsAfterRejection: stat.count,
                         gpsPending: 0, // Not calculated in frontend
                         gpsFail: 0, // Not calculated in frontend
-                        rejected: stat.manualRejected || 0, // Override: Use manualRejected (exclude auto-rejected)
-                        underQC: stat.underQC || 0, // Use underQC (Pending_Approval status)
+                        rejected: stat.manualRejected || 0, // Override: Use manualRejected (exclude auto-rejected, exclude pending)
+                        underQC: (stat.underQC || stat.pending || 0), // Use underQC or pending (Pending_Approval status - includes all in batches)
                         // Use demographic percentages from stat (already calculated from filtered responses)
                         femalePercentage: stat.femalePercentage || 0,
                         withoutPhonePercentage: stat.withoutPhonePercentage || 0,
@@ -4281,9 +4286,9 @@ const SurveyReportsPage = () => {
                           countsAfterRejection: stat.count,
                           gpsPending: 0,
                           gpsFail: 0,
-                          underQC: stat.pending || 0, // Use pending (Pending_Approval status)
-                          approved: stat.approved || 0,
-                          rejected: stat.manualRejected || 0, // Use manualRejected for Rejected column
+                        underQC: (stat.underQC || stat.pending || 0), // Use underQC or pending (Pending_Approval status - includes all in batches)
+                        approved: stat.approved || 0,
+                        rejected: stat.manualRejected || 0, // Use manualRejected for Rejected column (exclude auto-rejected, exclude pending)
                           capi: stat.capi || 0, // Use CAPI count from analytics
                           cati: stat.cati || 0 // Use CATI count from analytics
                         };
@@ -4351,9 +4356,9 @@ const SurveyReportsPage = () => {
                         countsAfterRejection: stat.count,
                         gpsPending: 0, // Not calculated in frontend
                         gpsFail: 0, // Not calculated in frontend
-                        underQC: stat.pending || 0, // Use pending (Pending_Approval status)
+                        underQC: (stat.underQC || stat.pending || 0), // Use underQC or pending (Pending_Approval status - includes all in batches)
                         approved: stat.approved || 0,
-                        rejected: stat.manualRejected || 0, // Override: Use manualRejected (exclude auto-rejected)
+                        rejected: stat.manualRejected || 0, // Override: Use manualRejected (exclude auto-rejected, exclude pending)
                         capi: stat.capi || 0, // Use CAPI count from analytics
                         cati: stat.cati || 0, // Use CATI count from analytics
                         // Use demographic percentages from stat (already calculated from filtered responses)
