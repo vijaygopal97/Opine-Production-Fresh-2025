@@ -69,11 +69,15 @@ const checkAutoRejection = async (surveyResponse, responses, surveyId) => {
     return null; // Don't auto-reject abandoned CATI interviews
   }
   
-  // Condition 1: Duration check - must be more than 3 minutes (180 seconds)
-  // Apply to all interview modes (CAPI and CATI) for completed interviews
+  // Condition 1: Duration check
+  // CATI interviews: must be more than 90 seconds (1.5 minutes)
+  // CAPI interviews: must be more than 3 minutes (180 seconds)
   // Note: Abandoned CATI interviews are already filtered out above (isCatiAbandoned check)
+  const isCati = surveyResponse.interviewMode === 'cati';
+  const minDurationSeconds = isCati ? 90 : 180; // 90 seconds for CATI, 180 seconds (3 minutes) for CAPI
+  
   if (surveyResponse.totalTimeSpent && 
-      surveyResponse.totalTimeSpent < 180) {
+      surveyResponse.totalTimeSpent < minDurationSeconds) {
     rejectionReasons.push({
       reason: 'Interview Too Short',
       condition: 'duration'
