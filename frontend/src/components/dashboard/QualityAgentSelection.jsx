@@ -220,6 +220,19 @@ const QualityAgentSelection = ({ onUpdate, onACSettingsUpdate, initialData, mode
       filtered = filtered.filter(agent => agent.rating >= minRating);
     }
 
+    // IMPORTANT: Always include selected quality agents even if they're filtered out
+    // This ensures that assigned agents are always visible in edit mode
+    const selectedIds = new Set(selectedQualityAgents.map(a => a.id?.toString()));
+    const selectedButNotInFiltered = selectedQualityAgents.filter(selected => {
+      const selectedId = selected.id?.toString();
+      return selectedId && !filtered.some(f => f.id?.toString() === selectedId);
+    });
+    
+    // Add selected agents that are not in the filtered list
+    if (selectedButNotInFiltered.length > 0) {
+      filtered = [...filtered, ...selectedButNotInFiltered];
+    }
+
     // Sort
     filtered.sort((a, b) => {
       switch (sortBy) {
@@ -237,7 +250,7 @@ const QualityAgentSelection = ({ onUpdate, onACSettingsUpdate, initialData, mode
     });
 
     setFilteredQualityAgents(filtered);
-  }, [qualityAgents, searchTerm, filterLocation, filterRating, sortBy]);
+  }, [qualityAgents, searchTerm, filterLocation, filterRating, sortBy, selectedQualityAgents]);
 
   const handleQualityAgentSelect = (agent) => {
     setSelectedQualityAgents(prev => {

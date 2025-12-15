@@ -1195,9 +1195,9 @@ exports.updateSurvey = async (req, res) => {
   }
 };
 
-// @desc    Get available surveys for interviewer
+// @desc    Get available surveys for interviewer or quality agent
 // @route   GET /api/surveys/available
-// @access  Private (Interviewer)
+// @access  Private (Interviewer, Quality Agent)
 exports.getAvailableSurveys = async (req, res) => {
   try {
     const currentUser = await User.findById(req.user.id);
@@ -1211,38 +1211,65 @@ exports.getAvailableSurveys = async (req, res) => {
     const { search, status, category, sortBy = 'assignedAt', sortOrder = 'desc' } = req.query;
 
     console.log('🔍 getAvailableSurveys - Current user ID:', currentUser._id);
+    console.log('🔍 getAvailableSurveys - User type:', currentUser.userType);
     console.log('🔍 getAvailableSurveys - Query params:', { search, status, category, sortBy, sortOrder });
 
-    // Build query to find surveys where the current user is assigned
-    // Handle both single-mode (assignedInterviewers) and multi-mode (capiInterviewers, catiInterviewers) surveys
-    const query = {
-      $or: [
-        { 'assignedInterviewers.interviewer': currentUser._id },
-        { 'capiInterviewers.interviewer': currentUser._id },
-        { 'catiInterviewers.interviewer': currentUser._id }
-      ],
-      status: { $in: ['active', 'draft'] } // Only show active or draft surveys
-    };
+    // Build query based on user type
+    let query = {};
+    
+    if (currentUser.userType === 'quality_agent') {
+      // For quality agents, find surveys where they are assigned as quality agents
+      query = {
+        'assignedQualityAgents.qualityAgent': currentUser._id,
+        status: { $in: ['active', 'draft'] } // Only show active or draft surveys
+      };
+    } else {
+      // For interviewers, find surveys where they are assigned as interviewers
+      // Handle both single-mode (assignedInterviewers) and multi-mode (capiInterviewers, catiInterviewers) surveys
+      query = {
+        $or: [
+          { 'assignedInterviewers.interviewer': currentUser._id },
+          { 'capiInterviewers.interviewer': currentUser._id },
+          { 'catiInterviewers.interviewer': currentUser._id }
+        ],
+        status: { $in: ['active', 'draft'] } // Only show active or draft surveys
+      };
+    }
 
     // Add search filter
     if (search) {
-      query.$and = [
-        {
-          $or: [
-            { 'assignedInterviewers.interviewer': currentUser._id },
-            { 'capiInterviewers.interviewer': currentUser._id },
-            { 'catiInterviewers.interviewer': currentUser._id }
-          ]
-        },
-        {
-          $or: [
-            { surveyName: { $regex: search, $options: 'i' } },
-            { description: { $regex: search, $options: 'i' } },
-            { category: { $regex: search, $options: 'i' } }
-          ]
-        }
-      ];
-      delete query.$or; // Remove the original $or since we're using $and now
+      if (currentUser.userType === 'quality_agent') {
+        // For quality agents, add search to existing query
+        query.$and = [
+          { 'assignedQualityAgents.qualityAgent': currentUser._id },
+          {
+            $or: [
+              { surveyName: { $regex: search, $options: 'i' } },
+              { description: { $regex: search, $options: 'i' } },
+              { category: { $regex: search, $options: 'i' } }
+            ]
+          }
+        ];
+      } else {
+        // For interviewers, add search to existing query
+        query.$and = [
+          {
+            $or: [
+              { 'assignedInterviewers.interviewer': currentUser._id },
+              { 'capiInterviewers.interviewer': currentUser._id },
+              { 'catiInterviewers.interviewer': currentUser._id }
+            ]
+          },
+          {
+            $or: [
+              { surveyName: { $regex: search, $options: 'i' } },
+              { description: { $regex: search, $options: 'i' } },
+              { category: { $regex: search, $options: 'i' } }
+            ]
+          }
+        ];
+        delete query.$or; // Remove the original $or since we're using $and now
+      }
     }
 
     // Add category filter

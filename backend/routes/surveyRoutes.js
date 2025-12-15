@@ -37,9 +37,9 @@ router.route('/respondent-contacts/template')
 router.route('/respondent-contacts/upload')
   .post(protect, authorize('company_admin', 'project_manager'), uploadRespondentContactsMiddleware, uploadRespondentContacts);
 
-// Interviewer-specific routes (must come before /:id routes)
+// Interviewer and Quality Agent routes (must come before /:id routes)
 router.route('/available')
-  .get(protect, authorize('interviewer'), getAvailableSurveys);
+  .get(protect, authorize('interviewer', 'quality_agent'), getAvailableSurveys);
 
 // Specific routes must come before /:id routes
 router.route('/:id/assign-interviewers')
