@@ -2048,6 +2048,33 @@ const getNextReviewAssignment = async (req, res) => {
         const answeredQuestions = activeAssignment.responses?.filter(r => !r.isSkipped).length || 0;
         const completionPercentage = effectiveQuestions > 0 ? Math.round((answeredQuestions / effectiveQuestions) * 100) : 0;
 
+        // Add signed URL to audio recording if present (same as new assignment)
+        let audioRecording = activeAssignment.audioRecording;
+        if (audioRecording && audioRecording.audioUrl) {
+          const { getAudioSignedUrl } = require('../utils/cloudStorage');
+          // Skip mock URLs
+          if (!audioRecording.audioUrl.startsWith('mock://') && !audioRecording.audioUrl.includes('mock://')) {
+            try {
+              const signedUrl = await getAudioSignedUrl(audioRecording.audioUrl, 3600);
+              audioRecording = {
+                ...audioRecording,
+                signedUrl,
+                originalUrl: audioRecording.audioUrl
+              };
+            } catch (error) {
+              console.error('Error generating signed URL for audio in active assignment:', error);
+              // Keep original audioRecording if signed URL generation fails
+            }
+          } else {
+            // Mark as mock URL
+            audioRecording = {
+              ...audioRecording,
+              signedUrl: null,
+              isMock: true
+            };
+          }
+        }
+
         // Explicitly preserve interviewer field with memberId
         // Log raw interviewer data before transformation
         console.log('🔍 getNextReviewAssignment - Active assignment raw interviewer:', {
@@ -2064,6 +2091,7 @@ const getNextReviewAssignment = async (req, res) => {
         // Use interviewer directly from populate (same as getPendingApprovals)
         const transformedResponse = {
           ...activeAssignment,
+          audioRecording, // Include audio recording with signed URL
           totalQuestions: effectiveQuestions,
           answeredQuestions,
           completionPercentage
@@ -2346,9 +2374,37 @@ const getNextReviewAssignment = async (req, res) => {
     const answeredQuestions = updatedResponse.responses?.filter(r => !r.isSkipped).length || 0;
     const completionPercentage = effectiveQuestions > 0 ? Math.round((answeredQuestions / effectiveQuestions) * 100) : 0;
 
+    // Add signed URL to audio recording if present (same as getPendingApprovals)
+    let audioRecording = updatedResponse.audioRecording;
+    if (audioRecording && audioRecording.audioUrl) {
+      const { getAudioSignedUrl } = require('../utils/cloudStorage');
+      // Skip mock URLs
+      if (!audioRecording.audioUrl.startsWith('mock://') && !audioRecording.audioUrl.includes('mock://')) {
+        try {
+          const signedUrl = await getAudioSignedUrl(audioRecording.audioUrl, 3600);
+          audioRecording = {
+            ...audioRecording,
+            signedUrl,
+            originalUrl: audioRecording.audioUrl
+          };
+        } catch (error) {
+          console.error('Error generating signed URL for audio in getNextReviewAssignment:', error);
+          // Keep original audioRecording if signed URL generation fails
+        }
+      } else {
+        // Mark as mock URL
+        audioRecording = {
+          ...audioRecording,
+          signedUrl: null,
+          isMock: true
+        };
+      }
+    }
+
     // Use interviewer directly from populate (same as getPendingApprovals)
     const transformedResponse = {
       ...updatedResponse,
+      audioRecording, // Include audio recording with signed URL
       totalQuestions: effectiveQuestions,
       answeredQuestions,
       completionPercentage
@@ -2356,6 +2412,12 @@ const getNextReviewAssignment = async (req, res) => {
 
     console.log('🔍 getNextReviewAssignment - New assignment call_id:', transformedResponse.call_id);
     console.log('🔍 getNextReviewAssignment - New assignment interviewMode:', transformedResponse.interviewMode);
+    console.log('🔍 getNextReviewAssignment - Audio recording:', {
+      hasAudioRecording: !!transformedResponse.audioRecording,
+      hasAudioUrl: !!transformedResponse.audioRecording?.audioUrl,
+      hasSignedUrl: !!transformedResponse.audioRecording?.signedUrl,
+      audioUrl: transformedResponse.audioRecording?.audioUrl
+    });
     console.log('🔍 getNextReviewAssignment - Transformed interviewer data:', {
       hasInterviewer: !!transformedResponse.interviewer,
       interviewerId: transformedResponse.interviewer?._id?.toString(),
