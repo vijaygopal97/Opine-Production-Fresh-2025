@@ -61,7 +61,20 @@ app.use(cookieParser());
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Serve party logos
-app.use('/api/party-logos', express.static(path.join(__dirname, '../../Report-Generation/party symbols')));
+const partyLogosPath = path.resolve(__dirname, '../../Report-Generation/party symbols');
+console.log('📁 Party logos path:', partyLogosPath);
+app.use('/api/party-logos', express.static(partyLogosPath, {
+  setHeaders: (res, filePath) => {
+    // Set proper content type based on file extension
+    if (filePath.endsWith('.png')) {
+      res.setHeader('Content-Type', 'image/png');
+    } else if (filePath.endsWith('.webp')) {
+      res.setHeader('Content-Type', 'image/webp');
+    } else if (filePath.endsWith('.svg')) {
+      res.setHeader('Content-Type', 'image/svg+xml');
+    }
+  }
+}));
 
 // MongoDB Connection
 if (!MONGODB_URI) {
