@@ -439,9 +439,9 @@ const startCatiInterview = async (req, res) => {
       }
     });
     
-    console.log('📊 Respondents grouped by priority:', Object.keys(respondentsByPriority).map(p => `${p}: ${respondentsByPriority[p].length}`).join(', '));
+    console.log('📊 Respondents grouped by priority:', Object.keys(respondentsByPriority).map(p => `Priority ${p}: ${respondentsByPriority[p].length}`).join(', '));
     console.log('📊 Non-prioritized respondents:', nonPrioritizedRespondents.length);
-    console.log('🚫 Excluded ACs (Priority 0):', excludedACs.length > 0 ? excludedACs.join(', ') : 'None');
+    console.log('🚫 Excluded ACs (Priority 0):', excludedACs.size > 0 ? Array.from(excludedACs).join(', ') : 'None');
     
     // Find the highest priority that has pending respondents
     let selectedRespondent = null;
