@@ -142,10 +142,13 @@ const QualityAgentSelection = ({ onUpdate, onACSettingsUpdate, initialData, mode
         
         const modeValue = typeof mode === 'object' ? mode.mode : mode;
         
-        // Fetch all active quality agents from the company
+        // Fetch ALL quality agents from the company (don't filter by status)
+        // This ensures all assigned agents are visible, even if they have different statuses
         response = await authAPI.getCompanyUsers({
           userType: 'quality_agent',
-          status: 'active'
+          page: 1,
+          limit: 1000 // Get all quality agents
+          // Don't filter by status - include all quality agents
         });
         
         if (response.success) {
@@ -163,7 +166,8 @@ const QualityAgentSelection = ({ onUpdate, onACSettingsUpdate, initialData, mode
             completedApprovals: user.performance?.approvedInterviews || 0,
             averageRating: user.performance?.averageRating || 0,
             trustScore: user.performance?.trustScore || 0,
-            availability: user.status === 'active' ? 'Available' : 'Busy',
+            // Quality agents are always "Available" for assignment - status doesn't affect availability
+            availability: 'Available',
             lastActive: user.lastLogin ? 
               new Date(user.lastLogin).toLocaleDateString() : 
               'Never',
@@ -193,6 +197,58 @@ const QualityAgentSelection = ({ onUpdate, onACSettingsUpdate, initialData, mode
 
     fetchQualityAgents();
   }, [mode]);
+
+  // IMPORTANT: After quality agents are fetched, ensure all assigned agents from initialData are included
+  // This handles cases where assigned agents might not be in the fetched list (different status, etc.)
+  useEffect(() => {
+    if (qualityAgents.length > 0 && initialData && Array.isArray(initialData) && initialData.length > 0) {
+      const fetchedIds = new Set(qualityAgents.map(a => a.id?.toString()));
+      const missingAgents = initialData.filter(assigned => {
+        const assignedId = assigned.id || assigned._id || 
+          (assigned.qualityAgent && (assigned.qualityAgent._id || assigned.qualityAgent));
+        return assignedId && !fetchedIds.has(assignedId.toString());
+      });
+
+      if (missingAgents.length > 0) {
+        console.log('🔍 Found assigned agents not in fetched list, adding them:', missingAgents.length);
+        const transformedMissing = missingAgents.map(assigned => {
+          const agentId = assigned.id || assigned._id || 
+            (assigned.qualityAgent && (assigned.qualityAgent._id || assigned.qualityAgent));
+          const qualityAgent = assigned.qualityAgent || assigned;
+          
+          return {
+            id: agentId,
+            name: qualityAgent.firstName && qualityAgent.lastName ? 
+              `${qualityAgent.firstName} ${qualityAgent.lastName}` : 
+              qualityAgent.firstName || qualityAgent.lastName || 'Unknown',
+            email: qualityAgent.email || '',
+            phone: qualityAgent.phone || '',
+            location: qualityAgent.location || qualityAgent.city || 'Location not specified',
+            rating: qualityAgent.rating || 0,
+            completedApprovals: 0,
+            averageRating: qualityAgent.avgRating || 0,
+            trustScore: qualityAgent.trustScore || 0,
+            availability: 'Available', // Always available for assignment
+            lastActive: 'Unknown',
+            specialties: [],
+            languages: [],
+            experience: 'Unknown',
+            isCompanyMember: true,
+            userType: qualityAgent.userType || 'quality_agent',
+            status: assigned.status || qualityAgent.status || 'active',
+            company: qualityAgent.company,
+            companyCode: qualityAgent.companyCode,
+            selectedState: assigned.selectedState || '',
+            assignedACs: assigned.assignedACs || [],
+            selectedCountry: assigned.selectedCountry || ''
+          };
+        });
+        
+        setQualityAgents(prev => [...prev, ...transformedMissing]);
+        console.log('✅ Added missing assigned agents to quality agents list');
+      }
+    }
+  }, [qualityAgents, initialData]);
 
   // Filter and sort quality agents
   useEffect(() => {
