@@ -67,16 +67,6 @@ const loadACPriorityMap = async () => {
 };
 
 /**
- * Normalize AC name for comparison (trim, lowercase)
- * @param {String} acName - Assembly Constituency name
- * @returns {String} Normalized AC name
- */
-const normalizeACName = (acName) => {
-  if (!acName) return '';
-  return String(acName).trim().toLowerCase();
-};
-
-/**
  * Get AC priority for a given AC name
  * @param {String} acName - Assembly Constituency name
  * @returns {Number|null} Priority number, or null if not in priority list
@@ -85,21 +75,7 @@ const getACPriority = async (acName) => {
   if (!acName) return null;
   
   const priorityMap = await loadACPriorityMap();
-  const normalizedAC = normalizeACName(acName);
-  
-  // Try exact match first, then normalized match
-  if (priorityMap[acName] !== undefined) {
-    return priorityMap[acName];
-  }
-  
-  // Try normalized match
-  for (const [mapAC, priority] of Object.entries(priorityMap)) {
-    if (normalizeACName(mapAC) === normalizedAC) {
-      return priority;
-    }
-  }
-  
-  return null;
+  return priorityMap[acName] !== undefined ? priorityMap[acName] : null;
 };
 
 // DeepCall API Configuration
@@ -378,6 +354,12 @@ const startCatiInterview = async (req, res) => {
     const acPriorityMap = await loadACPriorityMap();
     console.log('📋 AC Priority Map loaded:', Object.keys(acPriorityMap).length, 'ACs');
     
+    // Create normalized priority map for case-insensitive matching
+    const normalizedPriorityMap = {};
+    Object.entries(acPriorityMap).forEach(([acName, priority]) => {
+      normalizedPriorityMap[normalizeACName(acName)] = priority;
+    });
+    
     // Get all pending respondents
     const allPendingRespondents = await CatiRespondentQueue.find({
       survey: surveyId,
@@ -400,7 +382,7 @@ const startCatiInterview = async (req, res) => {
     
     // Group respondents by AC priority
     const respondentsByPriority = {};
-    const excludedACs = []; // Priority 0 ACs
+    const excludedACs = new Set(); // Priority 0 ACs (use Set to avoid duplicates)
     const nonPrioritizedRespondents = [];
     
     allPendingRespondents.forEach(respondent => {
@@ -411,14 +393,18 @@ const startCatiInterview = async (req, res) => {
         return;
       }
       
-      const priority = acPriorityMap[acName];
+      // Try exact match first, then normalized match
+      let priority = acPriorityMap[acName];
+      if (priority === undefined) {
+        priority = normalizedPriorityMap[normalizeACName(acName)];
+      }
       
       if (priority === undefined || priority === null) {
         // AC not in priority list, treat as non-prioritized
         nonPrioritizedRespondents.push(respondent);
       } else if (priority === 0) {
         // Priority 0 = excluded from assignment
-        excludedACs.push(acName);
+        excludedACs.add(acName);
         console.log(`🚫 Excluding respondent from Priority 0 AC: ${acName}`);
       } else {
         // AC has a priority (1, 2, 3, etc.)
