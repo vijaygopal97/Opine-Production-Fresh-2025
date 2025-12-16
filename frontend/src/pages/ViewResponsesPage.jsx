@@ -1418,12 +1418,20 @@ const ViewResponsesPage = () => {
   const filteredResponses = useMemo(() => {
     if (!originalResponses || originalResponses.length === 0) return [];
 
-    // Debug logging (remove in production if needed)
+    // Debug logging for troubleshooting
     if (filters.interviewerIds && filters.interviewerIds.length > 0 && filters.status === 'Approved') {
-      console.log('🔍 Filtering with:', {
+      const matchingInterviewer = originalResponses.filter(r => {
+        const id = r.interviewer?._id?.toString() || r.interviewer?._id || '';
+        return filters.interviewerIds.map(i => i?.toString() || i).includes(id);
+      });
+      const matchingStatus = matchingInterviewer.filter(r => r.status === 'Approved');
+      console.log('🔍 Filter Debug:', {
         interviewerIds: filters.interviewerIds,
         status: filters.status,
-        totalResponses: originalResponses.length
+        totalResponses: originalResponses.length,
+        matchingInterviewer: matchingInterviewer.length,
+        matchingStatus: matchingStatus.length,
+        sampleStatuses: matchingInterviewer.slice(0, 5).map(r => ({ id: r.responseId, status: r.status }))
       });
     }
 
@@ -3127,6 +3135,24 @@ const ViewResponsesPage = () => {
           onClose={() => {
             setShowResponseDetails(false);
             setSelectedResponse(null);
+          }}
+          onStatusChange={(updatedResponse) => {
+            // Update the response in the list
+            setOriginalResponses(prev => 
+              prev.map(r => 
+                (r._id === updatedResponse._id || r.responseId === updatedResponse.responseId) 
+                  ? updatedResponse 
+                  : r
+              )
+            );
+            setResponses(prev => 
+              prev.map(r => 
+                (r._id === updatedResponse._id || r.responseId === updatedResponse.responseId) 
+                  ? updatedResponse 
+                  : r
+              )
+            );
+            setSelectedResponse(updatedResponse);
           }}
         />
       )}

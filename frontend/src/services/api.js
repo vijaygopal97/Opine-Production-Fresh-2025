@@ -982,6 +982,16 @@ export const surveyResponseAPI = {
       } catch (error) {
         throw error;
       }
+    },
+
+    // Set response to Pending Approval
+    setPendingApproval: async (responseId) => {
+      try {
+        const response = await api.patch(`/api/survey-responses/${responseId}/set-pending`);
+        return response.data;
+      } catch (error) {
+        throw error;
+      }
     }
 };
 

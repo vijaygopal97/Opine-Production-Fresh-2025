@@ -3355,6 +3355,49 @@ const rejectSurveyResponse = async (req, res) => {
   }
 };
 
+// Set response status to Pending_Approval
+const setPendingApproval = async (req, res) => {
+  try {
+    const { responseId } = req.params;
+    
+    const response = await SurveyResponse.findByIdAndUpdate(
+      responseId,
+      { 
+        $set: {
+          status: 'Pending_Approval',
+          updatedAt: new Date()
+        },
+        $unset: {
+          'reviewAssignment': '',
+          'verificationData.reviewer': '',
+          'verificationData.reviewedAt': ''
+        }
+      },
+      { new: true }
+    );
+
+    if (!response) {
+      return res.status(404).json({
+        success: false,
+        message: 'Survey response not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Survey response set to Pending Approval successfully',
+      data: response
+    });
+  } catch (error) {
+    console.error('Error setting response to Pending Approval:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to set response to Pending Approval',
+      error: error.message
+    });
+  }
+};
+
 // @desc    Get AC Performance Stats
 // @route   GET /api/survey-responses/survey/:surveyId/ac-performance
 // @access  Private (Company Admin)
@@ -4238,6 +4281,7 @@ module.exports = {
   getSurveyResponses,
   approveSurveyResponse,
   rejectSurveyResponse,
+  setPendingApproval,
   getACPerformanceStats,
   getInterviewerPerformanceStats,
   getLastCatiSetNumber

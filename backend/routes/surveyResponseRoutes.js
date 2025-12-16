@@ -24,6 +24,7 @@ const {
   getSurveyResponses,
   approveSurveyResponse,
   rejectSurveyResponse,
+  setPendingApproval,
   getACPerformanceStats,
   getInterviewerPerformanceStats,
   getLastCatiSetNumber,
@@ -140,6 +141,9 @@ router.patch('/:responseId/approve', approveSurveyResponse);
 
 // Reject survey response
 router.patch('/:responseId/reject', rejectSurveyResponse);
+
+// Set response to Pending Approval
+router.patch('/:responseId/set-pending', setPendingApproval);
 
 // Get survey response details by ID (must be last to avoid conflicts with other routes)
 router.get('/:responseId', getSurveyResponseById);

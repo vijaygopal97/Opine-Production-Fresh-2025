@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, User, Calendar, MapPin, Clock, CheckCircle, AlertCircle, SkipForward, Eye, EyeOff, ThumbsDown, ThumbsUp, Zap, Play, Pause, Headphones, PhoneCall, Download } from 'lucide-react';
+import { X, User, Calendar, MapPin, Clock, CheckCircle, AlertCircle, SkipForward, Eye, EyeOff, ThumbsDown, ThumbsUp, Zap, Play, Pause, Headphones, PhoneCall, Download, RotateCcw } from 'lucide-react';
 import { surveyResponseAPI, catiAPI } from '../../services/api';
 import api from '../../services/api';
 import { useToast } from '../../contexts/ToastContext';
@@ -7,7 +7,7 @@ import assemblyConstituencies from '../../data/assemblyConstituencies.json';
 import { renderWithTranslationProfessional, parseTranslation, getMainText } from '../../utils/translations';
 import { findGenderResponse, normalizeGenderResponse } from '../../utils/genderUtils';
 
-const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }) => {
+const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false, onStatusChange }) => {
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -15,7 +15,13 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
   const [audioSignedUrl, setAudioSignedUrl] = useState(null);
   const [catiCallDetails, setCatiCallDetails] = useState(null);
   const [catiRecordingBlobUrl, setCatiRecordingBlobUrl] = useState(null);
+  const [currentResponse, setCurrentResponse] = useState(response);
   const { showSuccess, showError } = useToast();
+
+  // Update currentResponse when response prop changes
+  useEffect(() => {
+    setCurrentResponse(response);
+  }, [response]);
 
   // Fetch CATI call details when modal opens for CATI responses
   useEffect(() => {
@@ -26,8 +32,8 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
       setCatiRecordingBlobUrl(null);
     }
     
-    if (response?.interviewMode === 'cati') {
-      const callId = response.call_id;
+    if (currentResponse?.interviewMode === 'cati') {
+      const callId = currentResponse.call_id;
       if (callId) {
         const fetchCallDetails = async () => {
           try {
@@ -68,7 +74,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
         URL.revokeObjectURL(catiRecordingBlobUrl);
       }
     };
-  }, [response?._id, response?.interviewMode, response?.call_id]);
+  }, [currentResponse?._id, currentResponse?.interviewMode, currentResponse?.call_id]);
 
   // Fetch signed URL for S3 audio if needed
   useEffect(() => {
@@ -76,12 +82,12 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
       // Reset audioSignedUrl when response changes
       setAudioSignedUrl(null);
       
-      if (response?.audioRecording?.audioUrl) {
-        const audioUrl = response.audioRecording.audioUrl;
+      if (currentResponse?.audioRecording?.audioUrl) {
+        const audioUrl = currentResponse.audioRecording.audioUrl;
         
         // If we already have a signedUrl from backend, use it
-        if (response.audioRecording.signedUrl) {
-          setAudioSignedUrl(response.audioRecording.signedUrl);
+        if (currentResponse.audioRecording.signedUrl) {
+          setAudioSignedUrl(currentResponse.audioRecording.signedUrl);
           return;
         }
         
@@ -110,13 +116,13 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
           // For local paths or full URLs, we can use them directly
           // But we don't need to set audioSignedUrl for these
         }
-      } else if (response?.audioRecording?.signedUrl) {
-        setAudioSignedUrl(response.audioRecording.signedUrl);
+      } else if (currentResponse?.audioRecording?.signedUrl) {
+        setAudioSignedUrl(currentResponse.audioRecording.signedUrl);
       }
     };
 
     fetchSignedUrl();
-  }, [response?._id, response?.audioRecording?.audioUrl, response?.audioRecording?.signedUrl]);
+  }, [currentResponse?._id, currentResponse?.audioRecording?.audioUrl, currentResponse?.audioRecording?.signedUrl]);
 
   // Helper function to format duration
   const formatDuration = (seconds) => {
@@ -929,7 +935,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
   };
 
   const questions = getAllQuestions();
-  const respondentInfo = getRespondentInfo(response.responses, response);
+  const respondentInfo = getRespondentInfo(currentResponse.responses, currentResponse);
 
   // Handle response rejection
   const handleRejectResponse = async () => {
@@ -940,15 +946,26 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
 
     setIsSubmitting(true);
     try {
-      await surveyResponseAPI.rejectResponse(response._id, {
+      const result = await surveyResponseAPI.rejectResponse(currentResponse._id || currentResponse.responseId, {
         reason: rejectReason,
         feedback: rejectReason
       });
-      showSuccess('Response rejected successfully');
-      onClose();
+      if (result.success) {
+        showSuccess('Response rejected successfully');
+        setShowRejectForm(false);
+        setRejectReason('');
+        // Update local state
+        setCurrentResponse({ ...currentResponse, status: 'Rejected', verificationData: { ...currentResponse.verificationData, feedback: rejectReason } });
+        // Notify parent component if callback provided
+        if (onStatusChange) {
+          onStatusChange({ ...currentResponse, status: 'Rejected', verificationData: { ...currentResponse.verificationData, feedback: rejectReason } });
+        }
+      } else {
+        throw new Error(result.message || 'Failed to reject response');
+      }
     } catch (error) {
       console.error('Error rejecting response:', error);
-      showError('Failed to reject response. Please try again.');
+      showError(error.response?.data?.message || 'Failed to reject response. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -958,12 +975,49 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
   const handleApproveResponse = async () => {
     setIsSubmitting(true);
     try {
-      await surveyResponseAPI.approveResponse(response._id);
-      showSuccess('Response approved successfully');
-      onClose();
+      const result = await surveyResponseAPI.approveResponse(currentResponse._id || currentResponse.responseId);
+      if (result.success) {
+        showSuccess('Response approved successfully');
+        // Update local state
+        setCurrentResponse({ ...currentResponse, status: 'Approved' });
+        // Notify parent component if callback provided
+        if (onStatusChange) {
+          onStatusChange({ ...currentResponse, status: 'Approved' });
+        }
+      } else {
+        throw new Error(result.message || 'Failed to approve response');
+      }
     } catch (error) {
       console.error('Error approving response:', error);
-      showError('Failed to approve response. Please try again.');
+      showError(error.response?.data?.message || 'Failed to approve response. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Handle setting response to Pending Approval
+  const handleSetPendingApproval = async () => {
+    if (!window.confirm('Are you sure you want to set this response back to Pending Approval? This will clear the review assignment and allow it to be reviewed again.')) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const result = await surveyResponseAPI.setPendingApproval(currentResponse._id || currentResponse.responseId);
+      if (result.success) {
+        showSuccess('Response set to Pending Approval successfully');
+        // Update local state
+        setCurrentResponse({ ...currentResponse, status: 'Pending_Approval' });
+        // Notify parent component if callback provided
+        if (onStatusChange) {
+          onStatusChange({ ...currentResponse, status: 'Pending_Approval' });
+        }
+      } else {
+        throw new Error(result.message || 'Failed to set response to Pending Approval');
+      }
+    } catch (error) {
+      console.error('Error setting response to Pending Approval:', error);
+      showError(error.response?.data?.message || 'Failed to set response to Pending Approval. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -979,7 +1033,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
               Response Details
             </h2>
             <p className="text-sm text-gray-600 mt-1">
-              Response ID: {response.responseId || response._id}
+              Response ID: {currentResponse.responseId || currentResponse._id}
             </p>
           </div>
           <button
@@ -1029,7 +1083,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                   <CheckCircle className="w-5 h-5 text-gray-400" />
                   <div>
                     <p className="text-sm font-medium text-gray-700">Status</p>
-                    <p className="text-sm text-gray-600">{response.status}</p>
+                    <p className="text-sm text-gray-600">{currentResponse.status}</p>
                   </div>
                 </div>
                 
@@ -1049,7 +1103,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
             </div>
 
             {/* Review Information - Only show if response has been reviewed */}
-            {response.verificationData?.reviewer && (
+            {currentResponse.verificationData?.reviewer && (
               <div className="bg-[#E6F0F8] rounded-lg p-4 mb-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Review Information</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1058,9 +1112,9 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                     <div>
                       <p className="text-sm font-medium text-gray-700">Reviewed By</p>
                       <p className="text-sm text-gray-600">
-                        {response.verificationData.reviewer?.firstName && response.verificationData.reviewer?.lastName
-                          ? `${response.verificationData.reviewer.firstName} ${response.verificationData.reviewer.lastName}${response.verificationData.reviewer?.email ? ` (${response.verificationData.reviewer.email})` : ''}`
-                          : response.verificationData.reviewer?.email || 'Unknown Reviewer'}
+                        {currentResponse.verificationData.reviewer?.firstName && currentResponse.verificationData.reviewer?.lastName
+                          ? `${currentResponse.verificationData.reviewer.firstName} ${currentResponse.verificationData.reviewer.lastName}${currentResponse.verificationData.reviewer?.email ? ` (${currentResponse.verificationData.reviewer.email})` : ''}`
+                          : currentResponse.verificationData.reviewer?.email || 'Unknown Reviewer'}
                       </p>
                     </div>
                   </div>
@@ -1070,8 +1124,8 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                     <div>
                       <p className="text-sm font-medium text-gray-700">Reviewed At</p>
                       <p className="text-sm text-gray-600">
-                        {response.verificationData.reviewedAt
-                          ? new Date(response.verificationData.reviewedAt).toLocaleDateString('en-US', {
+                        {currentResponse.verificationData.reviewedAt
+                          ? new Date(currentResponse.verificationData.reviewedAt).toLocaleDateString('en-US', {
                               year: 'numeric',
                               month: 'long',
                               day: 'numeric',
@@ -1085,20 +1139,20 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                   
                   <div className="flex items-center space-x-3">
                     <CheckCircle className={`w-5 h-5 ${
-                      response.status === 'Approved' ? 'text-green-600' : 
-                      response.status === 'Rejected' ? 'text-red-600' : 
+                      currentResponse.status === 'Approved' ? 'text-green-600' : 
+                      currentResponse.status === 'Rejected' ? 'text-red-600' : 
                       'text-gray-400'
                     }`} />
                     <div>
                       <p className="text-sm font-medium text-gray-700">Review Decision</p>
                       <p className={`text-sm font-semibold ${
-                        response.status === 'Approved' ? 'text-green-600' : 
-                        response.status === 'Rejected' ? 'text-red-600' : 
+                        currentResponse.status === 'Approved' ? 'text-green-600' : 
+                        currentResponse.status === 'Rejected' ? 'text-red-600' : 
                         'text-gray-600'
                       }`}>
-                        {response.status === 'Approved' ? 'Approved' : 
-                         response.status === 'Rejected' ? 'Rejected' : 
-                         response.status}
+                        {currentResponse.status === 'Approved' ? 'Approved' : 
+                         currentResponse.status === 'Rejected' ? 'Rejected' : 
+                         currentResponse.status}
                       </p>
                     </div>
                   </div>
@@ -1111,14 +1165,14 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Demographics</h3>
               {(() => {
                 // Extract AC and polling station from responses
-                const { ac: acFromResponse, pollingStation: pollingStationFromResponse, groupName: groupNameFromResponse } = getACAndPollingStationFromResponses(response.responses, survey);
-                const displayAC = acFromResponse || response.selectedPollingStation?.acName || response.selectedAC || respondentInfo.ac;
+                const { ac: acFromResponse, pollingStation: pollingStationFromResponse, groupName: groupNameFromResponse } = getACAndPollingStationFromResponses(currentResponse.responses, survey);
+                const displayAC = acFromResponse || currentResponse.selectedPollingStation?.acName || currentResponse.selectedAC || respondentInfo.ac;
                 // Format polling station to show both code and name
-                const pollingStationValue = pollingStationFromResponse || response.selectedPollingStation?.stationName;
-                const displayPollingStation = formatPollingStationDisplay(pollingStationValue, response.selectedPollingStation);
-                const displayGroupName = groupNameFromResponse || response.selectedPollingStation?.groupName;
-                const displayPC = response.selectedPollingStation?.pcName;
-                const displayDistrict = response.selectedPollingStation?.district || respondentInfo.district;
+                const pollingStationValue = pollingStationFromResponse || currentResponse.selectedPollingStation?.stationName;
+                const displayPollingStation = formatPollingStationDisplay(pollingStationValue, currentResponse.selectedPollingStation);
+                const displayGroupName = groupNameFromResponse || currentResponse.selectedPollingStation?.groupName;
+                const displayPC = currentResponse.selectedPollingStation?.pcName;
+                const displayDistrict = currentResponse.selectedPollingStation?.district || respondentInfo.district;
                 
                 return (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1162,7 +1216,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                     {displayPC && (
                       <div>
                         <p className="text-sm font-medium text-gray-700">Parliamentary Constituency (PC)</p>
-                        <p className="text-sm text-gray-600">{displayPC} {response.selectedPollingStation?.pcNo ? `(${response.selectedPollingStation.pcNo})` : ''}</p>
+                        <p className="text-sm text-gray-600">{displayPC} {currentResponse.selectedPollingStation?.pcNo ? `(${currentResponse.selectedPollingStation.pcNo})` : ''}</p>
                       </div>
                     )}
                     
@@ -1178,11 +1232,11 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                       <p className="text-sm text-gray-600">{displayPC || respondentInfo.lokSabha}</p>
                     </div>
                     
-                    {response.location && (
+                    {currentResponse.location && (
                       <div className="md:col-span-2 lg:col-span-3">
                         <p className="text-sm font-medium text-gray-700">GPS Coordinates</p>
                         <p className="text-sm text-gray-600 font-mono">
-                          ({response.location.latitude?.toFixed(4)}, {response.location.longitude?.toFixed(4)})
+                          ({currentResponse.location.latitude?.toFixed(4)}, {currentResponse.location.longitude?.toFixed(4)})
                         </p>
                       </div>
                     )}
@@ -1192,7 +1246,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
             </div>
 
             {/* Call Information - Only for CATI interviews */}
-            {response.interviewMode === 'cati' && catiCallDetails && (
+            {currentResponse.interviewMode === 'cati' && catiCallDetails && (
               <div className="mt-6 bg-white border border-gray-200 rounded-lg p-6 mb-6">
                 <h4 className="font-semibold text-gray-900 mb-4 flex items-center text-lg">
                   <PhoneCall className="w-5 h-5 mr-2 text-[#001D48]" />
@@ -1290,7 +1344,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                 </div>
               </div>
             )}
-            {response.interviewMode === 'cati' && !catiCallDetails && (
+            {currentResponse.interviewMode === 'cati' && !catiCallDetails && (
               <div className="mt-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
                 <div className="flex items-center">
                   <AlertCircle className="w-5 h-5 mr-2 text-yellow-600" />
@@ -1305,22 +1359,22 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
             )}
 
             {/* GPS Location Map - Only for CAPI interviews */}
-            {response.location && response.interviewMode !== 'cati' && (
+            {currentResponse.location && currentResponse.interviewMode !== 'cati' && (
               <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Interview Location</h3>
                 <div className="mb-3">
                   <p className="text-sm text-gray-600 mb-1">
-                    <strong>Address:</strong> {response.location.address || 'Address not available'}
+                    <strong>Address:</strong> {currentResponse.location.address || 'Address not available'}
                   </p>
-                  {response.location.accuracy && (
+                  {currentResponse.location.accuracy && (
                     <p className="text-sm text-gray-600">
-                      <strong>Accuracy:</strong> ±{Math.round(response.location.accuracy)} meters
+                      <strong>Accuracy:</strong> ±{Math.round(currentResponse.location.accuracy)} meters
                     </p>
                   )}
                 </div>
                 <div className="w-full h-64 bg-gray-100 rounded-lg overflow-hidden">
                   <iframe
-                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${response.location.longitude-0.01},${response.location.latitude-0.01},${response.location.longitude+0.01},${response.location.latitude+0.01}&layer=mapnik&marker=${response.location.latitude},${response.location.longitude}`}
+                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${currentResponse.location.longitude-0.01},${currentResponse.location.latitude-0.01},${currentResponse.location.longitude+0.01},${currentResponse.location.latitude+0.01}&layer=mapnik&marker=${currentResponse.location.latitude},${currentResponse.location.longitude}`}
                     width="100%"
                     height="100%"
                     style={{ border: 0 }}
@@ -1329,7 +1383,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                 </div>
                 <div className="mt-2 text-center">
                   <a
-                    href={`https://www.openstreetmap.org/?mlat=${response.location.latitude}&mlon=${response.location.longitude}&zoom=15`}
+                    href={`https://www.openstreetmap.org/?mlat=${currentResponse.location.latitude}&mlon=${currentResponse.location.longitude}&zoom=15`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-[#001D48] hover:text-blue-800 text-sm underline"
@@ -1341,7 +1395,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
             )}
 
             {/* Audio Recording / Call Recording */}
-            {response.interviewMode === 'cati' && catiCallDetails?.recordingUrl ? (
+            {currentResponse.interviewMode === 'cati' && catiCallDetails?.recordingUrl ? (
               <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                   <Headphones className="w-5 h-5 mr-2" />
@@ -1378,7 +1432,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                   )}
                 </div>
               </div>
-            ) : response.interviewMode === 'cati' && !catiCallDetails?.recordingUrl ? (
+            ) : currentResponse.interviewMode === 'cati' && !catiCallDetails?.recordingUrl ? (
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                   <PhoneCall className="w-5 h-5 mr-2" />
@@ -1389,7 +1443,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                   <p className="text-sm text-gray-600">No call recording available</p>
                 </div>
               </div>
-            ) : response.audioRecording?.audioUrl ? (
+            ) : currentResponse.audioRecording?.audioUrl ? (
               <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                   <Headphones className="w-5 h-5 mr-2" />
@@ -1397,22 +1451,22 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                 </h3>
                 <div className="space-y-3">
                   <div className="text-sm text-gray-600 space-y-1">
-                    {response.audioRecording.recordingDuration && (
-                      <div>Duration: {formatDuration(response.audioRecording.recordingDuration)}</div>
+                    {currentResponse.audioRecording.recordingDuration && (
+                      <div>Duration: {formatDuration(currentResponse.audioRecording.recordingDuration)}</div>
                     )}
-                    {response.audioRecording.format && (
-                      <div>Format: {response.audioRecording.format.toUpperCase()}</div>
+                    {currentResponse.audioRecording.format && (
+                      <div>Format: {currentResponse.audioRecording.format.toUpperCase()}</div>
                     )}
-                    {response.audioRecording.fileSize && (
-                      <div>File Size: {(response.audioRecording.fileSize / 1024 / 1024).toFixed(2)} MB</div>
+                    {currentResponse.audioRecording.fileSize && (
+                      <div>File Size: {(currentResponse.audioRecording.fileSize / 1024 / 1024).toFixed(2)} MB</div>
                     )}
                   </div>
-                    {(audioSignedUrl || response.audioRecording.signedUrl || response.audioRecording.audioUrl) && (
+                    {(audioSignedUrl || currentResponse.audioRecording.signedUrl || currentResponse.audioRecording.audioUrl) && (
                       <audio
-                        data-response-id={response._id || response.responseId}
-                        src={audioSignedUrl || response.audioRecording.signedUrl || (() => {
+                        data-response-id={currentResponse._id || currentResponse.responseId}
+                        src={audioSignedUrl || currentResponse.audioRecording.signedUrl || (() => {
                           // Only return valid URLs, not S3 keys or empty strings
-                          const audioUrl = response.audioRecording.audioUrl;
+                          const audioUrl = currentResponse.audioRecording.audioUrl;
                           if (!audioUrl) return null;
                           // If it's a local path or full URL, return it
                           if (audioUrl.startsWith('/') || audioUrl.startsWith('http')) {
@@ -1427,7 +1481,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                         onError={async (e) => {
                           console.error('Audio element error:', e);
                           // If audioUrl is an S3 key, try to get signed URL
-                          const audioUrl = response.audioRecording?.audioUrl;
+                          const audioUrl = currentResponse.audioRecording?.audioUrl;
                           if (audioUrl && (audioUrl.startsWith('audio/') || audioUrl.startsWith('documents/') || audioUrl.startsWith('reports/')) && !audioSignedUrl) {
                             try {
                               const isProduction = window.location.protocol === 'https:' || window.location.hostname !== 'localhost';
@@ -1464,10 +1518,10 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                         controls
                       />
                     )}
-                  {(response.audioRecording.audioUrl || audioSignedUrl) && (
+                  {(currentResponse.audioRecording.audioUrl || audioSignedUrl) && (
                     <a
-                      href={audioSignedUrl || response.audioRecording.signedUrl || (() => {
-                        let audioUrl = response.audioRecording.audioUrl || '';
+                      href={audioSignedUrl || currentResponse.audioRecording.signedUrl || (() => {
+                        let audioUrl = currentResponse.audioRecording.audioUrl || '';
                         if (audioUrl.startsWith('/')) {
                           return `${window.location.origin}${audioUrl}`;
                         }
@@ -1477,7 +1531,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                         }
                         return audioUrl;
                       })()}
-                      download={`capi_recording_${response.responseId || response._id || 'recording'}.${response.audioRecording.format || 'webm'}`}
+                      download={`capi_recording_${currentResponse.responseId || currentResponse._id || 'recording'}.${currentResponse.audioRecording.format || 'webm'}`}
                       className="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-[#001D48] hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                     >
                       <Download className="w-4 h-4 mr-2" />
@@ -1501,7 +1555,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Survey Responses</h3>
               <div className="space-y-4">
                 {(() => {
-                  const { regularQuestions } = separateQuestions(response.responses, survey);
+                  const { regularQuestions } = separateQuestions(currentResponse.responses, survey);
                   return regularQuestions.map((responseItem, index) => {
                     try {
                       // Find the corresponding question in the survey to get conditional logic
@@ -1509,7 +1563,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                       const actualSurvey = survey.survey || survey;
                       const surveyQuestion = findQuestionByText(responseItem.questionText, actualSurvey);
                       const hasConditions = surveyQuestion?.conditions && surveyQuestion.conditions.length > 0;
-                      const conditionsMet = hasConditions ? areConditionsMet(surveyQuestion.conditions, response.responses, actualSurvey) : true;
+                      const conditionsMet = hasConditions ? areConditionsMet(surveyQuestion.conditions, currentResponse.responses, actualSurvey) : true;
                       
                       return (
                         <div key={index} className="border border-gray-200 rounded-lg p-4">
@@ -1633,32 +1687,32 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                   <h3 className="text-lg font-semibold text-gray-900">Response Status</h3>
                   <div className="flex items-center space-x-2 mt-2">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      response.status === 'Approved' 
+                      currentResponse.status === 'Approved' 
                         ? 'bg-green-100 text-green-800' 
-                        : response.status === 'Rejected'
+                        : currentResponse.status === 'Rejected'
                         ? 'bg-red-100 text-red-800'
                         : 'bg-yellow-100 text-yellow-800'
                     }`}>
-                      {response.status === 'Pending_Approval' ? 'Pending Approval' : response.status}
+                      {currentResponse.status === 'Pending_Approval' ? 'Pending Approval' : currentResponse.status}
                     </span>
                   </div>
                   {/* Rejection Reason */}
-                  {response.status === 'Rejected' && response.verificationData?.feedback && (
+                  {currentResponse.status === 'Rejected' && currentResponse.verificationData?.feedback && (
                     <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
                       <div className="flex items-start space-x-2">
                         <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
                         <div className="flex-1">
                           {(() => {
                             // Check if it's auto-rejected
-                            const isAutoRejected = response.verificationData.autoRejected === true || 
-                                                   (response.verificationData.autoRejectionReasons && 
-                                                    response.verificationData.autoRejectionReasons.length > 0) ||
+                            const isAutoRejected = currentResponse.verificationData.autoRejected === true || 
+                                                   (currentResponse.verificationData.autoRejectionReasons && 
+                                                    currentResponse.verificationData.autoRejectionReasons.length > 0) ||
                                                    // Check feedback text for known auto-rejection reasons
-                                                   (response.verificationData.feedback && (
-                                                     response.verificationData.feedback.includes('Interview Too Short') ||
-                                                     response.verificationData.feedback.includes('Not Voter') ||
-                                                     response.verificationData.feedback.includes('Not a Registered Voter') ||
-                                                     response.verificationData.feedback.includes('Duplicate Response')
+                                                   (currentResponse.verificationData.feedback && (
+                                                     currentResponse.verificationData.feedback.includes('Interview Too Short') ||
+                                                     currentResponse.verificationData.feedback.includes('Not Voter') ||
+                                                     currentResponse.verificationData.feedback.includes('Not a Registered Voter') ||
+                                                     currentResponse.verificationData.feedback.includes('Duplicate Response')
                                                    ));
                             
                             // Only show label if we can determine it's auto-rejected, otherwise don't show label
@@ -1669,11 +1723,11 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                                     Auto Rejection Reason
                                   </div>
                                   <div className="text-sm text-red-700 whitespace-pre-wrap">
-                                    {response.verificationData.feedback}
+                                    {currentResponse.verificationData.feedback}
                                   </div>
                                 </>
                               );
-                            } else if (response.verificationData.reviewer) {
+                            } else if (currentResponse.verificationData.reviewer) {
                               // Has a reviewer, so it's manual rejection
                               return (
                                 <>
@@ -1681,7 +1735,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                                     Rejection Reason
                                   </div>
                                   <div className="text-sm text-red-700 whitespace-pre-wrap">
-                                    {response.verificationData.feedback}
+                                    {currentResponse.verificationData.feedback}
                                   </div>
                                 </>
                               );
@@ -1689,7 +1743,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
                               // Can't determine, just show feedback without label
                               return (
                                 <div className="text-sm text-red-700 whitespace-pre-wrap">
-                                  {response.verificationData.feedback}
+                                  {currentResponse.verificationData.feedback}
                                 </div>
                               );
                             }
@@ -1702,28 +1756,47 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false }
               </div>
             </div>
 
-            {/* Action Buttons */}
-            {!hideActions && (
-              <div className="flex items-center justify-end space-x-4">
-                {response.status !== 'Rejected' && (
-                  <button
-                    onClick={() => setShowRejectForm(true)}
-                    className="flex items-center space-x-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
-                  >
-                    <ThumbsDown className="w-4 h-4" />
-                    <span>Reject Response</span>
-                  </button>
-                )}
-                {response.status === 'Pending_Approval' && (
-                  <button
-                    onClick={handleApproveResponse}
-                    disabled={isSubmitting}
-                    className="flex items-center space-x-2 px-4 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors disabled:opacity-50"
-                  >
-                    <ThumbsUp className="w-4 h-4" />
-                    <span>{isSubmitting ? 'Approving...' : 'Approve Response'}</span>
-                  </button>
-                )}
+            {/* Status Change Buttons - Show for Approved/Rejected/Pending_Approval responses */}
+            {!hideActions && (currentResponse.status === 'Approved' || currentResponse.status === 'Rejected' || currentResponse.status === 'Pending_Approval') && (
+              <div className="bg-gray-50 border-t border-gray-200 p-4 mt-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Change Response Status</h3>
+                <div className="flex items-center justify-end space-x-3 flex-wrap gap-2">
+                  {/* Set to Pending Approval - Show if Approved or Rejected */}
+                  {(currentResponse.status === 'Approved' || currentResponse.status === 'Rejected') && (
+                    <button
+                      onClick={handleSetPendingApproval}
+                      disabled={isSubmitting}
+                      className="flex items-center space-x-2 px-4 py-2 bg-yellow-100 text-yellow-700 rounded-lg hover:bg-yellow-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      <span>{isSubmitting ? 'Updating...' : 'Set to Pending Approval'}</span>
+                    </button>
+                  )}
+                  
+                  {/* Approve - Show if Rejected or Pending_Approval */}
+                  {(currentResponse.status === 'Rejected' || currentResponse.status === 'Pending_Approval') && (
+                    <button
+                      onClick={handleApproveResponse}
+                      disabled={isSubmitting}
+                      className="flex items-center space-x-2 px-4 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ThumbsUp className="w-4 h-4" />
+                      <span>{isSubmitting ? 'Approving...' : 'Approve Response'}</span>
+                    </button>
+                  )}
+                  
+                  {/* Reject - Show if Pending_Approval or Approved */}
+                  {(currentResponse.status === 'Pending_Approval' || currentResponse.status === 'Approved') && (
+                    <button
+                      onClick={() => setShowRejectForm(true)}
+                      disabled={isSubmitting}
+                      className="flex items-center space-x-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ThumbsDown className="w-4 h-4" />
+                      <span>Reject Response</span>
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
