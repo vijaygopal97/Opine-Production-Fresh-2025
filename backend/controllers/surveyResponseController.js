@@ -3196,6 +3196,7 @@ const getSurveyResponses = async (req, res) => {
     let responses = await SurveyResponse.find(filter)
       .populate('interviewer', 'firstName lastName email phone memberId companyCode')
       .populate('verificationData.reviewer', 'firstName lastName email')
+      .populate('qcBatch', 'status remainingDecision') // Populate batch status and remainingDecision for QC assignment logic
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
@@ -3360,33 +3361,63 @@ const setPendingApproval = async (req, res) => {
   try {
     const { responseId } = req.params;
     
-    const response = await SurveyResponse.findByIdAndUpdate(
-      responseId,
-      { 
-        $set: {
-          status: 'Pending_Approval',
-          updatedAt: new Date()
-        },
-        $unset: {
-          'reviewAssignment': '',
-          'verificationData.reviewer': '',
-          'verificationData.reviewedAt': ''
-        }
-      },
-      { new: true }
-    );
-
-    if (!response) {
+    // First, find the response to check its current state
+    const existingResponse = await SurveyResponse.findById(responseId);
+    
+    if (!existingResponse) {
       return res.status(404).json({
         success: false,
         message: 'Survey response not found'
       });
     }
 
+    // Build update object safely
+    const updateData = {
+      $set: {
+        status: 'Pending_Approval',
+        updatedAt: new Date()
+      }
+    };
+
+    // Only unset fields that exist
+    const unsetFields = {};
+    if (existingResponse.reviewAssignment) {
+      unsetFields.reviewAssignment = '';
+    }
+    if (existingResponse.verificationData) {
+      if (existingResponse.verificationData.reviewer) {
+        unsetFields['verificationData.reviewer'] = '';
+      }
+      if (existingResponse.verificationData.reviewedAt) {
+        unsetFields['verificationData.reviewedAt'] = '';
+      }
+    }
+
+    // Add $unset only if there are fields to unset
+    if (Object.keys(unsetFields).length > 0) {
+      updateData.$unset = unsetFields;
+    }
+
+    // Use updateOne instead of findByIdAndUpdate for better control
+    const result = await SurveyResponse.updateOne(
+      { _id: responseId },
+      updateData
+    );
+
+    if (result.modifiedCount === 0 && result.matchedCount === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Survey response not found'
+      });
+    }
+
+    // Fetch the updated response
+    const updatedResponse = await SurveyResponse.findById(responseId);
+
     res.json({
       success: true,
       message: 'Survey response set to Pending Approval successfully',
-      data: response
+      data: updatedResponse
     });
   } catch (error) {
     console.error('Error setting response to Pending Approval:', error);

@@ -32,6 +32,9 @@ const getGroupsByAC = async (req, res) => {
         pc_no: acData.pc_no || null,
         pc_name: acData.pc_name || null,
         district: acData.district || null,
+        district_code: acData.district_code || null,
+        region_code: acData.region_code || null,
+        region_name: acData.region_name || null,
         groups: groups.map(groupName => ({
           name: groupName,
           polling_station_count: acData.groups[groupName].polling_stations.length

@@ -413,13 +413,336 @@ const ViewResponsesPage = () => {
     return 'N/A';
   };
 
+  // Helper function to extract numeric AC code (remove alphabets and leading zeros)
+  // e.g., "WB001" -> "1", "TN023" -> "23"
+  const extractNumericACCode = (acCode) => {
+    if (!acCode || acCode === 'N/A') return 'N/A';
+    const acCodeStr = String(acCode).trim();
+    // Remove all non-numeric characters from the start
+    const numericPart = acCodeStr.replace(/^[^0-9]+/, '');
+    // Remove leading zeros
+    const finalCode = numericPart.replace(/^0+/, '') || '0';
+    return finalCode;
+  };
+
+  // Helper function to get AC code from AC name (returns numeric code only)
+  const getACCodeFromAC = (acName) => {
+    if (!acName || acName === 'N/A' || !assemblyConstituencies.states) return 'N/A';
+    
+    const acNameStr = String(acName);
+    for (const state of Object.values(assemblyConstituencies.states)) {
+      if (state.assemblyConstituencies) {
+        const constituency = state.assemblyConstituencies.find(ac => {
+          if (!ac || !ac.acName) return false;
+          const acNameLower = String(ac.acName).toLowerCase();
+          const searchNameLower = acNameStr.toLowerCase();
+          return ac.acName === acName || acNameLower === searchNameLower;
+        });
+        if (constituency) {
+          // Try acCode first, then numericCode
+          if (constituency.acCode) {
+            return extractNumericACCode(constituency.acCode);
+          }
+          if (constituency.numericCode) {
+            return extractNumericACCode(constituency.numericCode);
+          }
+        }
+      }
+    }
+    return 'N/A';
+  };
+
+  // Cache for polling station data to avoid multiple API calls
+  const pollingStationDataCache = new Map();
+
+  // Helper function to get PC code, district code, and region from polling_stations.json via API
+  // This will be called with the numeric AC code
+  const getPollingStationData = async (acCode) => {
+    if (!acCode || acCode === 'N/A') return { pcCode: 'N/A', districtCode: 'N/A', regionCode: 'N/A', regionName: 'N/A' };
+    
+    // Check cache first
+    if (pollingStationDataCache.has(acCode)) {
+      return pollingStationDataCache.get(acCode);
+    }
+    
+    try {
+      // Fetch polling station data from backend using axios
+      const token = localStorage.getItem('token');
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`/api/polling-stations/ac/${acCode}`, {
+        method: 'GET',
+        headers: headers
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success && result.data) {
+          const data = {
+            pcCode: result.data.pc_no ? String(result.data.pc_no) : 'N/A',
+            districtCode: result.data.district_code ? String(result.data.district_code) : 'N/A',
+            regionCode: result.data.region_code ? String(result.data.region_code) : 'N/A',
+            regionName: result.data.region_name || 'N/A'
+          };
+          // Cache the result
+          pollingStationDataCache.set(acCode, data);
+          return data;
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching polling station data:', error);
+    }
+    
+    const defaultData = { pcCode: 'N/A', districtCode: 'N/A', regionCode: 'N/A', regionName: 'N/A' };
+    pollingStationDataCache.set(acCode, defaultData);
+    return defaultData;
+  };
+
+  // Helper function to get PC code from AC code (using polling_stations.json structure)
+  const getPCCodeFromACCode = async (acCode, responseData = null) => {
+    // First try to get from response data if available
+    if (responseData?.selectedPollingStation?.pcNo) {
+      return String(responseData.selectedPollingStation.pcNo);
+    }
+    
+    // Fetch from API
+    const data = await getPollingStationData(acCode);
+    return data.pcCode;
+  };
+
+  // Helper function to get District code from AC code (using polling_stations.json)
+  const getDistrictCodeFromACCode = async (acCode, responseData = null) => {
+    // First try to get from response data if available
+    if (responseData?.selectedPollingStation?.districtCode) {
+      return String(responseData.selectedPollingStation.districtCode);
+    }
+    
+    // Fetch from API
+    const data = await getPollingStationData(acCode);
+    return data.districtCode;
+  };
+
+  // Helper function to get Region code and name from AC code
+  const getRegionFromACCode = async (acCode, responseData = null) => {
+    // First try to get from response data if available
+    if (responseData?.selectedPollingStation?.regionCode) {
+      return {
+        regionCode: String(responseData.selectedPollingStation.regionCode),
+        regionName: responseData.selectedPollingStation.regionName || 'N/A'
+      };
+    }
+    
+    // Fetch from API
+    const data = await getPollingStationData(acCode);
+    return { regionCode: data.regionCode, regionName: data.regionName };
+  };
+
+  // Helper function to extract polling station code and name from format "59 - Kandaya Prathamik Bidyalay"
+  const extractPollingStationCodeAndName = (stationValue) => {
+    let stationCode = 'N/A';
+    let stationName = 'N/A';
+    
+    if (!stationValue || stationValue === 'N/A') {
+      return { stationCode, stationName };
+    }
+    
+    const stationStr = String(stationValue).trim();
+    
+    // Check if it's in format "Code - Name" or "Group - Code - Name"
+    if (stationStr.includes(' - ')) {
+      const parts = stationStr.split(' - ');
+      
+      // If first part is "Group X", skip it
+      if (parts.length >= 3 && parts[0].toLowerCase().startsWith('group')) {
+        // Format: "Group X - Code - Name"
+        stationCode = parts[1].trim();
+        stationName = parts.slice(2).join(' - ').trim();
+      } else if (parts.length >= 2) {
+        // Format: "Code - Name"
+        stationCode = parts[0].trim();
+        stationName = parts.slice(1).join(' - ').trim();
+      } else {
+        stationCode = stationStr;
+        stationName = stationStr;
+      }
+    } else {
+      // If no " - " separator, treat entire string as code
+      stationCode = stationStr;
+      stationName = stationStr;
+    }
+    
+    return { stationCode, stationName };
+  };
+
+  // Helper function to get status code (0=terminated, 10=valid, 20=rejected, 40=under qc)
+  const getStatusCode = (status) => {
+    if (!status) return '';
+    const statusUpper = String(status).toUpperCase();
+    if (statusUpper === 'APPROVED' || statusUpper === 'VALID') return '10';
+    if (statusUpper === 'REJECTED') return '20';
+    if (statusUpper === 'PENDING_APPROVAL' || statusUpper === 'UNDER_QC' || statusUpper === 'UNDER QC') return '40';
+    if (statusUpper === 'ABANDONED' || statusUpper === 'TERMINATED') return '0';
+    return '';
+  };
+
+  // Helper function to get rejection reason code
+  // 1= short duration, 2= gps rejection, 3= duplicate phone numbers, 4= audio status, 
+  // 5= gender mismatch, 6=2021 AE, 7=2024 GE, 8= Pref, 9=Interviewer performance
+  const getRejectionReasonCode = (response) => {
+    if (!response || response.status !== 'Rejected') {
+      return '';
+    }
+    
+    const verificationData = response.verificationData || {};
+    const autoRejectionReasons = verificationData.autoRejectionReasons || [];
+    const criteria = verificationData.criteria || verificationData.verificationCriteria || {};
+    const feedback = verificationData.feedback || '';
+    const feedbackLower = feedback.toLowerCase();
+    
+    // Priority 1: Check auto-rejection reasons (most reliable)
+    if (autoRejectionReasons.length > 0) {
+      // 1 = short duration
+      if (autoRejectionReasons.includes('duration')) {
+        return '1';
+      }
+      // 2 = gps rejection
+      if (autoRejectionReasons.includes('gps_distance')) {
+        return '2';
+      }
+      // 3 = duplicate phone numbers
+      if (autoRejectionReasons.includes('duplicate_phone')) {
+        return '3';
+      }
+    }
+    
+    // Priority 2: Check manual rejection criteria (from QC verification)
+    // These are stored in verificationData.criteria or verificationData.verificationCriteria
+    
+    // 4 = audio status (if audioStatus is not '1', '4', or '7')
+    // Audio status rejection: if criteria has audioStatus and it's not valid
+    if (criteria.audioStatus !== null && criteria.audioStatus !== undefined && criteria.audioStatus !== '') {
+      const audioStatus = String(criteria.audioStatus);
+      if (!['1', '4', '7'].includes(audioStatus)) {
+        return '4';
+      }
+    }
+    
+    // 5 = gender mismatch (if genderMatching is not '1')
+    // Gender rejection: if criteria has genderMatching and it's not '1' (matched)
+    if (criteria.genderMatching !== null && criteria.genderMatching !== undefined && criteria.genderMatching !== '') {
+      const genderMatching = String(criteria.genderMatching);
+      if (genderMatching !== '1') {
+        return '5';
+      }
+    }
+    
+    // 6 = 2021 AE (if previousElectionsMatching is not '1' or '3')
+    // This checks the 2021 Assembly Election question mismatch
+    if (criteria.previousElectionsMatching !== null && 
+        criteria.previousElectionsMatching !== undefined && 
+        criteria.previousElectionsMatching !== '') {
+      const previousElectionsMatching = String(criteria.previousElectionsMatching);
+      if (!['1', '3'].includes(previousElectionsMatching)) {
+        return '6';
+      }
+    }
+    
+    // 7 = 2024 GE (if previousLoksabhaElectionsMatching is not '1' or '3')
+    // This checks the 2024 General Election question mismatch
+    if (criteria.previousLoksabhaElectionsMatching !== null && 
+        criteria.previousLoksabhaElectionsMatching !== undefined && 
+        criteria.previousLoksabhaElectionsMatching !== '') {
+      const previousLoksabhaElectionsMatching = String(criteria.previousLoksabhaElectionsMatching);
+      if (!['1', '3'].includes(previousLoksabhaElectionsMatching)) {
+        return '7';
+      }
+    }
+    
+    // 8 = Pref (if upcomingElectionsMatching is not '1' or '3')
+    // This checks the 2025 Preference question mismatch
+    if (criteria.upcomingElectionsMatching !== null && 
+        criteria.upcomingElectionsMatching !== undefined && 
+        criteria.upcomingElectionsMatching !== '') {
+      const upcomingElectionsMatching = String(criteria.upcomingElectionsMatching);
+      if (!['1', '3'].includes(upcomingElectionsMatching)) {
+        return '8';
+      }
+    }
+    
+    // Priority 3: Check feedback text for auto-rejection keywords (fallback)
+    if (feedback) {
+      // 1 = short duration
+      if (feedbackLower.includes('interview too short') || 
+          feedbackLower.includes('too short') ||
+          feedbackLower.includes('short duration') ||
+          (feedbackLower.includes('short') && feedbackLower.includes('duration'))) {
+        return '1';
+      }
+      // 2 = gps rejection
+      if (feedbackLower.includes('gps location too far') ||
+          feedbackLower.includes('gps') && feedbackLower.includes('far') ||
+          feedbackLower.includes('location too far') ||
+          feedbackLower.includes('gps distance')) {
+        return '2';
+      }
+      // 3 = duplicate phone numbers
+      if (feedbackLower.includes('duplicate phone') ||
+          feedbackLower.includes('duplicate phone number')) {
+        return '3';
+      }
+      // 4 = audio status (check for audio-related rejection)
+      if (feedbackLower.includes('audio') && 
+          (feedbackLower.includes('not') || feedbackLower.includes('cannot') || feedbackLower.includes('fail'))) {
+        return '4';
+      }
+      // 5 = gender mismatch
+      if (feedbackLower.includes('gender') && 
+          (feedbackLower.includes('mismatch') || feedbackLower.includes('not match') || feedbackLower.includes('not matched'))) {
+        return '5';
+      }
+      // 6 = 2021 AE
+      if ((feedbackLower.includes('2021') || feedbackLower.includes('assembly')) && 
+          (feedbackLower.includes('mismatch') || feedbackLower.includes('not match') || feedbackLower.includes('not matched'))) {
+        return '6';
+      }
+      // 7 = 2024 GE
+      if ((feedbackLower.includes('2024') || feedbackLower.includes('lok sabha') || feedbackLower.includes('general election')) && 
+          (feedbackLower.includes('mismatch') || feedbackLower.includes('not match') || feedbackLower.includes('not matched'))) {
+        return '7';
+      }
+      // 8 = Pref (2025 Preference)
+      if ((feedbackLower.includes('2025') || feedbackLower.includes('preference') || feedbackLower.includes('pref')) && 
+          (feedbackLower.includes('mismatch') || feedbackLower.includes('not match') || feedbackLower.includes('not matched'))) {
+        return '8';
+      }
+      // 9 = Interviewer performance (check for performance-related keywords)
+      if (feedbackLower.includes('interviewer performance') || 
+          feedbackLower.includes('performance') ||
+          feedbackLower.includes('quality') ||
+          feedbackLower.includes('incomplete') ||
+          feedbackLower.includes('poor quality') ||
+          feedbackLower.includes('poor performance')) {
+        return '9';
+      }
+    }
+    
+    // Default: if rejected but no specific reason found, return empty
+    return '';
+  };
+
   // Helper function to check if an option is "Others" (same as InterviewInterface)
   const isOthersOption = (optText) => {
     if (!optText) return false;
-    const normalized = optText.toLowerCase().trim();
+    const normalized = String(optText).toLowerCase().trim();
+    // Check for various "Others" patterns
     return normalized === 'other' || 
            normalized === 'others' || 
-           normalized === 'others (specify)';
+           normalized.includes('other') && (normalized.includes('specify') || normalized.includes('please') || normalized.includes('(specify)'));
   };
 
   // Helper function to extract "Others" text from response
@@ -1685,8 +2008,8 @@ const ViewResponsesPage = () => {
     setShowDownloadModal(true);
   };
 
-  // Generate CSV with selected mode
-  const generateCSV = (downloadMode) => {
+  // Generate CSV with selected mode - NEW FORMAT with two-row headers and all required columns
+  const generateCSV = async (downloadMode) => {
     setShowDownloadModal(false);
 
     if (filteredResponses.length === 0) {
@@ -1699,8 +2022,14 @@ const ViewResponsesPage = () => {
       return;
     }
 
+    // Determine if we have CAPI, CATI, or mixed responses
+    const hasCAPI = filteredResponses.some(r => r.interviewMode?.toUpperCase() === 'CAPI');
+    const hasCATI = filteredResponses.some(r => r.interviewMode?.toUpperCase() === 'CATI');
+    const isMixed = hasCAPI && hasCATI;
+    const isCAPIOnly = hasCAPI && !hasCATI;
+    const isCATIOnly = hasCATI && !hasCAPI;
+
     // Get ALL questions from the survey itself (not from responses)
-    // This ensures we have a complete template that works for both CAPI and CATI
     const allSurveyQuestions = getAllSurveyQuestions(survey);
     
     if (allSurveyQuestions.length === 0) {
@@ -1709,59 +2038,366 @@ const ViewResponsesPage = () => {
     }
 
     // Filter out AC selection and polling station questions
-    const regularQuestions = allSurveyQuestions.filter(q => !isACOrPollingStationQuestion(q));
+    // Keep the order from allSurveyQuestions (already sorted by order field)
+    const regularQuestions = allSurveyQuestions
+      .filter(q => !isACOrPollingStationQuestion(q))
+      .sort((a, b) => {
+        // Sort by order field if available
+        const orderA = a.order !== null && a.order !== undefined ? parseInt(a.order) : 9999;
+        const orderB = b.order !== null && b.order !== undefined ? parseInt(b.order) : 9999;
+        if (!isNaN(orderA) && !isNaN(orderB)) {
+          return orderA - orderB;
+        }
+        return 0; // Keep original order if no order field
+      });
     
     if (regularQuestions.length === 0) {
       showError('No regular survey questions found (only AC/polling station questions)');
       return;
     }
 
-    // Detect questions with "Others" option and create headers with "Others" columns
-    const questionHeaders = [];
+    // Helper function to get question code from template mapping
+    // Maps survey questions to exact codes from the Excel template (survey 68fd1915d41841da463f0d46)
+    // Only truly special questions use resp_* codes (religion, caste, social category, education, occupation, mobile, name)
+    // All other questions (including age, gender, registered_voter) use q1, q2, q3, etc. format
+    const getQuestionCodeFromTemplate = (question, questionNumber) => {
+      if (!question) return `q${questionNumber}`;
+      
+      const questionText = getMainText(question.text || question.questionText || '').toLowerCase();
+      const qNum = questionNumber;
+      
+      // Check if question has an id that matches template codes
+      if (question.id) {
+        const questionId = String(question.id).toLowerCase();
+        // Only check for truly special resp_ codes (religion, caste, social category, education, occupation, mobile, name)
+        // NOT age, gender, registered_voter - those should use q1, q2, q3 format
+        if (questionId.includes('religion') || questionId === 'resp_religion') return 'resp_religion';
+        if (questionId.includes('social_cat') || questionId === 'resp_social_cat') return 'resp_social_cat';
+        if (questionId.includes('caste') || questionId === 'resp_caste_jati') return 'resp_caste_jati';
+        if (questionId.includes('female_edu') || questionId === 'resp_female_edu') return 'resp_female_edu';
+        if (questionId.includes('male_edu') || questionId === 'resp_male_edu') return 'resp_male_edu';
+        if (questionId.includes('occupation') || questionId === 'resp_occupation') return 'resp_occupation';
+        if (questionId.includes('mobile') || questionId === 'resp_mobile') return 'resp_mobile';
+        if (questionId.includes('name') && !questionId.includes('caste')) return 'resp_name';
+      }
+      
+      // Map by question text keywords - ONLY for truly special questions
+      // Q20: Religion (special)
+      if (questionText.includes('religion') && questionText.includes('belong to')) {
+        return 'resp_religion';
+      }
+      // Q21: Social category (special)
+      if (questionText.includes('social category') && questionText.includes('belong to')) {
+        return 'resp_social_cat';
+      }
+      // Q22: Caste (special)
+      if (questionText.includes('caste') && (questionText.includes('tell me') || questionText.includes('jati'))) {
+        return 'resp_caste_jati';
+      }
+      // Q23: Female education (special)
+      if (questionText.includes('female') && questionText.includes('education') && 
+          (questionText.includes('most educated') || questionText.includes('highest educational'))) {
+        return 'resp_female_edu';
+      }
+      // Q24: Male education (special)
+      if (questionText.includes('male') && questionText.includes('education') && 
+          (questionText.includes('most educated') || questionText.includes('highest educational'))) {
+        return 'resp_male_edu';
+      }
+      // Q25: Occupation (special)
+      if (questionText.includes('occupation') && questionText.includes('chief wage earner')) {
+        return 'resp_occupation';
+      }
+      // Q26: Mobile number (special)
+      if ((questionText.includes('mobile number') || questionText.includes('phone number')) && 
+          questionText.includes('share')) {
+        return 'resp_mobile';
+      }
+      // Q27: Name (special)
+      if (questionText.includes('share your name') && questionText.includes('confidential')) {
+        return 'resp_name';
+      }
+      // Q28: Future contact (special)
+      if (questionText.includes('contact you in future') || 
+          (questionText.includes('future') && questionText.includes('similar surveys'))) {
+        return 'thanks_future';
+      }
+      
+      // For ALL other questions (including Q1-age, Q2-registered_voter, Q3-gender, Q4-Q19),
+      // use q1, q2, q3, etc. format with options q1_1, q1_2, etc.
+      return `q${qNum}`;
+    };
+    
+    // Helper function to get option code for multi-select questions
+    // For special questions (resp_*), use resp_*_1, resp_*_2 format
+    // For normal questions (q*), use q*_1, q*_2 format
+    const getOptionCodeFromTemplate = (questionCode, optionIndex, option, questionNumber) => {
+      // Check for "Others" option first
+      const optText = typeof option === 'object' ? getMainText(option.text || '') : getMainText(String(option));
+      if (isOthersOption(optText)) {
+        // Use template codes for "Others"
+        // Special questions use resp_*_oth format
+        if (questionCode.startsWith('resp_') || questionCode === 'thanks_future') {
+          return `${questionCode}_oth`;
+        }
+        // Normal questions use q*_oth format
+        return `${questionCode}_oth`;
+      }
+      
+      // Generate code based on question code and option index
+      // Always use questionCode_<index+1> format, never use option.code if it's just a number
+      const optionNum = optionIndex + 1; // Convert 0-based to 1-based
+      
+      // For special questions (resp_*), use resp_*_1, resp_*_2, etc.
+      if (questionCode.startsWith('resp_') || questionCode === 'thanks_future') {
+        return `${questionCode}_${optionNum}`;
+      }
+      
+      // For normal questions (q*), use q*_1, q*_2, etc.
+      // This includes Q4, Q10, Q11, Q12, Q13, etc.
+      return `${questionCode}_${optionNum}`;
+    };
+
+    // Build headers with two rows: titles and codes
+    // Row 1: Full titles (without translations)
+    // Row 2: Column codes
+    
+    // Start with metadata columns (common for both CAPI and CATI)
+    const metadataTitleRow = [];
+    const metadataCodeRow = [];
+    
+    // Serial Number (yellow)
+    metadataTitleRow.push('Serial Number');
+    metadataCodeRow.push('serial_no');
+    
+    // Response ID
+    metadataTitleRow.push('Response ID');
+    metadataCodeRow.push('');
+    
+    // Interview Mode
+    metadataTitleRow.push('Interview Mode');
+    metadataCodeRow.push('');
+    
+    // Interviewer Name
+    metadataTitleRow.push('Interviewer Name');
+    metadataCodeRow.push('int_name');
+    
+    // Interviewer ID (yellow)
+    metadataTitleRow.push('Interviewer ID');
+    metadataCodeRow.push('int_id');
+    
+    // Interviewer Email
+    metadataTitleRow.push('Interviewer Email');
+    metadataCodeRow.push('');
+    
+    // Supervisor Name (yellow) - can be empty
+    metadataTitleRow.push('Supervisor Name');
+    metadataCodeRow.push('sup_name');
+    
+    // Supervisor ID (yellow) - can be empty
+    metadataTitleRow.push('Supervisor ID');
+    metadataCodeRow.push('sup_id');
+    
+    // Response Date
+    metadataTitleRow.push('Response Date');
+    metadataCodeRow.push('survey_date');
+    
+    // Status
+    metadataTitleRow.push('Status');
+    metadataCodeRow.push('Status');
+    
+    // Assembly Constituency code (yellow)
+    metadataTitleRow.push('Assembly Constituency code');
+    metadataCodeRow.push('ac_code');
+    
+    // Assembly Constituency (AC)
+    metadataTitleRow.push('Assembly Constituency (AC)');
+    metadataCodeRow.push('ac_name');
+    
+    // Parliamentary Constituency Code (yellow)
+    metadataTitleRow.push('Parliamentary Constituency Code');
+    metadataCodeRow.push('pc_code');
+    
+    // Parliamentary Constituency (PC)
+    metadataTitleRow.push('Parliamentary Constituency (PC)');
+    metadataCodeRow.push('pc_name');
+    
+    // District Code (yellow)
+    metadataTitleRow.push('District Code');
+    metadataCodeRow.push('district_code');
+    
+    // District
+    metadataTitleRow.push('District');
+    metadataCodeRow.push('district_code');
+    
+    // Region Code (yellow) - can be empty if not available
+    metadataTitleRow.push('Region Code');
+    metadataCodeRow.push('region_code');
+    
+    // Region Name (yellow) - can be empty if not available
+    metadataTitleRow.push('Region Name');
+    metadataCodeRow.push('region_name');
+    
+    // Polling Station Code
+    metadataTitleRow.push('Polling Station Code');
+    metadataCodeRow.push('rt_polling_station_no');
+    
+    // Polling Station Name
+    metadataTitleRow.push('Polling Station Name');
+    metadataCodeRow.push('rt_polling_station_name');
+    
+    // GPS Coordinates
+    metadataTitleRow.push('GPS Coordinates');
+    metadataCodeRow.push('rt_gps_coordinates');
+    
+    // Call ID (for CATI)
+    metadataTitleRow.push('Call ID');
+    metadataCodeRow.push('');
+
+    // Build question headers with multi-select handling
+    const questionTitleRow = [];
+    const questionCodeRow = [];
+    const questionMultiSelectMap = new Map(); // Map question index to {isMultiSelect: bool, options: []}
     const questionOthersMap = new Map(); // Map question index to whether it has "Others"
     
     regularQuestions.forEach((question, index) => {
       const questionText = question.text || question.questionText || `Question ${index + 1}`;
-      const questionHeader = `Q${index + 1}: ${getMainText(questionText)}`;
-      questionHeaders.push(questionHeader);
+      const mainQuestionText = getMainText(questionText);
       
-      // Check if question has "Others" option (for MCQ questions)
-      if ((question.type === 'multiple_choice' || question.type === 'single_choice') && question.options) {
-        const hasOthersOption = question.options.some(opt => {
-          const optText = typeof opt === 'object' ? opt.text : opt;
-          return isOthersOption(optText);
+      // Use sequential question number based on position in the sorted array
+      // This ensures each question gets a unique number (Q1, Q2, Q3, etc.)
+      // The array is already sorted by order, so index+1 gives us the correct sequence
+      const questionNumber = index + 1;
+      
+      // Get question code from template mapping (uses questionNumber for normal questions)
+      const questionCode = getQuestionCodeFromTemplate(question, questionNumber);
+      
+      // Add main question column
+      questionTitleRow.push(`Q${questionNumber}: ${mainQuestionText}`);
+      questionCodeRow.push(questionCode);
+      
+      // Check if this is a multi-select question
+      // Note: Some questions might have type 'single_choice' but still need Yes/No columns
+      // We'll check both multiple_choice and if it has multiple options that need Yes/No treatment
+      const isMultiSelect = (question.type === 'multiple_choice' || question.type === 'multi_select') && question.options && question.options.length > 0;
+      // Check for "Others" option - be more thorough in detection
+      const hasOthersOption = question.options && question.options.some(opt => {
+        const optText = typeof opt === 'object' ? (opt.text || opt.label || opt.value) : opt;
+        const optTextStr = String(optText || '').toLowerCase().trim();
+        // Check for various "Others" patterns
+        return isOthersOption(optTextStr) || 
+               (optTextStr.includes('other') && (optTextStr.includes('specify') || optTextStr.includes('please')));
+      });
+      
+      // Check for "Independent" option (for Q5, Q6, Q7, Q8, Q9)
+      const hasIndependentOption = question.options && question.options.some(opt => {
+        const optText = typeof opt === 'object' ? opt.text : opt;
+        const optLower = String(optText).toLowerCase();
+        return optLower.includes('independent') && !optLower.includes('other');
+      });
+      
+      questionOthersMap.set(index, hasOthersOption);
+      
+      if (isMultiSelect) {
+        // Separate "Others" option from regular options
+        const regularOptions = [];
+        let othersOption = null;
+        let othersOptionIndex = -1;
+        
+        question.options.forEach((option, optIndex) => {
+          const optText = typeof option === 'object' ? option.text : option;
+          const optTextStr = String(optText || '').trim();
+          // Check if this is "Others" option - be more thorough in detection
+          if (isOthersOption(optTextStr) || optTextStr.toLowerCase().includes('other') && (optTextStr.toLowerCase().includes('specify') || optTextStr.toLowerCase().includes('please'))) {
+            othersOption = option;
+            othersOptionIndex = optIndex;
+            // Don't add to regularOptions - it will be handled separately as a text column
+          } else {
+            // Only add to regularOptions if it's NOT "Others"
+            regularOptions.push(option);
+          }
         });
         
+        // Store multi-select info (excluding "Others" from options array)
+        questionMultiSelectMap.set(index, {
+          isMultiSelect: true,
+          options: regularOptions, // Exclude "Others" from regular options
+          othersOption: othersOption, // Store "Others" separately
+          othersOptionIndex: othersOptionIndex,
+          questionText: mainQuestionText,
+          questionNumber,
+          questionCode
+        });
+        
+        // For multi-select: Add columns for each REGULAR option with Yes/No (excluding "Others")
+        // Need to use original index from question.options array for correct code generation
+        // Track the sequential index for regular options (excluding "Others")
+        let regularOptionIndex = 0;
+        regularOptions.forEach((option) => {
+          const optText = typeof option === 'object' ? option.text : option;
+          const optMainText = getMainText(optText);
+          
+          // Use sequential index for regular options (0, 1, 2, ...) which will become _1, _2, _3, etc.
+          // This ensures q2_1, q2_2, q2_3, etc. even if "Others" was in the middle
+          const optCode = getOptionCodeFromTemplate(questionCode, regularOptionIndex, option, questionNumber);
+          regularOptionIndex++; // Increment for next regular option
+          
+          questionTitleRow.push(`Q${questionNumber}. ${mainQuestionText} - ${optMainText}`);
+          questionCodeRow.push(optCode);
+        });
+        
+        // Add "Others" column if it exists (as a text column, not Yes/No)
+        // Always add if hasOthersOption is true (don't require othersOption to be found)
         if (hasOthersOption) {
-          questionOthersMap.set(index, true);
-          // Add "Others" column header right after the question
-          questionHeaders.push(`Q${index + 1}: ${questionText} - Other`);
-        } else {
-          questionOthersMap.set(index, false);
+          questionTitleRow.push(`Q${questionNumber}: ${mainQuestionText} - Others (Specify)`);
+          // Use template code for "Others"
+          // Special questions: resp_*_oth, Normal questions: q*_oth
+          const othersCode = questionCode.startsWith('resp_') || questionCode === 'thanks_future'
+            ? `${questionCode}_oth`
+            : `${questionCode}_oth`;
+          questionCodeRow.push(othersCode);
         }
       } else {
-        questionOthersMap.set(index, false);
+        // Single choice question - check for "Others" and "Independent" options
+        if (hasOthersOption) {
+          questionTitleRow.push(`Q${questionNumber}: ${mainQuestionText} - Others (Specify)`);
+          // Use template codes for "Others"
+          // Special questions: resp_*_oth, Normal questions: q*_oth
+          const othersCode = questionCode.startsWith('resp_') || questionCode === 'thanks_future'
+            ? `${questionCode}_oth`
+            : `${questionCode}_oth`;
+          questionCodeRow.push(othersCode);
+        }
+        
+        // Add "Independent" column for Q5, Q6, Q7, Q8, Q9 (normal questions)
+        if (hasIndependentOption && ['q5', 'q6', 'q7', 'q8', 'q9'].includes(questionCode)) {
+          questionTitleRow.push(`Q${questionNumber}: ${mainQuestionText} - Independent (Please specify)`);
+          const indCode = `${questionCode}_ind`;
+          questionCodeRow.push(indCode);
+        }
       }
     });
     
-    // Add metadata headers (common columns for both CAPI and CATI)
-    const metadataHeaders = [
-      'Response ID',
-      'Interview Mode',
-      'Interviewer Name',
-      'Interviewer Email',
-      'Response Date',
-      'Status',
-      'Assembly Constituency (AC)',
-      'Parliamentary Constituency (PC)',
-      'District',
-      'Polling Station Code',
-      'Polling Station Name',
-      'GPS Coordinates',
-      'Call ID' // For CATI interviews
-    ];
-
-    const allHeaders = [...metadataHeaders, ...questionHeaders];
+    // Combine metadata and question headers first (Status, QC, and Rejection columns will be added at the end)
+    const allTitleRow = [...metadataTitleRow, ...questionTitleRow];
+    const allCodeRow = [...metadataCodeRow, ...questionCodeRow];
+    
+    // Add Status, QC, and Rejection columns at the VERY END in this order:
+    // 1. Status
+    allTitleRow.push('Status (0= terminated, 10=valid, 20=rejected, 40=under qc)');
+    allCodeRow.push('status_code');
+    
+    // 2. Qc Completion date
+    allTitleRow.push('Qc Completion date');
+    allCodeRow.push('qc_completion_date');
+    
+    // 3. Assigned to QC
+    allTitleRow.push('Assigned to QC ( 1 can mean those whih are assigned to audio qc and 2 can mean those which are not yet assigned)');
+    allCodeRow.push('assigned_to_qc');
+    
+    // 4. Reason for rejection (LAST column)
+    allTitleRow.push('Reason for rejection (1= short duration, 2= gps rejection, 3= duplicate phone numbers, 4= audio status, 5= gender mismatch, 6=2021 AE, 7=2024 GE, 8= Pref, 9=Interviewer performance)');
+    allCodeRow.push('rejection_reason');
 
     // Helper function to extract AC and polling station from responses
     const getACAndPollingStationFromResponses = (responses) => {
@@ -1774,12 +2410,10 @@ const ViewResponsesPage = () => {
       let groupName = null;
       
       responses.forEach((responseItem) => {
-        // Check if this is AC selection question
         if (responseItem.questionId === 'ac-selection') {
           ac = responseItem.response || null;
         }
         
-        // Check if this is polling station question
         if (responseItem.questionText?.toLowerCase().includes('select polling station') ||
             responseItem.questionType === 'polling_station') {
           const stationResponse = responseItem.response;
@@ -1801,7 +2435,6 @@ const ViewResponsesPage = () => {
           }
         }
         
-        // Check for polling station group selection
         if (responseItem.questionId === 'polling-station-group' ||
             responseItem.questionText?.toLowerCase().includes('select group')) {
           groupName = responseItem.response || null;
@@ -1811,83 +2444,124 @@ const ViewResponsesPage = () => {
       return { ac, pollingStation, groupName };
     };
 
-    // Helper function to extract polling station code and name
-    const extractPollingStationCodeAndName = (stationValue, selectedPollingStation) => {
-      let stationCode = 'N/A';
-      let stationName = 'N/A';
-      
-      // Priority: Use selectedPollingStation.stationName (should have "Code - Name" format)
-      const fullStationValue = selectedPollingStation?.stationName || stationValue;
-      
-      if (fullStationValue) {
-        if (typeof fullStationValue === 'string' && fullStationValue.includes(' - ')) {
-          const parts = fullStationValue.split(' - ');
-          if (parts.length >= 2) {
-            stationCode = parts[0].trim();
-            stationName = parts.slice(1).join(' - ').trim();
-          } else {
-            stationCode = fullStationValue;
-            stationName = fullStationValue;
-          }
-        } else {
-          // If it's just a code or name, use as code
-          stationCode = fullStationValue;
-          stationName = fullStationValue;
-        }
-      }
-      
-      return { stationCode, stationName };
+    // Use the helper function defined above for extracting polling station code and name
+    // This will properly handle format "59 - Kandaya Prathamik Bidyalay"
+
+    // Helper function to check if a value matches an option
+    const optionMatches = (option, value) => {
+      if (!option || value === null || value === undefined) return false;
+      const optValue = typeof option === 'object' ? (option.value || option.text) : option;
+      return optValue === value || String(optValue) === String(value);
     };
 
+    // Pre-fetch all polling station data for unique AC codes to avoid multiple API calls
+    const uniqueACCodes = new Set();
+    filteredResponses.forEach(response => {
+      const acFromResponse = getACAndPollingStationFromResponses(response.responses).ac;
+      const displayAC = acFromResponse || response.selectedPollingStation?.acName || response.selectedAC || 'N/A';
+      if (displayAC !== 'N/A') {
+        const acCode = getACCodeFromAC(displayAC);
+        if (acCode !== 'N/A') {
+          uniqueACCodes.add(acCode);
+        }
+      }
+    });
+    
+    // Fetch all polling station data in parallel
+    const pollingDataPromises = Array.from(uniqueACCodes).map(acCode => 
+      getPollingStationData(acCode).then(data => ({ acCode, data }))
+    );
+    const pollingDataResults = await Promise.all(pollingDataPromises);
+    const pollingDataMap = new Map();
+    pollingDataResults.forEach(({ acCode, data }) => {
+      pollingDataMap.set(acCode, data);
+    });
+
     // Create CSV data rows
-    const csvData = filteredResponses.map(response => {
+    const csvData = filteredResponses.map((response, rowIndex) => {
       // Extract AC and polling station from responses
       const { ac: acFromResponse, pollingStation: pollingStationFromResponse } = getACAndPollingStationFromResponses(response.responses);
       
       // Get AC, PC, and District
       const displayAC = acFromResponse || response.selectedPollingStation?.acName || response.selectedAC || 'N/A';
       
-      // Get PC: Priority 1 - selectedPollingStation.pcName, Priority 2 - getLokSabhaFromAC
+      // Get PC
       let displayPC = response.selectedPollingStation?.pcName || 'N/A';
       if (displayPC === 'N/A' && displayAC !== 'N/A') {
         displayPC = getLokSabhaFromAC(displayAC);
       }
       
-      // Get District: Priority 1 - selectedPollingStation.district, Priority 2 - getDistrictFromAC
+      // Get District
       let displayDistrict = response.selectedPollingStation?.district || 'N/A';
       if (displayDistrict === 'N/A' && displayAC !== 'N/A') {
         displayDistrict = getDistrictFromAC(displayAC);
       }
       
-      // Extract polling station code and name
-      const pollingStationValue = pollingStationFromResponse || response.selectedPollingStation?.stationName;
-      const { stationCode, stationName } = extractPollingStationCodeAndName(pollingStationValue, response.selectedPollingStation);
+      // Get AC code (numeric only, remove alphabets and leading zeros)
+      const acCode = getACCodeFromAC(displayAC);
       
-      // Extract metadata (common columns)
+      // Get PC code from polling_stations.json using the polling station
+      // Extract polling station code and name first
+      const pollingStationValue = pollingStationFromResponse || response.selectedPollingStation?.stationName;
+      const { stationCode, stationName } = extractPollingStationCodeAndName(pollingStationValue);
+      
+      // Get PC code, district code, and region from polling_stations.json using AC code
+      let pcCode = 'N/A';
+      let districtCode = 'N/A';
+      let regionCode = 'N/A';
+      let regionName = 'N/A';
+      
+      if (acCode !== 'N/A') {
+        // Get data from cached polling station data (from AC code)
+        const pollingData = pollingDataMap.get(acCode);
+        if (pollingData) {
+          // PC code comes from the AC's pc_no in polling_stations.json
+          pcCode = pollingData.pcCode;
+          districtCode = pollingData.districtCode;
+          regionCode = pollingData.regionCode;
+          regionName = pollingData.regionName;
+        }
+      }
+      
+      // Polling station code and name already extracted above
+      
+      // Format response date
+      const responseDate = new Date(response.createdAt || response.endTime || response.createdAt);
+      const formattedDate = responseDate.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      
+      // Build metadata row (matching the header order)
       const metadata = [
-        response.responseId || response._id?.slice(-8) || 'N/A',
-        response.interviewMode?.toUpperCase() || 'N/A',
-        response.interviewer ? `${response.interviewer.firstName || ''} ${response.interviewer.lastName || ''}`.trim() : 'N/A',
-        response.interviewer?.email || 'N/A',
-        new Date(response.createdAt || response.endTime || response.createdAt).toLocaleDateString('en-US', {
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit'
-        }),
-        response.status || 'N/A',
-        displayAC,
-        displayPC,
-        displayDistrict,
-        stationCode,
-        stationName,
-        response.location ? `(${response.location.latitude?.toFixed(4)}, ${response.location.longitude?.toFixed(4)})` : 'N/A',
-        response.call_id || 'N/A' // CATI call ID
+        rowIndex + 1, // Serial Number
+        response.responseId || response._id?.slice(-8) || 'N/A', // Response ID
+        response.interviewMode?.toUpperCase() || 'N/A', // Interview Mode
+        response.interviewer ? `${response.interviewer.firstName || ''} ${response.interviewer.lastName || ''}`.trim() : 'N/A', // Interviewer Name
+        response.interviewer?.memberId || response.interviewer?.memberID || '', // Interviewer ID
+        response.interviewer?.email || 'N/A', // Interviewer Email
+        '', // Supervisor Name (can be empty)
+        '', // Supervisor ID (can be empty)
+        formattedDate, // Response Date
+        response.status || 'N/A', // Status
+        acCode, // Assembly Constituency code
+        displayAC, // Assembly Constituency (AC)
+        pcCode, // Parliamentary Constituency Code
+        displayPC, // Parliamentary Constituency (PC)
+        districtCode, // District Code
+        displayDistrict, // District
+        regionCode, // Region Code
+        regionName, // Region Name
+        stationCode, // Polling Station Code
+        stationName, // Polling Station Name
+        response.location ? `(${response.location.latitude?.toFixed(4)}, ${response.location.longitude?.toFixed(4)})` : 'N/A', // GPS Coordinates
+        response.call_id || '' // Call ID
       ];
 
       // Extract answers for each question in the survey
-      // Match by questionId first (most reliable), then by questionText
       const answers = [];
       
       regularQuestions.forEach((surveyQuestion, questionIndex) => {
@@ -1902,184 +2576,343 @@ const ViewResponsesPage = () => {
         
         // If not found by ID, try by questionText
         if (!matchingAnswer && surveyQuestion.text) {
-          matchingAnswer = response.responses?.find(r => 
-            r.questionText === surveyQuestion.text || 
-            r.questionText === surveyQuestion.questionText
-          );
+          matchingAnswer = response.responses?.find(r => {
+            const rText = getMainText(r.questionText || '');
+            const sText = getMainText(surveyQuestion.text || surveyQuestion.questionText || '');
+            return rText === sText || r.questionText === surveyQuestion.text || r.questionText === surveyQuestion.questionText;
+          });
         }
         
-        let questionResponse = '';
-        let othersText = '';
+        const multiSelectInfo = questionMultiSelectMap.get(questionIndex);
+        const hasOthersOption = questionOthersMap.get(questionIndex);
         
-        if (matchingAnswer) {
-          // Check if the question was actually skipped
-          if (matchingAnswer.isSkipped) {
-            questionResponse = 'Skipped';
-          } else {
-            // Check if response has content
-            const hasResponseContent = (responseValue) => {
-              if (!responseValue && responseValue !== 0) return false;
-              if (Array.isArray(responseValue)) return responseValue.length > 0;
-              if (typeof responseValue === 'object') return Object.keys(responseValue).length > 0;
-              return responseValue !== '' && responseValue !== null && responseValue !== undefined;
-            };
+        if (multiSelectInfo && multiSelectInfo.isMultiSelect) {
+          // Multi-select question: Show selections first, then Yes/No for each option
+          let selectedValues = [];
+          let othersText = '';
+          
+          if (matchingAnswer && !matchingAnswer.isSkipped && matchingAnswer.response) {
+            const responseValue = matchingAnswer.response;
             
-            if (!hasResponseContent(matchingAnswer.response)) {
-              questionResponse = 'No response';
+            if (Array.isArray(responseValue)) {
+              selectedValues = responseValue;
+            } else if (responseValue !== null && responseValue !== undefined && responseValue !== '') {
+              selectedValues = [responseValue];
+            }
+          }
+          
+          // Check if "Others" is selected and extract the text after "Others: "
+          let isOthersSelected = false;
+          selectedValues.forEach(val => {
+            const valStr = typeof val === 'object' ? String(val.text || val.value || val) : String(val);
+            // Check if this value represents "Others" option
+            const isOthers = surveyQuestion.options.some(opt => {
+              const optText = typeof opt === 'object' ? opt.text : opt;
+              return isOthersOption(optText) && optionMatches(opt, val);
+            }) || valStr.startsWith('Others: ') || isOthersOption(valStr);
+            
+            if (isOthers) {
+              isOthersSelected = true;
+              // Extract text after "Others: " (e.g., "Others: CPM" -> "CPM")
+              if (valStr.startsWith('Others: ')) {
+                othersText = valStr.substring(8).trim(); // Remove "Others: " prefix
+              } else {
+                // Try to extract from the value object if it has text property
+                const othersTextValue = extractOthersText(val);
+                if (othersTextValue) {
+                  othersText = othersTextValue;
+                }
+              }
+            }
+          });
+          
+          // Format selected values for the main column
+          // If "Others" is selected, show "44" (coded) or "Others" (text) in main column
+          // The actual "Others" text goes in the Others (Specify) column
+          let mainResponse = '';
+          if (selectedValues.length > 0) {
+            if (downloadMode === 'codes') {
+              // In coded mode: show "44" for Others, codes for other options
+              mainResponse = selectedValues.map(val => {
+                const valStr = typeof val === 'object' ? String(val.text || val.value || val) : String(val);
+                // Check if this is "Others"
+                const isOthers = surveyQuestion.options.some(opt => {
+                  const optText = typeof opt === 'object' ? opt.text : opt;
+                  return isOthersOption(optText) && optionMatches(opt, val);
+                }) || valStr.startsWith('Others: ') || isOthersOption(valStr);
+                
+                if (isOthers) {
+                  return '44'; // Code for "Others"
+                }
+                const option = surveyQuestion.options.find(opt => optionMatches(opt, val));
+                if (option) {
+                  return typeof option === 'object' ? (option.code || option.value || val) : val;
+                }
+                return val;
+              }).join(', ');
+            } else {
+              // In text mode: show "Others" if selected, exclude Others text from main
+              const filteredValues = selectedValues.filter(val => {
+                const valStr = typeof val === 'object' ? String(val.text || val.value || val) : String(val);
+                const isOthers = surveyQuestion.options.some(opt => {
+                  const optText = typeof opt === 'object' ? opt.text : opt;
+                  return isOthersOption(optText) && optionMatches(opt, val);
+                }) || valStr.startsWith('Others: ') || isOthersOption(valStr);
+                return !isOthers; // Exclude "Others" from main display
+              });
+              if (isOthersSelected) {
+                mainResponse = filteredValues.length > 0 
+                  ? formatResponseDisplay(filteredValues, surveyQuestion) + ', Others'
+                  : 'Others';
+              } else {
+                mainResponse = formatResponseDisplay(selectedValues, surveyQuestion);
+              }
+            }
+          } else if (matchingAnswer && matchingAnswer.isSkipped) {
+            mainResponse = 'Skipped';
+          } else {
+            mainResponse = '';
+          }
+          
+          // Add main response column
+          answers.push(mainResponse);
+          
+          // Add Yes/No columns for each REGULAR option (excluding "Others")
+          // The options are in the same order as in the headers (regularOptions only)
+          // Make sure we're not including "Others" in the Yes/No columns
+          multiSelectInfo.options.forEach((option, optIndex) => {
+            const optText = typeof option === 'object' ? option.text : option;
+            // Double-check: skip if this is "Others" option (shouldn't happen, but safety check)
+            if (isOthersOption(optText)) {
+              // This shouldn't happen since we filtered it out, but if it does, skip it
+              return;
+            }
+            const optValue = typeof option === 'object' ? (option.value || option.text) : option;
+            const isSelected = selectedValues.some(val => {
+              // Make sure we're not matching "Others" values
+              const valStr = typeof val === 'object' ? String(val.text || val.value || val) : String(val);
+              if (valStr.startsWith('Others: ') || isOthersOption(valStr)) {
+                return false; // Don't match "Others" values
+              }
+              return optionMatches(option, val);
+            });
+            // In codes mode: use "1" for Yes, "2" for No
+            // In text mode: use "Yes" for Yes, "No" for No
+            if (downloadMode === 'codes') {
+              answers.push(isSelected ? '1' : '2');
+            } else {
+              answers.push(isSelected ? 'Yes' : 'No');
+            }
+          });
+          
+          // Add "Others" text column if it exists (shows text, not Yes/No)
+          // This should always be a text column showing the specified text
+          if (hasOthersOption) {
+            // Make sure we're pushing the text, not Yes/No
+            answers.push(othersText || '');
+          }
+        } else {
+          // Single choice or other question types
+          let questionResponse = '';
+          let othersText = '';
+          
+          if (matchingAnswer) {
+            if (matchingAnswer.isSkipped) {
+              questionResponse = 'Skipped';
             } else {
               const responseValue = matchingAnswer.response;
+              const hasResponseContent = (val) => {
+                if (!val && val !== 0) return false;
+                if (Array.isArray(val)) return val.length > 0;
+                if (typeof val === 'object') return Object.keys(val).length > 0;
+                return val !== '' && val !== null && val !== undefined;
+              };
               
-              // Check if this question has "Others" option
-              const hasOthersOption = questionOthersMap.get(questionIndex);
-              
-              if (hasOthersOption && (surveyQuestion.type === 'multiple_choice' || surveyQuestion.type === 'single_choice')) {
-                // Extract "Others" text if present
-                if (Array.isArray(responseValue)) {
-                  // Multiple selection - check each value for "Others" text
-                  let foundOthersText = '';
-                  const processedValues = responseValue.map(val => {
-                    const othersTextValue = extractOthersText(val);
-                    if (othersTextValue) {
-                      foundOthersText = othersTextValue; // Store the "Others" text
-                      // Return "Others" or the option code/text
-                      if (downloadMode === 'codes') {
-                        // Find the "Others" option code
-                        const othersOpt = surveyQuestion.options.find(opt => {
-                          const optText = typeof opt === 'object' ? opt.text : opt;
-                          return isOthersOption(optText);
-                        });
-                        return typeof othersOpt === 'object' ? (othersOpt.code || othersOpt.value || 'Others') : 'Others';
-                      } else {
-                        return 'Others';
-                      }
-                    }
-                    // Check if value itself is "Others" option
-                    const othersOpt = surveyQuestion.options.find(opt => {
-                      const optText = typeof opt === 'object' ? opt.text : opt;
-                      const optValue = typeof opt === 'object' ? (opt.value || opt.text) : opt;
-                      return isOthersOption(optText) && (optValue === val || String(optValue) === String(val));
-                    });
-                    if (othersOpt) {
-                      if (downloadMode === 'codes') {
-                        return typeof othersOpt === 'object' ? (othersOpt.code || othersOpt.value || 'Others') : 'Others';
-                      } else {
-                        return 'Others';
-                      }
-                    }
-                    return val;
-                  });
-                  othersText = foundOthersText;
-                  
-                  // Format the response based on mode
-                  if (downloadMode === 'codes') {
-                    // Convert to option codes
-                    questionResponse = processedValues.map(val => {
-                      if (val === 'Others' || isOthersOption(String(val))) {
-                        const othersOpt = surveyQuestion.options.find(opt => {
-                          const optText = typeof opt === 'object' ? opt.text : opt;
-                          return isOthersOption(optText);
-                        });
-                        return typeof othersOpt === 'object' ? (othersOpt.code || othersOpt.value || 'Others') : 'Others';
-                      }
-                      // Find option code
-                      const option = surveyQuestion.options.find(opt => {
-                        const optValue = typeof opt === 'object' ? (opt.value || opt.text) : opt;
-                        return optValue === val || String(optValue) === String(val);
-                      });
-                      return typeof option === 'object' ? (option.code || option.value || val) : val;
-                    }).join(', ');
-                  } else {
-                    // Use text format
-                    questionResponse = formatResponseDisplay(processedValues, surveyQuestion);
-                  }
-                } else {
-                  // Single selection
-                  const othersTextValue = extractOthersText(responseValue);
-                  if (othersTextValue) {
-                    othersText = othersTextValue;
-                    if (downloadMode === 'codes') {
-                      const othersOpt = surveyQuestion.options.find(opt => {
-                        const optText = typeof opt === 'object' ? opt.text : opt;
-                        return isOthersOption(optText);
-                      });
-                      questionResponse = typeof othersOpt === 'object' ? (othersOpt.code || othersOpt.value || 'Others') : 'Others';
-                    } else {
-                      questionResponse = 'Others';
-                    }
-                  } else {
-                    // Format the response based on mode
-                    if (downloadMode === 'codes' && (surveyQuestion.type === 'multiple_choice' || surveyQuestion.type === 'single_choice')) {
-                      // Find option code
-                      const option = surveyQuestion.options.find(opt => {
-                        const optValue = typeof opt === 'object' ? (opt.value || opt.text) : opt;
-                        return optValue === responseValue || String(optValue) === String(responseValue);
-                      });
-                      questionResponse = typeof option === 'object' ? (option.code || option.value || responseValue) : responseValue;
-                    } else {
-                      // Use text format
-                      if (surveyQuestion.options) {
-                        questionResponse = formatResponseDisplay(responseValue, surveyQuestion);
-                      } else {
-                        questionResponse = getHardcodedOptionMapping(
-                          surveyQuestion.text || surveyQuestion.questionText, 
-                          responseValue
-                        );
-                      }
-                    }
-                  }
-                }
+              if (!hasResponseContent(responseValue)) {
+                questionResponse = '';
               } else {
-                // No "Others" option - format normally
-                if (downloadMode === 'codes' && (surveyQuestion.type === 'multiple_choice' || surveyQuestion.type === 'single_choice') && surveyQuestion.options) {
-                  // Convert to option codes
-                  if (Array.isArray(responseValue)) {
-                    questionResponse = responseValue.map(val => {
-                      const option = surveyQuestion.options.find(opt => {
-                        const optValue = typeof opt === 'object' ? (opt.value || opt.text) : opt;
-                        return optValue === val || String(optValue) === String(val);
-                      });
-                      return typeof option === 'object' ? (option.code || option.value || val) : val;
-                    }).join(', ');
+                // Check if response is "Others"
+                const responseStr = String(responseValue);
+                const isOthersResponse = responseStr.startsWith('Others: ') || 
+                  (hasOthersOption && surveyQuestion.options && surveyQuestion.options.some(opt => {
+                    const optText = typeof opt === 'object' ? opt.text : opt;
+                    return isOthersOption(optText) && optionMatches(opt, responseValue);
+                  }));
+                
+                if (isOthersResponse) {
+                  // Extract text after "Others: " for the Others column
+                  if (responseStr.startsWith('Others: ')) {
+                    othersText = responseStr.substring(8).trim(); // Remove "Others: " prefix
                   } else {
-                    const option = surveyQuestion.options.find(opt => {
-                      const optValue = typeof opt === 'object' ? (opt.value || opt.text) : opt;
-                      return optValue === responseValue || String(optValue) === String(responseValue);
-                    });
-                    questionResponse = typeof option === 'object' ? (option.code || option.value || responseValue) : responseValue;
+                    const othersTextValue = extractOthersText(responseValue);
+                    if (othersTextValue) {
+                      othersText = othersTextValue;
+                    }
+                  }
+                  
+                  // Main column shows "44" (coded) or "Others" (text)
+                  if (downloadMode === 'codes') {
+                    questionResponse = '44'; // Code for "Others"
+                  } else {
+                    questionResponse = 'Others';
                   }
                 } else {
-                  // Use text format
-                  if (surveyQuestion.options) {
-                    questionResponse = formatResponseDisplay(responseValue, surveyQuestion);
+                  // Not "Others" - show normal response
+                  if (downloadMode === 'codes' && surveyQuestion.options) {
+                    const option = surveyQuestion.options.find(opt => optionMatches(opt, responseValue));
+                    questionResponse = typeof option === 'object' ? (option.code || option.value || responseValue) : responseValue;
                   } else {
-                    questionResponse = getHardcodedOptionMapping(
-                      surveyQuestion.text || surveyQuestion.questionText, 
-                      responseValue
-                    );
+                    if (surveyQuestion.options) {
+                      questionResponse = formatResponseDisplay(responseValue, surveyQuestion);
+                    } else {
+                      questionResponse = getHardcodedOptionMapping(
+                        surveyQuestion.text || surveyQuestion.questionText, 
+                        responseValue
+                      );
+                    }
                   }
                 }
               }
             }
           }
-        } else {
-          // Question not found in this response - could be due to conditional logic
-          // Return empty string instead of 'Skipped' to distinguish from actually skipped questions
-          questionResponse = '';
-        }
-        
-        // Add question response
-        answers.push(questionResponse);
-        
-        // Add "Others" text column if this question has "Others" option
-        if (questionOthersMap.get(questionIndex)) {
-          answers.push(othersText || '');
+          
+          // Get question code to check if it needs Independent column
+          // Use the same questionNumber logic as in header generation (index + 1 from sorted array)
+          // This ensures consistency between headers and data rows
+          const questionNumber = questionIndex + 1;
+          const questionCode = getQuestionCodeFromTemplate(surveyQuestion, questionNumber);
+          const hasIndependentOption = surveyQuestion.options && surveyQuestion.options.some(opt => {
+            const optText = typeof opt === 'object' ? opt.text : opt;
+            const optLower = String(optText).toLowerCase();
+            return optLower.includes('independent') && !optLower.includes('other');
+          });
+          
+          // Add question response
+          answers.push(questionResponse);
+          
+          // Add "Others" text column if this question has "Others" option
+          if (hasOthersOption) {
+            answers.push(othersText || '');
+          }
+          
+          // Add "Independent" text column for Q5, Q6, Q7, Q8, Q9
+          if (hasIndependentOption && ['q5', 'q6', 'q7', 'q8', 'q9'].includes(questionCode)) {
+            // Check if response is "Independent"
+            let independentText = '';
+            if (matchingAnswer && matchingAnswer.response) {
+              const responseValue = matchingAnswer.response;
+              const responseStr = String(responseValue).toLowerCase();
+              if (responseStr.includes('independent') || 
+                  surveyQuestion.options.some(opt => {
+                    const optText = typeof opt === 'object' ? opt.text : opt;
+                    const optLower = String(optText).toLowerCase();
+                    return optLower.includes('independent') && optionMatches(opt, responseValue);
+                  })) {
+                // Extract "Independent" text if it has additional text
+                const independentOpt = surveyQuestion.options.find(opt => {
+                  const optText = typeof opt === 'object' ? opt.text : opt;
+                  return String(optText).toLowerCase().includes('independent');
+                });
+                if (independentOpt && typeof independentOpt === 'object' && independentOpt.text) {
+                  const independentTextValue = extractOthersText(responseValue);
+                  independentText = independentTextValue || '';
+                }
+              }
+            }
+            answers.push(independentText || '');
+          }
         }
       });
-
-      return [...metadata, ...answers];
+      
+      // Add QC and status columns
+      const statusCode = getStatusCode(response.status);
+      const qcCompletionDate = response.verificationData?.reviewedAt 
+        ? new Date(response.verificationData.reviewedAt).toLocaleDateString('en-US')
+        : '';
+      
+      // Determine "Assigned to QC" based on batch status (same logic as reports page)
+      // 1 = Under QC Queue (sent to QC Queue to be checked)
+      //    - Batches with status 'queued_for_qc'
+      //    - Sample responses in batches with status 'qc_in_progress' or 'completed'
+      //    - Remaining responses where remainingDecision is 'queued_for_qc'
+      // 2 = Processing in Batch (in batch collecting state, not yet sent to final QC)
+      //    - Batches with status 'collecting'
+      //    - Batches with status 'processing' (non-sample responses)
+      // Empty = QC completed (Approved or Rejected)
+      let assignedToQC = '';
+      
+      if (response.status === 'Approved' || response.status === 'Rejected') {
+        // QC completed - leave empty
+        assignedToQC = '';
+      } else if (response.status === 'Pending_Approval') {
+        // Check if response has batch information
+        const qcBatch = response.qcBatch;
+        const isSampleResponse = response.isSampleResponse || false;
+        
+        if (qcBatch) {
+          // Get batch status (could be object with status or just ID)
+          let batchStatus = null;
+          let remainingDecision = null;
+          
+          if (typeof qcBatch === 'object' && qcBatch.status) {
+            batchStatus = qcBatch.status;
+            remainingDecision = qcBatch.remainingDecision?.decision;
+          } else if (response.qcBatchStatus) {
+            // If batch status is stored separately
+            batchStatus = response.qcBatchStatus;
+            remainingDecision = response.qcBatchRemainingDecision;
+          }
+          
+          if (batchStatus) {
+            // "Under QC Queue": Batches completed and sent to review
+            if (batchStatus === 'queued_for_qc' ||
+                (isSampleResponse && (batchStatus === 'qc_in_progress' || batchStatus === 'completed')) ||
+                (!isSampleResponse && remainingDecision === 'queued_for_qc')) {
+              assignedToQC = '1';
+            }
+            // "Processing in Batch": Responses still in collecting phase
+            else if (batchStatus === 'collecting' ||
+                     (batchStatus === 'processing' && !isSampleResponse)) {
+              assignedToQC = '2';
+            }
+            // Default to processing in batch for other statuses
+            else {
+              assignedToQC = '2';
+            }
+          } else {
+            // Has batch but no status - assume processing in batch
+            assignedToQC = '2';
+          }
+        } else {
+          // No batch - processing in batch (collecting state)
+          assignedToQC = '2';
+        }
+      }
+      
+      // Get rejection reason code (will be added as last column)
+      const rejectionReasonCode = getRejectionReasonCode(response);
+      
+      // Return metadata, answers, and then Status/QC/Rejection columns at the end in this order:
+      // 1. Status
+      // 2. QC Completion date
+      // 3. Assigned to QC
+      // 4. Reason for rejection (LAST)
+      return [...metadata, ...answers, statusCode, qcCompletionDate, assignedToQC, rejectionReasonCode];
     });
 
-    const csvContent = [allHeaders, ...csvData]
+    // Create CSV with two-row headers
+    const csvRows = [];
+    
+    // Add title row (row 1)
+    csvRows.push(allTitleRow);
+    
+    // Add code row (row 2)
+    csvRows.push(allCodeRow);
+    
+    // Add data rows
+    csvRows.push(...csvData);
+
+    const csvContent = csvRows
       .map(row => row.map(field => {
         const fieldStr = String(field || '');
         // Escape quotes and wrap in quotes
@@ -2092,7 +2925,8 @@ const ViewResponsesPage = () => {
     const link = document.createElement('a');
     link.href = url;
     const modeSuffix = downloadMode === 'codes' ? '_codes' : '_responses';
-    link.download = `${survey?.surveyName || survey?.title || 'survey'}${modeSuffix}_${new Date().toISOString().split('T')[0]}.csv`;
+    const formatSuffix = isMixed ? '_mixed' : (isCAPIOnly ? '_CAPI' : (isCATIOnly ? '_CATI' : ''));
+    link.download = `${survey?.surveyName || survey?.title || 'survey'}${formatSuffix}${modeSuffix}_${new Date().toISOString().split('T')[0]}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

@@ -286,7 +286,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "2": {
       "ac_name": "MATHABHANGA (SC)",
@@ -574,7 +576,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "3": {
       "ac_name": "COOCHBEHAR UTTAR (SC)",
@@ -862,7 +866,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "4": {
       "ac_name": "COOCHBEHAR DAKSHIN",
@@ -1150,7 +1156,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "5": {
       "ac_name": "SITALKUCHI (SC)",
@@ -1438,7 +1446,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "6": {
       "ac_name": "SITAI (SC)",
@@ -1726,7 +1736,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "7": {
       "ac_name": "DINHATA",
@@ -2014,7 +2026,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "8": {
       "ac_name": "NATABARI",
@@ -2302,7 +2316,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "9": {
       "ac_name": "TUFANGANJ",
@@ -2590,7 +2606,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "10": {
       "ac_name": "KUMARGRAM (ST)",
@@ -2878,7 +2896,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "11": {
       "ac_name": "KALCHINI (ST)",
@@ -3166,7 +3186,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "12": {
       "ac_name": "ALIPURDUARS",
@@ -3454,7 +3476,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "13": {
       "ac_name": "FALAKATA (SC)",
@@ -3742,7 +3766,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "14": {
       "ac_name": "MADARIHAT (ST)",
@@ -4030,7 +4056,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "15": {
       "ac_name": "DHUPGURI (SC)",
@@ -4318,7 +4346,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "9",
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "16": {
       "ac_name": "MAYNAGURI (SC)",
@@ -4606,7 +4637,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "9",
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "17": {
       "ac_name": "JALPAIGURI (SC)",
@@ -4894,7 +4928,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "9",
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "18": {
       "ac_name": "RAJGANJ (SC)",
@@ -5182,7 +5219,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "9",
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "19": {
       "ac_name": "DABGRAM-FULBARI",
@@ -5470,7 +5510,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "9",
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "20": {
       "ac_name": "MAL (ST)",
@@ -5758,7 +5801,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "9",
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "21": {
       "ac_name": "NAGRAKATA (ST)",
@@ -6046,7 +6092,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "9",
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "22": {
       "ac_name": "Kalimpong",
@@ -6334,7 +6383,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "11",
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "23": {
       "ac_name": "Darjeeling",
@@ -6622,7 +6674,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "6",
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "24": {
       "ac_name": "Kurseong",
@@ -6910,7 +6965,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "6",
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "25": {
       "ac_name": "Matigara-Naxalbari",
@@ -7198,7 +7256,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "6",
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "26": {
       "ac_name": "Siliguri",
@@ -7486,7 +7547,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "6",
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "27": {
       "ac_name": "Phansidewa",
@@ -7774,7 +7838,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "6",
+      "region_code": "2",
+      "region_name": "JALPAIGURI"
     },
     "28": {
       "ac_name": "Chopra",
@@ -8062,7 +8129,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "23",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "29": {
       "ac_name": "Islampur",
@@ -8350,7 +8420,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "23",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "30": {
       "ac_name": "Goalpokhar",
@@ -8638,7 +8711,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "23",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "31": {
       "ac_name": "Chakulia",
@@ -8926,7 +9002,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "23",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "32": {
       "ac_name": "Karandighi",
@@ -9214,7 +9293,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "23",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "33": {
       "ac_name": "Hemtabad",
@@ -9502,7 +9584,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "23",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "34": {
       "ac_name": "Kaliaganj",
@@ -9790,7 +9875,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "23",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "35": {
       "ac_name": "Raiganj",
@@ -10078,7 +10166,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "23",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "36": {
       "ac_name": "Itahar",
@@ -10366,7 +10457,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "23",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "37": {
       "ac_name": "Kushmandi",
@@ -10654,7 +10748,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "5",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "38": {
       "ac_name": "Kumarganj",
@@ -10942,7 +11039,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "5",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "39": {
       "ac_name": "Balurghat",
@@ -11230,7 +11330,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "5",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "40": {
       "ac_name": "Tapan",
@@ -11518,7 +11621,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "5",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "41": {
       "ac_name": "Gangarampur",
@@ -11806,7 +11912,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "5",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "42": {
       "ac_name": "Harirampur",
@@ -12094,7 +12203,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "5",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "43": {
       "ac_name": "Habibpur",
@@ -12382,7 +12494,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "13",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "44": {
       "ac_name": "Gazole",
@@ -12670,7 +12785,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "13",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "45": {
       "ac_name": "Chanchal",
@@ -12958,7 +13076,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "13",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "46": {
       "ac_name": "Harischandrapur",
@@ -13246,7 +13367,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "13",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "47": {
       "ac_name": "Malatipur",
@@ -13534,7 +13658,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "13",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "48": {
       "ac_name": "Ratua",
@@ -13822,7 +13949,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "13",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "49": {
       "ac_name": "Manikchak",
@@ -14110,7 +14240,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "13",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "50": {
       "ac_name": "Maldaha",
@@ -14398,7 +14531,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "13",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "51": {
       "ac_name": "Englishbazar",
@@ -14686,7 +14822,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "13",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "52": {
       "ac_name": "Mothabari",
@@ -14974,7 +15113,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "13",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "53": {
       "ac_name": "Sujapur",
@@ -15262,7 +15404,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "13",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "54": {
       "ac_name": "Baisnabnagar",
@@ -15550,7 +15695,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "13",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "55": {
       "ac_name": "Farakka",
@@ -15838,7 +15986,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "14",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "56": {
       "ac_name": "Samserganj",
@@ -16126,7 +16277,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "14",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "57": {
       "ac_name": "Suti",
@@ -16414,7 +16568,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "14",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "58": {
       "ac_name": "Jangipur",
@@ -16702,7 +16859,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "14",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "59": {
       "ac_name": "RaghunathGanj",
@@ -16990,7 +17150,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "14",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "60": {
       "ac_name": "Sagardighi",
@@ -17278,7 +17441,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "14",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "61": {
       "ac_name": "Lalgola",
@@ -17566,7 +17732,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "14",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "62": {
       "ac_name": "Bhagabangola",
@@ -17854,7 +18023,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "14",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "63": {
       "ac_name": "Raninagar",
@@ -18142,7 +18314,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "14",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "64": {
       "ac_name": "Murshidabad",
@@ -18430,7 +18605,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "14",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "65": {
       "ac_name": "Nabagram",
@@ -18718,7 +18896,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "14",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "66": {
       "ac_name": "Khargram",
@@ -19006,7 +19187,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "14",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "67": {
       "ac_name": "Burwan",
@@ -19294,7 +19478,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "14",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "68": {
       "ac_name": "Kandi",
@@ -19582,7 +19769,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "14",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "69": {
       "ac_name": "Bharatpur",
@@ -19870,7 +20060,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "14",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "70": {
       "ac_name": "Rejinagar",
@@ -20158,7 +20351,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "14",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "71": {
       "ac_name": "Beldanga",
@@ -20446,7 +20642,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "14",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "72": {
       "ac_name": "Baharampur",
@@ -20734,7 +20933,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "14",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "73": {
       "ac_name": "Hariharpara",
@@ -21022,7 +21224,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "14",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "74": {
       "ac_name": "Naoda",
@@ -21310,7 +21515,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "14",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "75": {
       "ac_name": "Domkal",
@@ -21598,7 +21806,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "14",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "76": {
       "ac_name": "Jalangi",
@@ -21886,7 +22097,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "14",
+      "region_code": "3",
+      "region_name": "MALDA"
     },
     "77": {
       "ac_name": "Karimpur",
@@ -22174,7 +22388,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "15",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "78": {
       "ac_name": "Tehatta",
@@ -22462,7 +22679,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "15",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "79": {
       "ac_name": "Palashipara",
@@ -22750,7 +22970,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "15",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "80": {
       "ac_name": "Kaliganj",
@@ -23038,7 +23261,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "15",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "81": {
       "ac_name": "Nakashipara",
@@ -23326,7 +23552,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "15",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "82": {
       "ac_name": "Chapra",
@@ -23614,7 +23843,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "15",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "83": {
       "ac_name": "Krishnanagar Uttar",
@@ -23902,7 +24134,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "15",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "84": {
       "ac_name": "Nabadwip",
@@ -24190,7 +24425,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "15",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "85": {
       "ac_name": "Krishnanagar Dakshin",
@@ -24478,7 +24716,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "15",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "86": {
       "ac_name": "Santipur",
@@ -24766,7 +25007,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "15",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "87": {
       "ac_name": "Ranaghat Uttar Paschim",
@@ -25054,7 +25298,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "15",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "88": {
       "ac_name": "Krishnaganj",
@@ -25342,7 +25589,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "15",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "89": {
       "ac_name": "Ranaghat Uttar Purba",
@@ -25630,7 +25880,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "15",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "90": {
       "ac_name": "Ranaghat Dakshin",
@@ -25918,7 +26171,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "15",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "91": {
       "ac_name": "Chakdaha",
@@ -26206,7 +26462,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "15",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "92": {
       "ac_name": "Kalyani",
@@ -26494,7 +26753,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "15",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "93": {
       "ac_name": "Haringhata",
@@ -26782,7 +27044,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "15",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "94": {
       "ac_name": "Bagda",
@@ -27070,7 +27335,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "95": {
       "ac_name": "Bangaon Uttar",
@@ -27358,7 +27626,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "96": {
       "ac_name": "Bangaon Dakshin",
@@ -27646,7 +27917,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "97": {
       "ac_name": "Gaighata",
@@ -27934,7 +28208,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "98": {
       "ac_name": "Swarupnagar",
@@ -28222,7 +28499,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "99": {
       "ac_name": "Baduria",
@@ -28510,7 +28790,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "100": {
       "ac_name": "Habra",
@@ -28798,7 +29081,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "101": {
       "ac_name": "Ashoknagar",
@@ -29086,7 +29372,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "102": {
       "ac_name": "Amdanga",
@@ -29374,7 +29663,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "103": {
       "ac_name": "Bijpur",
@@ -29662,7 +29954,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "104": {
       "ac_name": "Naihati",
@@ -29950,7 +30245,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "105": {
       "ac_name": "Bhatpara",
@@ -30238,7 +30536,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "106": {
       "ac_name": "Jagatdal",
@@ -30526,7 +30827,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "107": {
       "ac_name": "Noapara",
@@ -30814,7 +31118,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "108": {
       "ac_name": "Barrackpur",
@@ -31102,7 +31409,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "109": {
       "ac_name": "Khardaha",
@@ -31390,7 +31700,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "110": {
       "ac_name": "Dum Dum Uttar",
@@ -31678,7 +31991,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "111": {
       "ac_name": "Panihati",
@@ -31966,7 +32282,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "112": {
       "ac_name": "Kamarhati",
@@ -32254,7 +32573,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "113": {
       "ac_name": "Baranagar",
@@ -32542,7 +32864,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "114": {
       "ac_name": "Dum Dum",
@@ -32830,7 +33155,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "115": {
       "ac_name": "Rajarhat New Town",
@@ -33118,7 +33446,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "116": {
       "ac_name": "Bidhannagar",
@@ -33406,7 +33737,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "117": {
       "ac_name": "Rajarhat  Gopalpur",
@@ -33694,7 +34028,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "118": {
       "ac_name": "Madhyamgram",
@@ -33982,7 +34319,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "119": {
       "ac_name": "Barasat",
@@ -34270,7 +34610,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "120": {
       "ac_name": "Deganga",
@@ -34558,7 +34901,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "121": {
       "ac_name": "Haroa",
@@ -34846,7 +35192,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "122": {
       "ac_name": "Minakhan",
@@ -35134,7 +35483,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "123": {
       "ac_name": "Sandeshkhali",
@@ -35422,7 +35774,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "124": {
       "ac_name": "Basirhat Dakshin",
@@ -35710,7 +36065,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "125": {
       "ac_name": "Basirhat Uttar",
@@ -35998,7 +36356,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "126": {
       "ac_name": "Hingalganj",
@@ -36286,7 +36647,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "16",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "127": {
       "ac_name": "Gosaba",
@@ -36574,7 +36938,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "128": {
       "ac_name": "Basanti",
@@ -36862,7 +37229,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "129": {
       "ac_name": "Kultali",
@@ -37150,7 +37520,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "130": {
       "ac_name": "Patharpratima",
@@ -37438,7 +37811,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "131": {
       "ac_name": "Kakdwip",
@@ -37726,7 +38102,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "132": {
       "ac_name": "Sagar",
@@ -38014,7 +38393,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "133": {
       "ac_name": "Kulpi",
@@ -38302,7 +38684,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "134": {
       "ac_name": "Raidighi",
@@ -38590,7 +38975,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "135": {
       "ac_name": "Mandirbazar",
@@ -38878,7 +39266,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "136": {
       "ac_name": "Joynagar",
@@ -39166,7 +39557,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "137": {
       "ac_name": "Baruipur Purba",
@@ -39454,7 +39848,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "138": {
       "ac_name": "Canning Paschim",
@@ -39742,7 +40139,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "139": {
       "ac_name": "Canning Purba",
@@ -40030,7 +40430,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "140": {
       "ac_name": "Baruipur Paschim",
@@ -40318,7 +40721,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "141": {
       "ac_name": "Magrahat Purba",
@@ -40606,7 +41012,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "142": {
       "ac_name": "Magrahat Paschim",
@@ -40894,7 +41303,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "143": {
       "ac_name": "Diamond Harbour",
@@ -41182,7 +41594,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "144": {
       "ac_name": "Falta",
@@ -41470,7 +41885,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "145": {
       "ac_name": "Satgachhia",
@@ -41758,7 +42176,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "146": {
       "ac_name": "Bishnupur",
@@ -42046,7 +42467,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "147": {
       "ac_name": "Sonarpur Dakshin",
@@ -42334,7 +42758,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "148": {
       "ac_name": "Bhangar",
@@ -42622,7 +43049,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "149": {
       "ac_name": "Kasba",
@@ -42910,7 +43340,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "150": {
       "ac_name": "Jadavpur",
@@ -43198,7 +43631,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "151": {
       "ac_name": "Sonarpur Uttar",
@@ -43486,7 +43922,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "152": {
       "ac_name": "Tollyganj",
@@ -43774,7 +44213,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "153": {
       "ac_name": "Behala Purba",
@@ -44062,7 +44504,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "154": {
       "ac_name": "Behala Paschim",
@@ -44350,7 +44795,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "155": {
       "ac_name": "Maheshtala",
@@ -44638,7 +45086,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "156": {
       "ac_name": "Budge Budge",
@@ -44926,7 +45377,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "157": {
       "ac_name": "Metiaburuz",
@@ -45214,7 +45668,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "22",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "158": {
       "ac_name": "Kolkata Port",
@@ -45502,7 +45959,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "159": {
       "ac_name": "Bhabanipur",
@@ -45790,7 +46249,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "160": {
       "ac_name": "Rashbehari",
@@ -46078,7 +46539,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "161": {
       "ac_name": "Ballygunge",
@@ -46366,7 +46829,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "162": {
       "ac_name": "Chowrangee",
@@ -46654,7 +47119,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "163": {
       "ac_name": "Entally",
@@ -46942,7 +47409,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "164": {
       "ac_name": "Beleghata",
@@ -47230,7 +47699,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "165": {
       "ac_name": "Jorasanko",
@@ -47518,7 +47989,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "166": {
       "ac_name": "Shyampukur",
@@ -47806,7 +48279,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "167": {
       "ac_name": "Maniktola",
@@ -48094,7 +48569,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "168": {
       "ac_name": "Kashipur-Belgachhia",
@@ -48382,7 +48859,9 @@
             }
           ]
         }
-      }
+      },
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "169": {
       "ac_name": "Bally",
@@ -48670,7 +49149,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "8",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "170": {
       "ac_name": "Howrah Uttar",
@@ -48958,7 +49440,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "8",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "171": {
       "ac_name": "Howrah Madhya",
@@ -49246,7 +49731,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "8",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "172": {
       "ac_name": "Shibpur",
@@ -49534,7 +50022,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "8",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "173": {
       "ac_name": "Howrah Dakshin",
@@ -49822,7 +50313,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "8",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "174": {
       "ac_name": "Sankrail",
@@ -50110,7 +50604,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "8",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "175": {
       "ac_name": "Panchla",
@@ -50398,7 +50895,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "8",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "176": {
       "ac_name": "Uluberia Purba",
@@ -50686,7 +51186,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "8",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "177": {
       "ac_name": "Uluberia Uttar",
@@ -50974,7 +51477,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "8",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "178": {
       "ac_name": "Uluberia Dakshin",
@@ -51262,7 +51768,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "8",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "179": {
       "ac_name": "Shyampur",
@@ -51550,7 +52059,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "8",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "180": {
       "ac_name": "Bagnan",
@@ -51838,7 +52350,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "8",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "181": {
       "ac_name": "Amta",
@@ -52126,7 +52641,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "8",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "182": {
       "ac_name": "Udaynarayanpur",
@@ -52414,7 +52932,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "8",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "183": {
       "ac_name": "Jagatballavpur",
@@ -52702,7 +53223,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "8",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "184": {
       "ac_name": "Domjur",
@@ -52990,7 +53514,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "8",
+      "region_code": "5",
+      "region_name": "PRESIDENCY"
     },
     "185": {
       "ac_name": "Uttarpara",
@@ -53278,7 +53805,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "7",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "186": {
       "ac_name": "Sreerampur",
@@ -53566,7 +54096,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "7",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "187": {
       "ac_name": "Champdani",
@@ -53854,7 +54387,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "7",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "188": {
       "ac_name": "Singur",
@@ -54142,7 +54678,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "7",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "189": {
       "ac_name": "Chandannagar",
@@ -54430,7 +54969,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "7",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "190": {
       "ac_name": "Chunchura",
@@ -54718,7 +55260,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "7",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "191": {
       "ac_name": "Balagarh",
@@ -55006,7 +55551,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "7",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "192": {
       "ac_name": "Pandua",
@@ -55294,7 +55842,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "7",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "193": {
       "ac_name": "Saptagram",
@@ -55582,7 +56133,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "7",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "194": {
       "ac_name": "Chanditala",
@@ -55870,7 +56424,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "7",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "195": {
       "ac_name": "Jangipara",
@@ -56158,7 +56715,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "7",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "196": {
       "ac_name": "Haripal",
@@ -56446,7 +57006,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "7",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "197": {
       "ac_name": "Dhanekhali",
@@ -56734,7 +57297,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "7",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "198": {
       "ac_name": "Tarakeswar",
@@ -57022,7 +57588,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "7",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "199": {
       "ac_name": "Pursurah",
@@ -57310,7 +57879,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "7",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "200": {
       "ac_name": "Arambag",
@@ -57598,7 +58170,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "7",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "201": {
       "ac_name": "Goghat",
@@ -57886,7 +58461,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "7",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "202": {
       "ac_name": "Khanakul",
@@ -58174,7 +58752,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "7",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "203": {
       "ac_name": "Tamluk",
@@ -58462,7 +59043,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "20",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "204": {
       "ac_name": "Panskura Purba",
@@ -58750,7 +59334,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "20",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "205": {
       "ac_name": "Panskura Paschim",
@@ -59038,7 +59625,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "20",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "206": {
       "ac_name": "Moyna",
@@ -59326,7 +59916,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "20",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "207": {
       "ac_name": "Nandakumar",
@@ -59614,7 +60207,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "20",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "208": {
       "ac_name": "Mahishadal",
@@ -59902,7 +60498,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "20",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "209": {
       "ac_name": "Haldia",
@@ -60190,7 +60789,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "20",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "210": {
       "ac_name": "Nandigram",
@@ -60478,7 +61080,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "20",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "211": {
       "ac_name": "Chandipur",
@@ -60766,7 +61371,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "20",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "212": {
       "ac_name": "Patashpur",
@@ -61054,7 +61662,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "20",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "213": {
       "ac_name": "Kanthi Uttar",
@@ -61342,7 +61953,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "20",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "214": {
       "ac_name": "Bhagabanpur",
@@ -61630,7 +62244,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "20",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "215": {
       "ac_name": "Khejuri",
@@ -61918,7 +62535,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "20",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "216": {
       "ac_name": "Kanthi Dakshin",
@@ -62206,7 +62826,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "20",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "217": {
       "ac_name": "Ramnagar",
@@ -62494,7 +63117,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "20",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "218": {
       "ac_name": "Egra",
@@ -62782,7 +63408,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "20",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "219": {
       "ac_name": "Dantan",
@@ -63070,7 +63699,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "18",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "220": {
       "ac_name": "Nayagram",
@@ -63358,7 +63990,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "10",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "221": {
       "ac_name": "Gopiballavpur",
@@ -63646,7 +64281,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "10",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "222": {
       "ac_name": "Jhargram",
@@ -63934,7 +64572,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "10",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "223": {
       "ac_name": "Keshiary",
@@ -64222,7 +64863,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "18",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "224": {
       "ac_name": "Kharagpur Sadar",
@@ -64510,7 +65154,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "18",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "225": {
       "ac_name": "Narayangarh",
@@ -64798,7 +65445,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "18",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "226": {
       "ac_name": "Sabang",
@@ -65086,7 +65736,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "18",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "227": {
       "ac_name": "Pingla",
@@ -65374,7 +66027,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "18",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "228": {
       "ac_name": "Kharagpur",
@@ -65662,7 +66318,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "18",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "229": {
       "ac_name": "Debra",
@@ -65950,7 +66609,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "18",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "230": {
       "ac_name": "Daspur",
@@ -66238,7 +66900,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "18",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "231": {
       "ac_name": "Ghatal",
@@ -66526,7 +67191,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "18",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "232": {
       "ac_name": "Chandrakona",
@@ -66814,7 +67482,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "18",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "233": {
       "ac_name": "Garbeta",
@@ -67102,7 +67773,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "18",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "234": {
       "ac_name": "Salboni",
@@ -67390,7 +68064,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "18",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "235": {
       "ac_name": "Keshpur",
@@ -67678,7 +68355,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "18",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "236": {
       "ac_name": "Medinipur",
@@ -67966,7 +68646,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "18",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "237": {
       "ac_name": "Binpur",
@@ -68254,7 +68937,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "10",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "238": {
       "ac_name": "Bandwan",
@@ -68542,7 +69228,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "21",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "239": {
       "ac_name": "Balarampur",
@@ -68830,7 +69519,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "21",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "240": {
       "ac_name": "Baghmundi",
@@ -69118,7 +69810,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "21",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "241": {
       "ac_name": "Joypur",
@@ -69406,7 +70101,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "21",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "242": {
       "ac_name": "Purulia",
@@ -69694,7 +70392,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "21",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "243": {
       "ac_name": "Manbazar",
@@ -69982,7 +70683,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "21",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "244": {
       "ac_name": "Kashipur",
@@ -70270,7 +70974,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "21",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "245": {
       "ac_name": "Para",
@@ -70558,7 +71265,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "21",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "246": {
       "ac_name": "Raghunathpur",
@@ -70846,7 +71556,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "21",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "247": {
       "ac_name": "Saltora",
@@ -71134,7 +71847,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "2",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "248": {
       "ac_name": "Chhatna",
@@ -71422,7 +72138,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "2",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "249": {
       "ac_name": "Ranibandh",
@@ -71710,7 +72429,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "2",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "250": {
       "ac_name": "Raipur",
@@ -71998,7 +72720,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "2",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "251": {
       "ac_name": "Taldangra",
@@ -72286,7 +73011,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "2",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "252": {
       "ac_name": "Bankura",
@@ -72574,7 +73302,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "2",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "253": {
       "ac_name": "Barjora",
@@ -72862,7 +73593,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "2",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "254": {
       "ac_name": "Onda",
@@ -73150,7 +73884,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "2",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "255": {
       "ac_name": "Bishnupur",
@@ -73438,7 +74175,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "2",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "256": {
       "ac_name": "Katulpur",
@@ -73726,7 +74466,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "2",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "257": {
       "ac_name": "Indus",
@@ -74014,7 +74757,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "2",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "258": {
       "ac_name": "Sonamukhi",
@@ -74302,7 +75048,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "2",
+      "region_code": "4",
+      "region_name": "MEDINIPUR"
     },
     "259": {
       "ac_name": "Khandaghosh",
@@ -74590,7 +75339,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "19",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "260": {
       "ac_name": "Burdwan Dakshin",
@@ -74878,7 +75630,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "19",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "261": {
       "ac_name": "Raina",
@@ -75166,7 +75921,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "19",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "262": {
       "ac_name": "Jamalpur",
@@ -75454,7 +76212,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "19",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "263": {
       "ac_name": "Monteswar",
@@ -75742,7 +76503,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "19",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "264": {
       "ac_name": "Kalna",
@@ -76030,7 +76794,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "19",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "265": {
       "ac_name": "Memari",
@@ -76318,7 +77085,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "19",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "266": {
       "ac_name": "Burdwan Uttar",
@@ -76606,7 +77376,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "19",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "267": {
       "ac_name": "Bhatar",
@@ -76894,7 +77667,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "19",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "268": {
       "ac_name": "Purbasthali Dakshin",
@@ -77182,7 +77958,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "19",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "269": {
       "ac_name": "Purbasthali Uttar",
@@ -77470,7 +78249,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "19",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "270": {
       "ac_name": "Katwa",
@@ -77758,7 +78540,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "19",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "271": {
       "ac_name": "Ketugram",
@@ -78046,7 +78831,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "19",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "272": {
       "ac_name": "Mongalkote",
@@ -78334,7 +79122,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "19",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "273": {
       "ac_name": "Ausgram",
@@ -78622,7 +79413,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "19",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "274": {
       "ac_name": "Galsi",
@@ -78910,7 +79704,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "19",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "275": {
       "ac_name": "Pandabeswar",
@@ -79198,7 +79995,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "17",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "276": {
       "ac_name": "Durgapur Purba",
@@ -79486,7 +80286,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "17",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "277": {
       "ac_name": "Durgapur Paschim",
@@ -79774,7 +80577,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "17",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "278": {
       "ac_name": "Raniganj",
@@ -80062,7 +80868,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "17",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "279": {
       "ac_name": "Jamuria",
@@ -80350,7 +81159,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "17",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "280": {
       "ac_name": "Asnsol Dakshin",
@@ -80638,7 +81450,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "17",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "281": {
       "ac_name": "Asansol Uttar",
@@ -80926,7 +81741,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "17",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "282": {
       "ac_name": "Kulti",
@@ -81214,7 +82032,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "17",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "283": {
       "ac_name": "Barabani",
@@ -81502,7 +82323,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "17",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "284": {
       "ac_name": "Dubrajpur",
@@ -81790,7 +82614,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "3",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "285": {
       "ac_name": "Suri",
@@ -82078,7 +82905,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "3",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "286": {
       "ac_name": "Bolpur",
@@ -82366,7 +83196,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "3",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "287": {
       "ac_name": "Nanoor",
@@ -82654,7 +83487,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "3",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "288": {
       "ac_name": "Labhpur",
@@ -82942,7 +83778,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "3",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "289": {
       "ac_name": "Sainthia",
@@ -83230,7 +84069,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "3",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "290": {
       "ac_name": "Mayureswar",
@@ -83518,7 +84360,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "3",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "291": {
       "ac_name": "Rampurhat",
@@ -83806,7 +84651,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "3",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "292": {
       "ac_name": "Hansan",
@@ -84094,7 +84942,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "3",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "293": {
       "ac_name": "Nalhati",
@@ -84382,7 +85233,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "3",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     },
     "294": {
       "ac_name": "Murarai",
@@ -84670,7 +85524,10 @@
             }
           ]
         }
-      }
+      },
+      "district_code": "3",
+      "region_code": "1",
+      "region_name": "BURDWAN"
     }
   }
 }
