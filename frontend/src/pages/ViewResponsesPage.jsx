@@ -117,7 +117,7 @@ const ViewResponsesPage = () => {
       // Then fetch responses - fetch all statuses (Approved, Rejected, Pending_Approval) for client-side filtering
       const params = {
         page: 1,
-        limit: 1000, // Get all responses for client-side filtering
+        limit: 10000, // Get all responses for client-side filtering (increased from 1000 to handle large datasets)
         status: 'approved_rejected_pending' // Fetch all statuses (Approved, Rejected, Pending_Approval) for comprehensive filtering
       };
       
