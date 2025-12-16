@@ -1042,8 +1042,11 @@ const SurveyReportsPage = () => {
 
       // Interviewer filter - support both legacy single interviewer and new multi-select
       if (filters.interviewerIds && filters.interviewerIds.length > 0) {
-        const interviewerId = response.interviewer?._id?.toString();
-        const isIncluded = filters.interviewerIds.includes(interviewerId);
+        // Convert interviewer ID to string for comparison (handles both ObjectId and string)
+        const interviewerId = response.interviewer?._id?.toString() || response.interviewer?._id || '';
+        // Convert filter IDs to strings for comparison
+        const filterIds = filters.interviewerIds.map(id => id?.toString() || id);
+        const isIncluded = filterIds.includes(interviewerId);
         
         if (filters.interviewerMode === 'include') {
           // Include mode: only show responses from selected interviewers
@@ -2267,13 +2270,16 @@ const SurveyReportsPage = () => {
   const handleInterviewerToggle = (interviewerId) => {
     setFilters(prev => {
       const currentIds = prev.interviewerIds || [];
-      const isSelected = currentIds.includes(interviewerId);
+      // Convert both to strings for consistent comparison
+      const idStr = interviewerId?.toString() || interviewerId;
+      const currentIdsStr = currentIds.map(id => id?.toString() || id);
+      const isSelected = currentIdsStr.includes(idStr);
       
       return {
         ...prev,
         interviewerIds: isSelected
-          ? currentIds.filter(id => id !== interviewerId)
-          : [...currentIds, interviewerId],
+          ? currentIds.filter(id => (id?.toString() || id) !== idStr)
+          : [...currentIds, idStr], // Store as string
         interviewer: '' // Clear legacy interviewer filter when using new system
       };
     });
@@ -2884,7 +2890,10 @@ const SurveyReportsPage = () => {
                   {showInterviewerDropdown && filteredInterviewers.length > 0 && (
                     <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                       {filteredInterviewers.map(interviewer => {
-                        const isSelected = filters.interviewerIds?.includes(interviewer._id);
+                        // Convert to string for comparison
+                        const interviewerIdStr = interviewer._id?.toString() || interviewer._id;
+                        const filterIdsStr = (filters.interviewerIds || []).map(id => id?.toString() || id);
+                        const isSelected = filterIdsStr.includes(interviewerIdStr);
                         return (
                           <div
                             key={interviewer._id}

@@ -299,13 +299,16 @@ const ViewResponsesPage = () => {
   const handleInterviewerToggle = (interviewerId) => {
     setFilters(prev => {
       const currentIds = prev.interviewerIds || [];
-      const isSelected = currentIds.includes(interviewerId);
+      // Convert both to strings for consistent comparison
+      const idStr = interviewerId?.toString() || interviewerId;
+      const currentIdsStr = currentIds.map(id => id?.toString() || id);
+      const isSelected = currentIdsStr.includes(idStr);
       
       return {
         ...prev,
         interviewerIds: isSelected
-          ? currentIds.filter(id => id !== interviewerId)
-          : [...currentIds, interviewerId]
+          ? currentIds.filter(id => (id?.toString() || id) !== idStr)
+          : [...currentIds, idStr] // Store as string
       };
     });
   };
@@ -1461,8 +1464,11 @@ const ViewResponsesPage = () => {
 
       // Interviewer filter
       if (filters.interviewerIds && filters.interviewerIds.length > 0) {
-        const interviewerId = response.interviewer?._id;
-        const isIncluded = filters.interviewerIds.includes(interviewerId);
+        // Convert interviewer ID to string for comparison (handles both ObjectId and string)
+        const interviewerId = response.interviewer?._id?.toString() || response.interviewer?._id || '';
+        // Convert filter IDs to strings for comparison
+        const filterIds = filters.interviewerIds.map(id => id?.toString() || id);
+        const isIncluded = filterIds.includes(interviewerId);
         
         if (filters.interviewerMode === 'include' && !isIncluded) {
           return false;
