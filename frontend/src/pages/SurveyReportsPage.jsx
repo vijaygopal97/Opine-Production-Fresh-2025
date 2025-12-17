@@ -2176,8 +2176,17 @@ const SurveyReportsPage = () => {
       console.log('✅ Final interviewerStats count:', interviewerStats.length);
       console.log('✅ Final interviewerStats (first 5):', interviewerStats.slice(0, 5).map(i => ({ name: i.interviewer, count: i.count })));
     } else {
+      console.log('🔍 Analytics calculation - NOT entering PM route logic');
+      console.log('🔍 Analytics calculation - Conditions check:', {
+        isProjectManagerRoute,
+        hasAssignedInterviewers: !!assignedInterviewers,
+        isArray: Array.isArray(assignedInterviewers),
+        length: assignedInterviewers?.length || 0
+      });
       interviewerStats = interviewerStatsFromResponses.sort((a, b) => b.count - a.count);
     }
+    
+    console.log('🔍 Analytics calculation - Final interviewerStats before return:', interviewerStats.length);
 
     const genderStats = Object.fromEntries(genderMap);
     const ageStats = Object.fromEntries(ageMap);
