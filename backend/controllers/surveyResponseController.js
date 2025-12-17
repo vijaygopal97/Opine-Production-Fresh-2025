@@ -74,9 +74,13 @@ const startInterview = async (req, res) => {
     }
 
     // Check if AC selection is required
-    const requiresACSelection = survey.assignACs && 
-                               assignment.assignedACs && 
-                               assignment.assignedACs.length > 0;
+    // For survey "68fd1915d41841da463f0d46": Always require AC selection for CAPI interviews,
+    // even if interviewer has no assigned ACs (they can select from all ACs)
+    const isTargetSurvey = survey._id && survey._id.toString() === '68fd1915d41841da463f0d46';
+    const requiresACSelection = survey.assignACs && (
+      (assignment.assignedACs && assignment.assignedACs.length > 0) ||
+      (isTargetSurvey && survey.mode !== 'cati' && survey.mode !== 'multi_mode') // CAPI only
+    );
 
     // Debug logging (can be removed in production)
     // console.log('=== AC SELECTION DEBUG ===');
