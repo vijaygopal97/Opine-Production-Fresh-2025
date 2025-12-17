@@ -1357,7 +1357,8 @@ const SurveyReportsPage = () => {
           font: {
             size: 11
           },
-          stepSize: 1,
+          maxTicksLimit: 20, // Limit to 20 ticks maximum to prevent Chart.js warning
+          stepSize: undefined, // Let Chart.js calculate optimal stepSize automatically instead of forcing 1
           callback: function(value) {
             return Number.isInteger(value) ? value : null;
           }
