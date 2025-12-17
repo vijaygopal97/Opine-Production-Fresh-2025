@@ -4310,7 +4310,7 @@ const SurveyReportsPage = () => {
                   <button
                     onClick={() => {
                       // Always use filtered frontend stats (analytics.interviewerStats) which respect all filters
-                      const statsToUse = analytics.interviewerStats || [];
+                      const statsToUse = analytics?.interviewerStats || [];
                       const csvData = statsToUse.map(stat => {
                         // Use frontend calculated data (filtered) - it respects current filters
                         const displayStat = {
