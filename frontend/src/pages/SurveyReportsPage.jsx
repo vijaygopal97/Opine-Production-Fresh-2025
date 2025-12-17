@@ -3248,15 +3248,37 @@ const SurveyReportsPage = () => {
             <div className="space-y-3">
               {(() => {
                 const statsToShow = analytics?.interviewerStats || [];
-                // For project managers, ensure we show at least some assigned interviewers even if they have 0 responses
-                const displayStats = isProjectManagerRoute && statsToShow.length > 0 
-                  ? statsToShow.slice(0, 5) // Show top 5 (which includes those with 0 responses if needed)
-                  : statsToShow.slice(0, 5);
+                console.log('🔍 Top Interviewers Display - statsToShow:', statsToShow.length);
+                console.log('🔍 Top Interviewers Display - isProjectManagerRoute:', isProjectManagerRoute);
+                console.log('🔍 Top Interviewers Display - assignedInterviewers:', assignedInterviewers?.length || 0);
                 
-                if (displayStats.length === 0 && isProjectManagerRoute) {
+                // For project managers, ensure we show at least some assigned interviewers even if they have 0 responses
+                const displayStats = statsToShow.slice(0, 5); // Show top 5
+                
+                console.log('🔍 Top Interviewers Display - displayStats:', displayStats.length, displayStats.map(s => ({ name: s.interviewer, count: s.count })));
+                
+                // Only show "No interviewers found" if we're a PM, have checked for assigned interviewers, and still have none
+                if (displayStats.length === 0 && isProjectManagerRoute && assignedInterviewers && assignedInterviewers.length === 0) {
                   return (
                     <div className="text-sm text-gray-500 text-center py-4">
                       No interviewers found. Please check assigned team members.
+                    </div>
+                  );
+                }
+                
+                // Show loading state if we're a PM but haven't loaded assigned interviewers yet
+                if (displayStats.length === 0 && isProjectManagerRoute && assignedInterviewers === undefined) {
+                  return (
+                    <div className="text-sm text-gray-500 text-center py-4">
+                      Loading interviewers...
+                    </div>
+                  );
+                }
+                
+                if (displayStats.length === 0) {
+                  return (
+                    <div className="text-sm text-gray-500 text-center py-4">
+                      No interviewers with responses yet.
                     </div>
                   );
                 }
