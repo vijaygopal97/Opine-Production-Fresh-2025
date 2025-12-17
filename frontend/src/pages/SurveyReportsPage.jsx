@@ -2050,23 +2050,43 @@ const SurveyReportsPage = () => {
     let interviewerStats = [...interviewerStatsFromResponses];
     
     if (isProjectManagerRoute && assignedInterviewers && assignedInterviewers.length > 0) {
-      // Create a set of interviewer names/IDs that already have responses
-      const interviewerNamesWithResponses = new Set(
-        interviewerStatsFromResponses.map(stat => {
-          // Match by name or memberId
-          return stat.interviewer?.toLowerCase() || stat.memberId?.toString();
-        })
-      );
+      console.log('🔍 PM Route - assignedInterviewers:', assignedInterviewers.length);
+      console.log('🔍 PM Route - interviewerStatsFromResponses:', interviewerStatsFromResponses.length);
       
-      // Add assigned interviewers with 0 responses
+      // Create a map of existing interviewer stats by memberId and name for easier lookup
+      const existingStatsMap = new Map();
+      interviewerStatsFromResponses.forEach(stat => {
+        const key1 = stat.memberId?.toString()?.toLowerCase();
+        const key2 = stat.interviewer?.toLowerCase();
+        if (key1) existingStatsMap.set(key1, stat);
+        if (key2) existingStatsMap.set(key2, stat);
+      });
+      
+      // Add assigned interviewers with 0 responses (those not already in stats)
       const interviewersWithZeroResponses = assignedInterviewers
         .filter(interviewer => {
-          const interviewerKey = interviewer.name?.toLowerCase() || interviewer.memberId?.toString();
-          return !interviewerNamesWithResponses.has(interviewerKey) && 
-                 !interviewerStatsFromResponses.some(stat => 
-                   stat.memberId === interviewer.memberId || 
-                   stat.interviewer?.toLowerCase() === interviewer.name?.toLowerCase()
-                 );
+          const interviewerName = (interviewer.name || `${interviewer.firstName} ${interviewer.lastName}`.trim() || 'Unknown').toLowerCase();
+          const interviewerMemberId = interviewer.memberId?.toString()?.toLowerCase();
+          
+          // Check if this interviewer already exists in stats
+          const existsByName = existingStatsMap.has(interviewerName);
+          const existsByMemberId = interviewerMemberId && existingStatsMap.has(interviewerMemberId);
+          
+          // Also check by direct comparison
+          const existsInStats = interviewerStatsFromResponses.some(stat => {
+            const statName = stat.interviewer?.toLowerCase();
+            const statMemberId = stat.memberId?.toString()?.toLowerCase();
+            return (statName === interviewerName) || 
+                   (statMemberId && interviewerMemberId && statMemberId === interviewerMemberId);
+          });
+          
+          const shouldInclude = !existsByName && !existsByMemberId && !existsInStats;
+          
+          if (!shouldInclude) {
+            console.log('🔍 Skipping interviewer (already in stats):', interviewer.name || interviewer.firstName);
+          }
+          
+          return shouldInclude;
         })
         .map(interviewer => ({
           interviewer: interviewer.name || `${interviewer.firstName} ${interviewer.lastName}`.trim() || 'Unknown',
@@ -2090,15 +2110,19 @@ const SurveyReportsPage = () => {
           age50PlusPercentage: 0
         }));
       
-      // Combine: interviewers with responses first (sorted by count), then interviewers with 0 responses (sorted by name)
+      console.log('✅ Added assigned interviewers with 0 responses:', interviewersWithZeroResponses.length);
+      console.log('✅ Interviewer names with 0 responses:', interviewersWithZeroResponses.map(i => i.interviewer));
+      
+      // Combine: interviewers with responses first (sorted by count descending), then interviewers with 0 responses (sorted by name)
       interviewerStats = [
-        ...interviewerStatsFromResponses,
-        ...interviewersWithZeroResponses.sort((a, b) => a.interviewer.localeCompare(b.interviewer))
+        ...interviewerStatsFromResponses.sort((a, b) => b.count - a.count), // Sort by count descending
+        ...interviewersWithZeroResponses.sort((a, b) => a.interviewer.localeCompare(b.interviewer)) // Sort by name ascending
       ];
       
-      console.log('✅ Added assigned interviewers with 0 responses:', interviewersWithZeroResponses.length);
+      console.log('✅ Final interviewerStats count:', interviewerStats.length);
+      console.log('✅ Final interviewerStats (first 5):', interviewerStats.slice(0, 5).map(i => ({ name: i.interviewer, count: i.count })));
     } else {
-      interviewerStats = interviewerStatsFromResponses;
+      interviewerStats = interviewerStatsFromResponses.sort((a, b) => b.count - a.count);
     }
 
     const genderStats = Object.fromEntries(genderMap);
@@ -4420,7 +4444,7 @@ const SurveyReportsPage = () => {
                     {/* Total Row */}
                     {(() => {
                       // Calculate totals for all numeric columns
-                      const totals = (analytics.interviewerStats || []).reduce((acc, stat) => {
+                      const totals = (analytics?.interviewerStats || []).reduce((acc, stat) => {
                         const displayStat = {
                           ...stat,
                           psCovered: stat.psCovered || 0,
@@ -4490,7 +4514,7 @@ const SurveyReportsPage = () => {
                       );
                     })()}
                     {/* Always use filtered frontend stats (analytics.interviewerStats) which respect all filters */}
-                    {(analytics.interviewerStats || []).map((stat, index) => {
+                    {(analytics?.interviewerStats || []).map((stat, index) => {
                       // Use frontend calculated data (filtered) - it respects current filters and has all stats
                       const displayStat = {
                         ...stat,
