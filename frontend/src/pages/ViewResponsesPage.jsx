@@ -1677,7 +1677,8 @@ const ViewResponsesPage = () => {
         city: [],
         district: [],
         lokSabha: [],
-        state: []
+        state: [],
+        interviewMode: []
       };
     }
 
