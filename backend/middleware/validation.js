@@ -144,13 +144,22 @@ exports.validateLogin = [
     .notEmpty()
     .withMessage('Email or Member ID is required')
     .custom((value) => {
-      // Allow either email format or memberId (any digits)
-      const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-      const isMemberId = /^\d+$/.test(value);
+      // Allow either email format (contains @) or memberId (alphanumeric, no @)
+      const isEmail = value.includes('@');
+      const isMemberId = !isEmail && /^[A-Za-z0-9]+$/.test(value);
       
       if (!isEmail && !isMemberId) {
-        throw new Error('Please provide a valid email address or Member ID');
+        throw new Error('Please provide a valid email address or Member ID (alphanumeric)');
       }
+      
+      // If it's an email, validate email format
+      if (isEmail) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(value)) {
+          throw new Error('Please provide a valid email address');
+        }
+      }
+      
       return true;
     }),
 

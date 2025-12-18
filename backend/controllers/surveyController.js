@@ -3608,11 +3608,11 @@ exports.getCatiStats = async (req, res) => {
 
     clearTimeout(timeout);
     if (!res.headersSent) {
-      res.status(200).json({
-        success: true,
-        data: responseData
-      });
-      console.log(`🔍🔍🔍 getCatiStats - END - Response sent successfully`);
+    res.status(200).json({
+      success: true,
+      data: responseData
+    });
+    console.log(`🔍🔍🔍 getCatiStats - END - Response sent successfully`);
     }
 
   } catch (error) {
@@ -3620,11 +3620,11 @@ exports.getCatiStats = async (req, res) => {
     console.error('❌ Get CATI stats error:', error);
     console.error('❌ Error stack:', error.stack);
     if (!res.headersSent) {
-      res.status(500).json({
-        success: false,
+    res.status(500).json({
+      success: false,
         message: 'Server error while fetching CATI stats',
-        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
-      });
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
     }
   }
 };

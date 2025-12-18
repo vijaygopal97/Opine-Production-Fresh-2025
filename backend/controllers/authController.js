@@ -311,8 +311,10 @@ exports.login = async (req, res) => {
     }
 
     // Find user by email or memberId and include password
-    // Check if it's a memberId (any digits) or email
-    const isMemberId = /^\d+$/.test(loginIdentifier);
+    // Check if it's a memberId (alphanumeric, no @) or email (contains @)
+    // If it contains @, it's an email; otherwise, if it's alphanumeric, it's a memberId
+    const isEmail = loginIdentifier.includes('@');
+    const isMemberId = !isEmail && /^[A-Za-z0-9]+$/.test(loginIdentifier);
     const query = isMemberId 
       ? { memberId: loginIdentifier }
       : { email: loginIdentifier.toLowerCase() };

@@ -43,13 +43,18 @@ const Login = () => {
       errors.push('Email or Member ID is required');
     }
 
-    // Validate email format only if it's not a memberId (any digits)
+    // Validate email format only if it's not a memberId (alphanumeric, no @)
     if (formData.email.trim()) {
-      const isMemberId = /^\d+$/.test(formData.email.trim());
-      if (!isMemberId) {
+      const trimmed = formData.email.trim();
+      const isEmail = trimmed.includes('@');
+      const isMemberId = !isEmail && /^[A-Za-z0-9]+$/.test(trimmed);
+      
+      if (!isEmail && !isMemberId) {
+        errors.push('Please provide a valid email address or Member ID (alphanumeric)');
+      } else if (isEmail) {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(formData.email.trim())) {
-          errors.push('Please provide a valid email address or Member ID');
+        if (!emailRegex.test(trimmed)) {
+          errors.push('Please provide a valid email address');
         }
       }
     }
