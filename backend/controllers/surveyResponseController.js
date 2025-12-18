@@ -2700,27 +2700,10 @@ const generateRejectionReason = (verificationCriteria, status) => {
     }
   }
   
-  // Name Matching - fails if not '1' or '3'
-  if (verificationCriteria.nameMatching && !['1', '3'].includes(verificationCriteria.nameMatching)) {
-    if (verificationCriteria.nameMatching === '2') {
-      reasons.push('Name response did not match');
-    } else if (verificationCriteria.nameMatching === '4') {
-      reasons.push('Name question not asked');
-    } else {
-      reasons.push('Name verification failed');
-    }
-  }
-  
-  // Age Matching - fails if not '1' or '3'
-  if (verificationCriteria.ageMatching && !['1', '3'].includes(verificationCriteria.ageMatching)) {
-    if (verificationCriteria.ageMatching === '2') {
-      reasons.push('Age response did not match');
-    } else if (verificationCriteria.ageMatching === '4') {
-      reasons.push('Age question not asked');
-    } else {
-      reasons.push('Age verification failed');
-    }
-  }
+  // Name Matching - EXCLUDED from rejection logic (informational only)
+  // Age Matching - EXCLUDED from rejection logic (informational only)
+  // Phone Number Asked - EXCLUDED from rejection logic (informational only)
+  // These questions are answered but do NOT affect approval/rejection status
   
   return reasons.length > 0 ? reasons.join('; ') : 'QC verification failed';
 };
