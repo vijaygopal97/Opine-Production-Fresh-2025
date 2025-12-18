@@ -2,45 +2,154 @@ import React from 'react';
 
 /**
  * Translation utility functions
- * Handles parsing and displaying translations in the format: "Main Text {Translation}"
+ * Handles parsing and displaying translations in formats:
+ * - Single: "Main Text {Translation}"
+ * - Multiple: "Main Text {Translation1{Translation2{Translation3}}}"
  */
 
 /**
+ * Parse text with nested translation format: "Main Text {Translation1{Translation2{Translation3}}}"
+ * Returns an array of languages extracted from nested braces
+ * @param {string} text - Text that may contain nested translations in curly braces
+ * @returns {Array<string>} - Array of language texts, first is main text
+ */
+export const parseMultiTranslation = (text) => {
+  // Handle null, undefined, or non-string values
+  if (!text) {
+    return [''];
+  }
+  
+  if (typeof text !== 'string') {
+    // Convert to string if it's not already
+    try {
+      text = String(text);
+    } catch (error) {
+      return [''];
+    }
+  }
+
+  // Handle empty string
+  if (text.trim().length === 0) {
+    return [''];
+  }
+
+  const languages = [];
+  let remaining = text.trim();
+  
+  // Recursively extract languages from nested braces
+  while (remaining.length > 0) {
+    // Find the first opening brace
+    const openBraceIndex = remaining.indexOf('{');
+    
+    if (openBraceIndex === -1) {
+      // No more braces, add remaining text as a language
+      if (remaining.trim()) {
+        languages.push(remaining.trim());
+      }
+      break;
+    }
+    
+    // Extract text before the brace as a language
+    const beforeBrace = remaining.substring(0, openBraceIndex).trim();
+    if (beforeBrace) {
+      languages.push(beforeBrace);
+    }
+    
+    // Find matching closing brace (handle nested braces)
+    let braceCount = 0;
+    let closeBraceIndex = -1;
+    
+    for (let i = openBraceIndex; i < remaining.length; i++) {
+      if (remaining[i] === '{') {
+        braceCount++;
+      } else if (remaining[i] === '}') {
+        braceCount--;
+        if (braceCount === 0) {
+          closeBraceIndex = i;
+          break;
+        }
+      }
+    }
+    
+    if (closeBraceIndex === -1) {
+      // No matching closing brace, treat rest as text
+      const restText = remaining.substring(openBraceIndex + 1).trim();
+      if (restText) {
+        languages.push(restText);
+      }
+      break;
+    }
+    
+    // Extract content inside braces (may contain nested translations)
+    const insideBraces = remaining.substring(openBraceIndex + 1, closeBraceIndex);
+    
+    // Recursively parse nested translations
+    const nestedLanguages = parseMultiTranslation(insideBraces);
+    if (nestedLanguages && Array.isArray(nestedLanguages) && nestedLanguages.length > 0) {
+      languages.push(...nestedLanguages);
+    }
+    
+    // Continue with text after closing brace
+    remaining = remaining.substring(closeBraceIndex + 1).trim();
+  }
+  
+  // If no languages found, return original text
+  if (languages.length === 0) {
+    return [text.trim()];
+  }
+  
+  return languages;
+};
+
+/**
  * Parse text with translation format: "Main Text {Translation}"
- * Returns an object with mainText and translation
+ * Returns an object with mainText and translation (for backward compatibility)
  * @param {string} text - Text that may contain translation in curly braces
  * @returns {object} - { mainText: string, translation: string|null }
  */
 export const parseTranslation = (text) => {
-  if (!text || typeof text !== 'string') {
-    return { mainText: text || '', translation: null };
-  }
-
-  // Match pattern: text {translation}
-  const translationRegex = /^(.+?)\s*\{([^}]+)\}\s*$/;
-  const match = text.match(translationRegex);
-
-  if (match) {
-    return {
-      mainText: match[1].trim(),
-      translation: match[2].trim()
-    };
-  }
-
+  const languages = parseMultiTranslation(text);
+  
   return {
-    mainText: text.trim(),
-    translation: null
+    mainText: languages[0] || '',
+    translation: languages.length > 1 ? languages[1] : null
   };
 };
 
 /**
- * Get main text without translation (for CSV exports, etc.)
+ * Get main text without translation (for CSV exports, conditional logic, etc.)
+ * Always returns the first language (main text)
  * @param {string} text - Text that may contain translation
  * @returns {string} - Main text without translation
  */
 export const getMainText = (text) => {
-  const parsed = parseTranslation(text);
-  return parsed.mainText;
+  const languages = parseMultiTranslation(text);
+  return languages[0] || '';
+};
+
+/**
+ * Get text for a specific language index
+ * @param {string} text - Text that may contain multiple translations
+ * @param {number} languageIndex - Index of language (0 = main, 1 = first translation, etc.)
+ * @returns {string} - Text for the specified language, or main text if index out of range
+ */
+export const getLanguageText = (text, languageIndex = 0) => {
+  try {
+    if (languageIndex < 0) {
+      languageIndex = 0;
+    }
+    const languages = parseMultiTranslation(text);
+    if (languages && Array.isArray(languages) && languages.length > 0) {
+      if (languageIndex >= 0 && languageIndex < languages.length) {
+        return languages[languageIndex] || '';
+      }
+      return languages[0] || '';
+    }
+    return '';
+  } catch (error) {
+    console.warn('Error getting language text:', error);
+    return text || '';
+  }
 };
 
 /**

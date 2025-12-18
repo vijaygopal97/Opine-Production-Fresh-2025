@@ -2,15 +2,24 @@ const SurveyResponse = require('../models/SurveyResponse');
 
 /**
  * Helper function to get main text (strip translations)
+ * Handles both single and nested translations: "Main Text {Translation}" or "Main Text {Translation1{Translation2}}"
+ * Always returns the first language (main text)
  * @param {String} text - Text that may contain translations in format "Main Text {Translation}"
  * @returns {String} - Main text without translation
  */
 const getMainText = (text) => {
   if (!text || typeof text !== 'string') return text || '';
-  // Match pattern: "Main Text {Translation}"
-  const translationRegex = /^(.+?)\s*\{([^}]+)\}\s*$/;
-  const match = text.match(translationRegex);
-  return match ? match[1].trim() : text.trim();
+  
+  // Find the first opening brace
+  const openBraceIndex = text.indexOf('{');
+  
+  if (openBraceIndex === -1) {
+    // No translations, return as-is
+    return text.trim();
+  }
+  
+  // Return everything before the first opening brace
+  return text.substring(0, openBraceIndex).trim();
 };
 
 /**

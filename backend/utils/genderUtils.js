@@ -5,14 +5,24 @@
 
 /**
  * Get main text without translation (for backend use)
+ * Handles both single and nested translations: "Main Text {Translation}" or "Main Text {Translation1{Translation2}}"
+ * Always returns the first language (main text)
  * @param {string} text - Text that may contain translation
  * @returns {string} - Main text without translation
  */
 const getMainText = (text) => {
   if (!text || typeof text !== 'string') return text || '';
-  const translationRegex = /^(.+?)\s*\{([^}]+)\}\s*$/;
-  const match = text.match(translationRegex);
-  return match ? match[1].trim() : text.trim();
+  
+  // Find the first opening brace
+  const openBraceIndex = text.indexOf('{');
+  
+  if (openBraceIndex === -1) {
+    // No translations, return as-is
+    return text.trim();
+  }
+  
+  // Return everything before the first opening brace
+  return text.substring(0, openBraceIndex).trim();
 };
 
 /**

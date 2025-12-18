@@ -15,7 +15,7 @@ import {
 import { useToast } from '../../contexts/ToastContext';
 import { surveyResponseAPI, catiInterviewAPI, pollingStationAPI, authAPI, masterDataAPI } from '../../services/api';
 import { getApiUrl, getApiBaseUrl } from '../../utils/config';
-import { parseTranslation, renderWithTranslation, getMainText } from '../../utils/translations';
+import { parseTranslation, renderWithTranslation, getMainText, parseMultiTranslation, getLanguageText } from '../../utils/translations';
 import { isGenderQuestion, normalizeGenderResponse, isAgeQuestion } from '../../utils/genderUtils';
 
 // Helper function to get party logo path based on option text
@@ -86,7 +86,7 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
   const [genderQuotas, setGenderQuotas] = useState(null);
   const [shuffledOptions, setShuffledOptions] = useState({}); // Store shuffled options per questionId to maintain consistent order
   const [othersTextInputs, setOthersTextInputs] = useState({}); // Store "Others" text input values by questionId_optionValue
-  const [showTranslationOnly, setShowTranslationOnly] = useState(false);
+  const [selectedLanguageIndex, setSelectedLanguageIndex] = useState(0);
   
   // Audio recording state
   const [isRecording, setIsRecording] = useState(false);
@@ -1335,19 +1335,13 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
 
   // Use utility functions for gender detection (imported from genderUtils)
 
-  // Helper function to get display text based on translation toggle
+  // Helper function to get display text based on selected language
   const getDisplayText = (text) => {
     if (!text) return '';
-    const parsed = parseTranslation(text);
-    // If toggle is ON and translation exists, show only translation
-    if (showTranslationOnly && parsed.translation) {
-      return parsed.translation;
-    }
-    // Otherwise show main text
-    return parsed.mainText;
+    return getLanguageText(text, selectedLanguageIndex);
   };
 
-  // Helper function to render text based on translation toggle
+  // Helper function to render text based on selected language
   const renderDisplayText = (text, options = {}) => {
     if (!text) return null;
     
@@ -1358,21 +1352,11 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
       return (
         <span className={options.className || ''}>
           {paragraphs.map((paragraph, index) => {
-            const parsed = parseTranslation(paragraph.trim());
-            // If toggle is ON and translation exists, show only translation
-            if (showTranslationOnly && parsed.translation) {
-              return (
-                <React.Fragment key={index}>
-                  {index > 0 && <><br /><br /></>}
-                  {parsed.translation}
-                </React.Fragment>
-              );
-            }
-            // If toggle is OFF, show only main text (no translation)
+            const displayText = getLanguageText(paragraph.trim(), selectedLanguageIndex);
             return (
               <React.Fragment key={index}>
                 {index > 0 && <><br /><br /></>}
-                {parsed.mainText}
+                {displayText}
               </React.Fragment>
             );
           })}
@@ -1380,16 +1364,9 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
       );
     }
     
-    // Single line or no line breaks - parse normally
-    const parsed = parseTranslation(text);
-    
-    // If toggle is ON and translation exists, show only translation
-    if (showTranslationOnly && parsed.translation) {
-      return <span className={options.className || ''}>{parsed.translation}</span>;
-    }
-    
-    // If toggle is OFF, show only main text (no translation)
-    return <span className={options.className || ''}>{parsed.mainText}</span>;
+    // Single line or no line breaks - get selected language
+    const displayText = getLanguageText(text, selectedLanguageIndex);
+    return <span className={options.className || ''}>{displayText}</span>;
   };
 
   // Helper function to check if an option is "Others"
@@ -1815,6 +1792,54 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
   }, [currentQuestionIndex, visibleQuestions.length]);
   
   const currentQuestion = visibleQuestions[safeQuestionIndex];
+
+  // Detect available languages from current question and its options
+  const detectAvailableLanguages = useMemo(() => {
+    if (!currentQuestion) return ['Language 1'];
+    
+    const languageCounts = new Set();
+    
+    try {
+      // Check question text
+      if (currentQuestion.text) {
+        const languages = parseMultiTranslation(currentQuestion.text);
+        if (languages && Array.isArray(languages)) {
+          languages.forEach((_, index) => languageCounts.add(index));
+        }
+      }
+      
+      // Check question description
+      if (currentQuestion.description) {
+        const languages = parseMultiTranslation(currentQuestion.description);
+        if (languages && Array.isArray(languages)) {
+          languages.forEach((_, index) => languageCounts.add(index));
+        }
+      }
+      
+      // Check options
+      if (currentQuestion.options && Array.isArray(currentQuestion.options)) {
+        currentQuestion.options.forEach(option => {
+          try {
+            const optionText = typeof option === 'object' ? (option.text || option.value) : option;
+            if (optionText) {
+              const languages = parseMultiTranslation(String(optionText));
+              if (languages && Array.isArray(languages)) {
+                languages.forEach((_, index) => languageCounts.add(index));
+              }
+            }
+          } catch (error) {
+            console.warn('Error parsing option text:', error);
+          }
+        });
+      }
+    } catch (error) {
+      console.warn('Error detecting languages:', error);
+      return ['Language 1'];
+    }
+    
+    const maxLanguages = Math.max(...Array.from(languageCounts), 0) + 1;
+    return Array.from({ length: maxLanguages }, (_, i) => `Language ${i + 1}`);
+  }, [currentQuestion]);
 
   // Also fetch MP/MLA names when reaching questions 16.a or 16.b if not already available
   useEffect(() => {
@@ -4532,18 +4557,24 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
         </div>
         
         <div className="flex items-center space-x-4">
-          {/* Translation Toggle - Compact, like React Native */}
-          <div className="flex items-center space-x-2 px-2 py-1 bg-gray-100 rounded-lg">
-            <span className="text-sm">🌐</span>
-            <label className="flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showTranslationOnly}
-                onChange={(e) => setShowTranslationOnly(e.target.checked)}
-                className="w-4 h-4 text-[#373177] border-gray-300 rounded focus:ring-blue-500"
-              />
-            </label>
-          </div>
+          {/* Language Selector Dropdown */}
+          {detectAvailableLanguages.length > 1 && (
+            <div className="flex items-center space-x-2 px-2 py-1 bg-gray-100 rounded-lg">
+              <span className="text-sm">🌐</span>
+              <select
+                value={selectedLanguageIndex}
+                onChange={(e) => setSelectedLanguageIndex(parseInt(e.target.value, 10))}
+                className="text-sm border-none bg-transparent text-gray-700 focus:outline-none focus:ring-0 cursor-pointer"
+                style={{ minWidth: '100px' }}
+              >
+                {detectAvailableLanguages.map((label, index) => (
+                  <option key={index} value={index}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           {/* CATI Respondent Info */}
           {isCatiMode && catiRespondent && (
             <div className="flex items-center space-x-2 px-3 py-1 bg-[#E6F0F8] rounded-lg border border-blue-200">
