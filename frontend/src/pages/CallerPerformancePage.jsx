@@ -314,7 +314,41 @@ const CallerPerformancePage = () => {
     return { startDate, endDate };
   };
 
-  // Fetch survey and responses data
+  // Fetch CATI stats from backend (optimized)
+  const fetchCatiStats = async (currentFilters = catiFilters) => {
+    try {
+      console.log('🚀 Fetching CATI stats from backend with filters:', currentFilters);
+      
+      const { startDate, endDate } = calculateDatesFromRange(
+        currentFilters.dateRange, 
+        currentFilters.startDate, 
+        currentFilters.endDate
+      );
+      
+      const catiStatsResponse = await surveyAPI.getCatiStats(
+        surveyId, 
+        startDate || null, 
+        endDate || null,
+        currentFilters.interviewerIds || [],
+        currentFilters.interviewerMode || 'include',
+        currentFilters.ac || ''
+      );
+      
+      if (catiStatsResponse && catiStatsResponse.success) {
+        console.log('✅ CATI stats fetched from backend:', catiStatsResponse.data);
+        setCatiStats(catiStatsResponse.data);
+      } else {
+        console.warn('⚠️ CATI stats API returned unsuccessful response:', catiStatsResponse);
+        setCatiStats(null);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching CATI stats from backend:', error);
+      setCatiStats(null);
+      // Don't show error to user - will show empty state
+    }
+  };
+
+  // Fetch survey and responses data (for dropdowns only)
   const fetchSurveyData = async () => {
     try {
       setLoading(true);
@@ -325,10 +359,11 @@ const CallerPerformancePage = () => {
         const surveyData = surveyResponse.data?.survey || surveyResponse.data;
         setSurvey(surveyData);
         
-        // Fetch responses to get interviewer list
+        // Fetch responses ONLY for dropdown population (AC, Interviewer filters)
+        // We don't need all 10,000 for stats - backend handles that
         const params = {
           page: 1,
-          limit: 10000,
+          limit: 10000, // Keep same limit for dropdown population (AC/Interviewer lists need all responses)
           status: 'approved_rejected_pending'
         };
         
@@ -338,23 +373,8 @@ const CallerPerformancePage = () => {
         }
       }
 
-      // Fetch CATI stats
-      const { startDate, endDate } = calculateDatesFromRange(
-        catiFilters.dateRange, 
-        catiFilters.startDate, 
-        catiFilters.endDate
-      );
-      const catiStatsResponse = await surveyAPI.getCatiStats(
-        surveyId, 
-        startDate || null, 
-        endDate || null,
-        catiFilters.interviewerIds || [],
-        catiFilters.interviewerMode || 'include',
-        catiFilters.ac || ''
-      );
-      if (catiStatsResponse && catiStatsResponse.success) {
-        setCatiStats(catiStatsResponse.data);
-      }
+      // Fetch CATI stats from backend API (with current filters)
+      await fetchCatiStats(catiFilters);
     } catch (error) {
       console.error('Error fetching survey data:', error);
       showError('Failed to load caller performance data', error.message);
@@ -403,13 +423,14 @@ const CallerPerformancePage = () => {
     fetchAssignedInterviewers();
   }, [isProjectManagerRoute, user]);
 
+  // Fetch survey and responses data on initial load
   useEffect(() => {
     if (surveyId) {
       fetchSurveyData();
     }
   }, [surveyId]);
 
-  // Refetch CATI stats when CATI filters change
+  // Refetch CATI stats when CATI filters change (optimized - only stats, not full data)
   useEffect(() => {
     if (!survey || !surveyId) return;
     
@@ -420,30 +441,9 @@ const CallerPerformancePage = () => {
                         (surveyModes && Array.isArray(surveyModes) && surveyModes.includes('cati'));
     
     if (isCatiSurvey) {
-      const fetchCatiStats = async () => {
-        try {
-          const { startDate, endDate } = calculateDatesFromRange(
-            catiFilters.dateRange, 
-            catiFilters.startDate, 
-            catiFilters.endDate
-          );
-          const catiStatsResponse = await surveyAPI.getCatiStats(
-            surveyId, 
-            startDate || null, 
-            endDate || null,
-            catiFilters.interviewerIds || [],
-            catiFilters.interviewerMode || 'include',
-            catiFilters.ac || ''
-          );
-          if (catiStatsResponse && catiStatsResponse.success) {
-            setCatiStats(catiStatsResponse.data);
-          }
-        } catch (error) {
-          console.error('Error fetching CATI stats with filters:', error);
-        }
-      };
-      
-      fetchCatiStats();
+      // Only refetch CATI stats, not the full survey/responses data
+      // Responses are still needed for dropdowns, but stats come from backend API
+      fetchCatiStats(catiFilters);
     }
   }, [surveyId, survey, catiFilters.dateRange, catiFilters.startDate, catiFilters.endDate, catiFilters.interviewerIds, catiFilters.interviewerMode, catiFilters.ac]);
 

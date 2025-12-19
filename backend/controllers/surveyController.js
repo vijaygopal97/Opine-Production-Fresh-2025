@@ -2460,7 +2460,8 @@ exports.getCatiStats = async (req, res) => {
     
     let catiResponses = await SurveyResponse.find(catiResponsesQuery)
       .populate('interviewer', 'firstName lastName phone memberId')
-      .select('_id interviewer metadata callStatus responses totalTimeSpent status createdAt knownCallStatus');
+      .select('_id interviewer metadata callStatus responses totalTimeSpent status createdAt knownCallStatus qcBatch isSampleResponse')
+      .lean(); // Use lean() for better performance - returns plain JavaScript objects
     
     // Additional safety filter: For project managers, ensure we only include responses from assigned interviewers
     // This catches any edge cases where the query filter might not work correctly
@@ -2481,6 +2482,24 @@ exports.getCatiStats = async (req, res) => {
     }
     
     console.log(`🔍 getCatiStats - Found ${catiResponses.length} CATI responses (after project manager filtering)`);
+
+    // Apply AC filter after extraction (since AC might be in responses array)
+    // This ensures AC filter works correctly even when AC is stored in responses
+    if (ac && ac.trim()) {
+      const { getRespondentInfo } = require('../utils/respondentInfoUtils');
+      const originalCount = catiResponses.length;
+      catiResponses = catiResponses.filter(response => {
+        const respondentInfo = getRespondentInfo(response.responses || [], response, survey);
+        const responseAC = respondentInfo.ac;
+        if (!responseAC || responseAC === 'N/A' || responseAC.toLowerCase() !== ac.toLowerCase()) {
+          return false;
+        }
+        return true;
+      });
+      if (originalCount !== catiResponses.length) {
+        console.log(`🔍 getCatiStats - AC filter: ${originalCount} -> ${catiResponses.length} responses after AC extraction filtering`);
+      }
+    }
 
     // Get queue entries first to find all related call records
     const queueEntries = await CatiRespondentQueue.find({
@@ -2520,6 +2539,9 @@ exports.getCatiStats = async (req, res) => {
     if (projectManagerInterviewerIds.length > 0) {
       callRecordsQuery.createdBy = { $in: projectManagerInterviewerIds };
     }
+    
+    // Note: AC filter for call records is applied later after linking to responses
+    // because call records don't have AC information directly
     
     console.log(`🔍🔍🔍 getCatiStats - Querying CatiCall with survey: ${surveyObjectId}`);
     console.log(`🔍🔍🔍 getCatiStats - Call records query:`, JSON.stringify(callRecordsQuery, null, 2));
@@ -2709,7 +2731,8 @@ exports.getCatiStats = async (req, res) => {
     const queueEntriesWithDetails = await CatiRespondentQueue.find({
       survey: surveyObjectId
     })
-      .populate('assignedTo', 'firstName lastName email');
+      .populate('assignedTo', 'firstName lastName email')
+      .lean(); // Use lean() for better performance
 
     console.log(`🔍 getCatiStats - Found ${queueEntriesWithDetails.length} queue entries for survey ${id}`);
 
