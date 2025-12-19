@@ -30,7 +30,8 @@ import {
   FileText,
   Zap,
   TrendingUp,
-  Brain
+  Brain,
+  Phone
 } from 'lucide-react';
 import SurveyBuilder from './SurveyBuilder';
 import { surveyAPI } from '../../services/api';
@@ -190,6 +191,9 @@ const CompanySurveysManagement = () => {
     } else if (action === 'reports') {
       // Navigate to survey reports page
       navigate(`/company/surveys/${surveyId}/reports`);
+    } else if (action === 'caller-performance') {
+      // Navigate to caller performance page
+      navigate(`/company/surveys/${surveyId}/caller-performance`);
     } else if (action === 'qc-batches') {
       // Navigate to QC batches page
       navigate(`/company/surveys/${surveyId}/qc-batches`);
@@ -623,6 +627,14 @@ const CompanySurveysManagement = () => {
                   >
                     <BarChart3 className="w-4 h-4" />
                     <span>Reports</span>
+                  </button>
+                  <button
+                    onClick={() => handleSurveyAction(survey._id || survey.id, 'caller-performance')}
+                    className="flex items-center space-x-1 px-3 py-1.5 bg-teal-100 text-teal-700 rounded-lg hover:bg-teal-200 transition-colors text-sm font-medium"
+                    title="View Caller Performance"
+                  >
+                    <Phone className="w-4 h-4" />
+                    <span>Caller Performance</span>
                   </button>
                   <button
                     onClick={() => handleSurveyAction(survey._id || survey.id, 'qc-batches')}

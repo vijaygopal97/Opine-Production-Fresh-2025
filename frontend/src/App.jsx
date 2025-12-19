@@ -20,6 +20,7 @@ import DataAnalystDashboard from './components/dashboard/DataAnalystDashboard';
 import ComingSoon from './components/dashboard/ComingSoon';
 import ViewResponsesPage from './pages/ViewResponsesPage';
 import SurveyReportsPage from './pages/SurveyReportsPage';
+import CallerPerformancePage from './pages/CallerPerformancePage';
 import QCPerformancePage from './pages/QCPerformancePage';
 import QCBatchesPage from './pages/QCBatchesPage';
 import FindingsDashboard from './pages/FindingsDashboard';
@@ -108,6 +109,9 @@ function App() {
             {/* Survey Reports Page */}
             <Route path="/company/surveys/:surveyId/reports" element={<SurveyReportsPage />} />
             
+            {/* Caller Performance Page */}
+            <Route path="/company/surveys/:surveyId/caller-performance" element={<CallerPerformancePage />} />
+            
             {/* QC Performance Page */}
             <Route path="/company/surveys/:surveyId/qc-performance" element={<QCPerformancePage />} />
             
@@ -120,6 +124,7 @@ function App() {
             {/* Project Manager routes */}
             <Route path="/project-manager/survey-reports" element={<AdminDashboard />} />
             <Route path="/project-manager/surveys/:surveyId/reports" element={<AdminDashboard />} />
+            <Route path="/project-manager/surveys/:surveyId/caller-performance" element={<CallerPerformancePage />} />
             <Route path="/project-manager/surveys/:surveyId/responses" element={<ViewResponsesPage />} />
             <Route path="/project-manager/surveys/:surveyId/qc-performance" element={<AdminDashboard />} />
             

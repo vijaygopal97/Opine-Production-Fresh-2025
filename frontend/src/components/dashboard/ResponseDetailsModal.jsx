@@ -4,7 +4,7 @@ import { surveyResponseAPI, catiAPI } from '../../services/api';
 import api from '../../services/api';
 import { useToast } from '../../contexts/ToastContext';
 import assemblyConstituencies from '../../data/assemblyConstituencies.json';
-import { renderWithTranslationProfessional, parseTranslation, getMainText } from '../../utils/translations';
+import { renderWithTranslationProfessional, parseTranslation, getMainText, getLanguageText, parseMultiTranslation } from '../../utils/translations';
 import { findGenderResponse, normalizeGenderResponse } from '../../utils/genderUtils';
 
 const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false, onStatusChange, hideSurveyResponses = false, hideStatusChange = false }) => {
@@ -16,11 +16,14 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false, 
   const [catiCallDetails, setCatiCallDetails] = useState(null);
   const [catiRecordingBlobUrl, setCatiRecordingBlobUrl] = useState(null);
   const [currentResponse, setCurrentResponse] = useState(response);
+  const [selectedLanguageIndex, setSelectedLanguageIndex] = useState(0); // Language index for responses display
   const { showSuccess, showError } = useToast();
 
   // Update currentResponse when response prop changes
   useEffect(() => {
     setCurrentResponse(response);
+    // Reset language index when response changes
+    setSelectedLanguageIndex(0);
   }, [response]);
 
   // Fetch CATI call details when modal opens for CATI responses
@@ -567,7 +570,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false, 
   };
 
   // Helper function to format response display text (shows only main text, no translation)
-  const formatResponseDisplay = (response, surveyQuestion) => {
+  const formatResponseDisplay = (response, surveyQuestion, languageIndex = 0) => {
     if (!response || response === null || response === undefined) {
       return 'No response';
     }
@@ -591,13 +594,13 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false, 
             opt.code?.toString() === value?.toString()
           );
           if (option) {
-            // Return only main text (without translation)
-            return getMainText(option.text || option.value || value);
+            // Use getLanguageText to get the selected language
+            return getLanguageText(option.text || option.value || value, languageIndex);
           }
         }
-        // If value has translation format, extract main text
-        if (typeof value === 'string' && value.includes('_{')) {
-          return value.split('_{')[0];
+        // If value has translation format, use getLanguageText
+        if (typeof value === 'string') {
+          return getLanguageText(value, languageIndex);
         }
         return value;
       });
@@ -619,8 +622,9 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false, 
         const min = scale.min || 1;
         const label = labels[response - min];
         if (label) {
-          // Return only main text (without translation)
-          return `${response} (${getMainText(label)})`;
+          // Use getLanguageText to get the selected language
+          const labelText = getLanguageText(label, languageIndex);
+          return `${response} (${labelText})`;
         }
         return response.toString();
       }
@@ -634,19 +638,19 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false, 
           opt.code?.toString() === response?.toString()
         );
         if (option) {
-          // Return only main text (without translation)
-          return getMainText(option.text || option.value || response.toString());
+          // Use getLanguageText to get the selected language
+          return getLanguageText(option.text || option.value || response.toString(), languageIndex);
         }
-        // If response has translation format, extract main text
-        if (typeof response === 'string' && response.includes('_{')) {
-          return response.split('_{')[0];
+        // If response has translation format, use getLanguageText
+        if (typeof response === 'string') {
+          return getLanguageText(response, languageIndex);
         }
         return response.toString();
       }
       
-      // If response has translation format, extract main text
-      if (typeof response === 'string' && response.includes('_{')) {
-        return response.split('_{')[0];
+      // If response has translation format, use getLanguageText
+      if (typeof response === 'string') {
+        return getLanguageText(response, languageIndex);
       }
       
       return response.toString();
@@ -1553,7 +1557,79 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false, 
             {/* Survey Responses - Hide for project managers */}
             {!hideSurveyResponses && (
             <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Survey Responses</h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Survey Responses</h3>
+                {(() => {
+                  // Detect available languages from all responses
+                  const languageCounts = new Set();
+                  if (currentResponse?.responses) {
+                    currentResponse.responses.forEach(resp => {
+                      if (resp.questionText) {
+                        try {
+                          const languages = parseMultiTranslation(resp.questionText);
+                          if (languages && Array.isArray(languages)) {
+                            languages.forEach((_, index) => languageCounts.add(index));
+                          }
+                        } catch (e) {
+                          // Ignore parsing errors
+                        }
+                      }
+                      if (resp.questionDescription) {
+                        try {
+                          const languages = parseMultiTranslation(resp.questionDescription);
+                          if (languages && Array.isArray(languages)) {
+                            languages.forEach((_, index) => languageCounts.add(index));
+                          }
+                        } catch (e) {
+                          // Ignore parsing errors
+                        }
+                      }
+                      // Also check survey question options
+                      const actualSurvey = survey?.survey || survey;
+                      if (actualSurvey) {
+                        const surveyQuestion = findQuestionByText(resp.questionText, actualSurvey);
+                        if (surveyQuestion?.options) {
+                          surveyQuestion.options.forEach(opt => {
+                            if (opt.text) {
+                              try {
+                                const languages = parseMultiTranslation(String(opt.text));
+                                if (languages && Array.isArray(languages)) {
+                                  languages.forEach((_, index) => languageCounts.add(index));
+                                }
+                              } catch (e) {
+                                // Ignore parsing errors
+                              }
+                            }
+                          });
+                        }
+                      }
+                    });
+                  }
+                  const languageCountsArray = Array.from(languageCounts);
+                  const maxLanguages = languageCountsArray.length > 0 
+                    ? Math.max(...languageCountsArray, 0) + 1 
+                    : 1;
+                  const availableLanguages = Array.from({ length: maxLanguages }, (_, i) => `Language ${i + 1}`);
+                  
+                  return availableLanguages.length > 1 ? (
+                    <div className="flex items-center space-x-2 px-3 py-1.5 bg-gray-100 rounded-lg border border-gray-300">
+                      <span className="text-sm text-gray-700">🌐</span>
+                      <select
+                        value={selectedLanguageIndex}
+                        onChange={(e) => setSelectedLanguageIndex(parseInt(e.target.value, 10))}
+                        className="text-sm border-none bg-transparent text-gray-700 focus:outline-none focus:ring-0 cursor-pointer font-medium"
+                        style={{ minWidth: '120px' }}
+                      >
+                        {availableLanguages.map((label, index) => (
+                          <option key={index} value={index}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null;
+                })()}
+              </div>
               <div className="space-y-4">
                 {(() => {
                   const { regularQuestions } = separateQuestions(currentResponse.responses, survey);
@@ -1566,19 +1642,22 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false, 
                       const hasConditions = surveyQuestion?.conditions && surveyQuestion.conditions.length > 0;
                       const conditionsMet = hasConditions ? areConditionsMet(surveyQuestion.conditions, currentResponse.responses, actualSurvey) : true;
                       
+                      // Get display text for question and description using selected language
+                      const questionTextDisplay = getLanguageText(responseItem.questionText || 'Question', selectedLanguageIndex);
+                      const questionDescriptionDisplay = responseItem.questionDescription 
+                        ? getLanguageText(responseItem.questionDescription, selectedLanguageIndex)
+                        : null;
+                      
                       return (
                         <div key={index} className="border border-gray-200 rounded-lg p-4">
                           <div className="flex items-start justify-between mb-2">
                             <div className="flex-1">
                               <h4 className="font-medium text-gray-900 mb-1">
-                                Q{index + 1}: {renderWithTranslationProfessional(responseItem.questionText || 'Question', {
-                                  mainClass: 'text-base font-medium text-gray-900',
-                                  translationClass: 'text-sm text-gray-500 italic mt-1'
-                                })}
+                                Q{index + 1}: {questionTextDisplay}
                               </h4>
-                            {responseItem.questionDescription && (
+                            {questionDescriptionDisplay && (
                               <p className="text-sm text-gray-600 mb-2">
-                                {responseItem.questionDescription}
+                                {questionDescriptionDisplay}
                               </p>
                             )}
                           </div>
@@ -1637,7 +1716,7 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false, 
                             {responseItem.isSkipped ? (
                               <span className="text-yellow-600 italic">Question was skipped</span>
                             ) : (
-                              formatResponseDisplay(responseItem.response, surveyQuestion)
+                              formatResponseDisplay(responseItem.response, surveyQuestion, selectedLanguageIndex)
                             )}
                           </p>
                           {responseItem.responseTime > 0 && (
@@ -1650,15 +1729,13 @@ const ResponseDetailsModal = ({ response, survey, onClose, hideActions = false, 
                     );
                   } catch (error) {
                     console.error('Error rendering response item:', error, responseItem);
+                    const errorQuestionText = getLanguageText(responseItem.questionText || 'Question (Error)', selectedLanguageIndex);
                     return (
                       <div key={index} className="border border-red-200 rounded-lg p-4 bg-red-50">
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex-1">
                             <h4 className="font-medium text-red-900 mb-1">
-                              {renderWithTranslationProfessional(responseItem.questionText || 'Question (Error)', {
-                                mainClass: 'text-base font-medium text-red-900',
-                                translationClass: 'text-sm text-red-500 italic mt-1'
-                              })}
+                              {errorQuestionText}
                             </h4>
                           </div>
                           <div className="flex items-center space-x-2 ml-4">

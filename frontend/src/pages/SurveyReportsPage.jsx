@@ -80,32 +80,10 @@ const SurveyReportsPage = () => {
   const [showACModal, setShowACModal] = useState(false);
   const [showInterviewerModal, setShowInterviewerModal] = useState(false);
   const [showDailyTrendsModal, setShowDailyTrendsModal] = useState(false);
-  const [catiStats, setCatiStats] = useState(null);
   const [acPerformanceStats, setAcPerformanceStats] = useState(null);
   const [interviewerPerformanceStats, setInterviewerPerformanceStats] = useState(null);
   const [acPCMappingCache, setAcPCMappingCache] = useState(new Map()); // Cache for AC -> PC data
   const { showError } = useToast();
-
-  // CATI Performance filter states (separate from main filters)
-  const [catiFilters, setCatiFilters] = useState({
-    dateRange: 'all', // 'today', 'week', 'month', 'all'
-    startDate: '',
-    endDate: '',
-    ac: '',
-    interviewerIds: [],
-    interviewerMode: 'include' // 'include' or 'exclude'
-  });
-  const [showCatiFilters, setShowCatiFilters] = useState(true);
-  
-  // CATI Interviewer filter states
-  const [catiInterviewerSearchTerm, setCatiInterviewerSearchTerm] = useState('');
-  const [showCatiInterviewerDropdown, setShowCatiInterviewerDropdown] = useState(false);
-  const catiInterviewerDropdownRef = useRef(null);
-  
-  // CATI AC filter states
-  const [catiAcSearchTerm, setCatiAcSearchTerm] = useState('');
-  const [showCatiACDropdown, setShowCatiACDropdown] = useState(false);
-  const catiAcDropdownRef = useRef(null);
 
   // Filter states
   const [filters, setFilters] = useState({
@@ -456,65 +434,6 @@ const SurveyReportsPage = () => {
         }
         setAnalyticsFromBackend(null); // Ensure old analytics path is taken by useMemo
 
-        // Fetch CATI stats if survey has CATI mode
-        // Check both nested and direct structure
-        const surveyMode = surveyData?.mode || surveyResponse.data?.mode;
-        const surveyModes = surveyData?.modes || surveyResponse.data?.modes;
-        
-        
-        const isCatiSurvey = surveyMode === 'cati' || 
-                            surveyMode === 'multi_mode' ||
-                            (surveyModes && Array.isArray(surveyModes) && surveyModes.includes('cati')) ||
-                            hasCatiResponses; // Fallback: if there are CATI responses, fetch stats
-        
-        console.log('🔍🔍🔍 Survey mode check:', {
-          surveyData: surveyData,
-          mode: surveyMode,
-          modes: surveyModes,
-          hasCatiResponses: hasCatiResponses,
-          isCatiSurvey: isCatiSurvey,
-          surveyId: surveyId
-        });
-        
-        if (isCatiSurvey) {
-          try {
-            console.log('🔍🔍🔍 Fetching CATI stats for survey:', surveyId);
-            // Calculate dates from main filters (in case catiFilters haven't synced yet)
-            const { startDate: calculatedStartDate, endDate: calculatedEndDate } = calculateDatesFromRange(
-              filters.dateRange, 
-              filters.startDate, 
-              filters.endDate
-            );
-            // Use catiFilters if available, otherwise use calculated dates from main filters
-            const catiStartDate = catiFilters.startDate || calculatedStartDate || null;
-            const catiEndDate = catiFilters.endDate || calculatedEndDate || null;
-            const catiStatsResponse = await surveyAPI.getCatiStats(
-              surveyId, 
-              catiStartDate, 
-              catiEndDate,
-              catiFilters.interviewerIds || [],
-              catiFilters.interviewerMode || 'include',
-              catiFilters.ac || ''
-            );
-            console.log('🔍🔍🔍 CATI stats response:', catiStatsResponse);
-            console.log('🔍🔍🔍 CATI stats response success:', catiStatsResponse?.success);
-            console.log('🔍🔍🔍 CATI stats response data:', catiStatsResponse?.data);
-            if (catiStatsResponse && catiStatsResponse.success) {
-              console.log('🔍🔍🔍 Setting CATI stats:', catiStatsResponse.data);
-              console.log('🔍🔍🔍 Calls made in response:', catiStatsResponse.data?.callerPerformance?.callsMade);
-              setCatiStats(catiStatsResponse.data);
-            } else {
-              console.warn('⚠️⚠️⚠️ CATI stats response not successful:', catiStatsResponse);
-            }
-          } catch (catiError) {
-            console.error('❌❌❌ Error fetching CATI stats:', catiError);
-            console.error('❌❌❌ Error details:', catiError.response?.data || catiError.message);
-            console.error('❌❌❌ Error status:', catiError.response?.status);
-            // Don't show error, just log it - CATI stats are optional
-          }
-        } else {
-          console.log('⚠️⚠️⚠️ Survey is not CATI, skipping CATI stats fetch');
-        }
 
         // Fetch AC Performance Stats
         try {
@@ -671,47 +590,6 @@ const SurveyReportsPage = () => {
     }
   }, [surveyId, filters.status, filters.dateRange, filters.startDate, filters.endDate, filters.interviewMode, filters.ac, filters.district, filters.lokSabha, filters.interviewerIds, filters.interviewerMode]);
 
-  // Refetch CATI stats when CATI filters change
-  useEffect(() => {
-    if (!survey || !surveyId) return;
-    
-    const surveyMode = survey?.mode;
-    const surveyModes = survey?.modes;
-    const isCatiSurvey = surveyMode === 'cati' || 
-                        surveyMode === 'multi_mode' ||
-                        (surveyModes && Array.isArray(surveyModes) && surveyModes.includes('cati'));
-    
-    if (isCatiSurvey) {
-      const fetchCatiStats = async () => {
-        try {
-          // Calculate dates from main filters (in case catiFilters haven't synced yet)
-          const { startDate: calculatedStartDate, endDate: calculatedEndDate } = calculateDatesFromRange(
-            filters.dateRange, 
-            filters.startDate, 
-            filters.endDate
-          );
-          // Use catiFilters if available, otherwise use calculated dates from main filters
-          const catiStartDate = catiFilters.startDate || calculatedStartDate || null;
-          const catiEndDate = catiFilters.endDate || calculatedEndDate || null;
-          const catiStatsResponse = await surveyAPI.getCatiStats(
-            surveyId, 
-            catiStartDate, 
-            catiEndDate,
-            catiFilters.interviewerIds || [],
-            catiFilters.interviewerMode || 'include',
-            catiFilters.ac || ''
-          );
-          if (catiStatsResponse && catiStatsResponse.success) {
-            setCatiStats(catiStatsResponse.data);
-          }
-        } catch (error) {
-          console.error('Error fetching CATI stats with filters:', error);
-        }
-      };
-      
-      fetchCatiStats();
-    }
-  }, [surveyId, survey, catiFilters.startDate, catiFilters.endDate, catiFilters.interviewerIds, catiFilters.interviewerMode, catiFilters.ac]);
 
   // Helper function to calculate dates from dateRange
   // IMPORTANT: Calculate dates in LOCAL timezone (IST for India)
@@ -780,20 +658,6 @@ const SurveyReportsPage = () => {
     return { startDate, endDate };
   };
 
-  // Sync CATI filters with main filters when main date filter changes
-  useEffect(() => {
-    const { startDate, endDate } = calculateDatesFromRange(filters.dateRange, filters.startDate, filters.endDate);
-    
-    // Only update if dates actually changed to avoid infinite loops
-    if (catiFilters.startDate !== startDate || catiFilters.endDate !== endDate) {
-      setCatiFilters(prev => ({
-        ...prev,
-        startDate,
-        endDate,
-        dateRange: filters.dateRange === 'custom' ? 'custom' : filters.dateRange
-      }));
-    }
-  }, [filters.dateRange, filters.startDate, filters.endDate]);
 
   // Helper functions
   const getStateFromGPS = (location) => {
@@ -2287,32 +2151,6 @@ const SurveyReportsPage = () => {
     const capiApproved = capiResponsesForStats.filter(r => r.status?.toLowerCase() === 'approved').length;
     const capiRejected = capiResponsesForStats.filter(r => r.status?.toLowerCase() === 'rejected').length;
 
-    // CATI Performance stats - use real data if available
-    console.log('🔍🔍🔍 Analytics calculation - catiStats:', catiStats);
-    console.log('🔍🔍🔍 Analytics calculation - catiStats?.callerPerformance:', catiStats?.callerPerformance);
-    const catiPerformanceData = catiStats || {
-      callerPerformance: {
-        callsMade: 0,
-        callsAttended: 0,
-        callsConnected: 0,
-        totalTalkDuration: '0:00:00'
-      },
-      numberStats: {
-        callNotReceived: 0,
-        ringing: 0,
-        notRinging: 0
-      },
-      callNotRingStatus: {
-        switchOff: 0,
-        numberNotReachable: 0,
-        numberDoesNotExist: 0
-      },
-      callRingStatus: {
-        callsConnected: 0,
-        callsNotConnected: 0
-      }
-    };
-
     return {
       totalResponses,
       capiResponses,
@@ -2330,10 +2168,9 @@ const SurveyReportsPage = () => {
         approved: capiApproved,
         rejected: capiRejected,
         total: capiResponsesForStats.length
-      },
-      catiPerformance: catiPerformanceData
+      }
     };
-  }, [analyticsFromBackend, filteredResponses, survey, catiStats, isProjectManagerRoute, assignedInterviewers]);
+  }, [analyticsFromBackend, filteredResponses, survey, isProjectManagerRoute, assignedInterviewers]);
 
   // Fetch PC data for ACs that don't have it cached (after analytics is defined)
   // Use AC code for matching - more reliable than AC name
@@ -2583,45 +2420,6 @@ const SurveyReportsPage = () => {
     });
   };
 
-  // CATI Filter handlers
-  const handleCatiFilterChange = (key, value) => {
-    setCatiFilters(prev => ({
-      ...prev,
-      [key]: value
-    }));
-  };
-
-  // Handle CATI interviewer selection
-  const handleCatiInterviewerToggle = (interviewerId) => {
-    setCatiFilters(prev => {
-      const currentIds = prev.interviewerIds || [];
-      const isSelected = currentIds.includes(interviewerId);
-      
-      return {
-        ...prev,
-        interviewerIds: isSelected
-          ? currentIds.filter(id => id !== interviewerId)
-          : [...currentIds, interviewerId]
-      };
-    });
-  };
-
-  // Handle CATI interviewer mode toggle (include/exclude)
-  const handleCatiInterviewerModeToggle = () => {
-    setCatiFilters(prev => ({
-      ...prev,
-      interviewerMode: prev.interviewerMode === 'include' ? 'exclude' : 'include'
-    }));
-  };
-
-  // Clear CATI interviewer filters
-  const clearCatiInterviewerFilters = () => {
-    setCatiFilters(prev => ({
-      ...prev,
-      interviewerIds: []
-    }));
-    setCatiInterviewerSearchTerm('');
-  };
 
   // Handle interviewer mode toggle (include/exclude)
   const handleInterviewerModeToggle = (mode) => {
@@ -2646,11 +2444,11 @@ const SurveyReportsPage = () => {
   const filteredInterviewers = useMemo(() => {
     if (!allInterviewerObjects || allInterviewerObjects.length === 0) return [];
     
-    if (!interviewerSearchTerm.trim() && !catiInterviewerSearchTerm.trim()) {
+    if (!interviewerSearchTerm.trim()) {
       return allInterviewerObjects;
     }
 
-    const searchLower = (interviewerSearchTerm || catiInterviewerSearchTerm).toLowerCase();
+    const searchLower = interviewerSearchTerm.toLowerCase();
     return allInterviewerObjects.filter(interviewer => {
       const name = `${interviewer.firstName || ''} ${interviewer.lastName || ''}`.toLowerCase();
       const nameMatch = name.includes(searchLower);
@@ -2660,7 +2458,7 @@ const SurveyReportsPage = () => {
       
       return nameMatch || emailMatch || phoneMatch || memberIDMatch;
     });
-  }, [allInterviewerObjects, interviewerSearchTerm, catiInterviewerSearchTerm]);
+  }, [allInterviewerObjects, interviewerSearchTerm]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -2670,12 +2468,6 @@ const SurveyReportsPage = () => {
       }
       if (acDropdownRef.current && !acDropdownRef.current.contains(event.target)) {
         setShowACDropdown(false);
-      }
-      if (catiInterviewerDropdownRef.current && !catiInterviewerDropdownRef.current.contains(event.target)) {
-        setShowCatiInterviewerDropdown(false);
-      }
-      if (catiAcDropdownRef.current && !catiAcDropdownRef.current.contains(event.target)) {
-        setShowCatiACDropdown(false);
       }
     };
 
@@ -3560,530 +3352,6 @@ const SurveyReportsPage = () => {
           </div>
         </div>
 
-        {/* CATI Performance Section - Show for multi-mode surveys or surveys with CATI responses */}
-        {(() => {
-          console.log('🔍 NEW CATI Debug - Survey object:', survey);
-          console.log('🔍 NEW CATI Debug - Survey mode:', survey?.mode);
-          console.log('🔍 NEW CATI Debug - Analytics capiResponses:', analytics.capiResponses);
-          console.log('🔍 NEW CATI Debug - Analytics catiResponses:', analytics.catiResponses);
-          
-          // Show CATI section if:
-          // 1. It's a multi-mode survey (has both CAPI and CATI responses)
-          // 2. It has any CATI responses
-          // 3. Survey mode is 'multi_mode' or 'cati'
-          const isMultiMode = analytics.capiResponses > 0 && analytics.catiResponses > 0;
-          const hasAnyCATI = analytics.catiResponses > 0;
-          const isSurveyMultiMode = survey?.mode === 'multi_mode' || survey?.mode === 'cati';
-          
-          console.log('🔍 NEW CATI Debug - isMultiMode:', isMultiMode);
-          console.log('🔍 NEW CATI Debug - hasAnyCATI:', hasAnyCATI);
-          console.log('🔍 NEW CATI Debug - isSurveyMultiMode:', isSurveyMultiMode);
-          console.log('🔍 NEW CATI Debug - Final result:', isMultiMode || hasAnyCATI || isSurveyMultiMode);
-          
-          // FORCE SHOW FOR DEBUGGING
-          console.log('🔍 NEW CATI Debug - FORCING SHOW FOR DEBUG');
-          return true;
-        })() && (
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 mb-8">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-semibold text-gray-900">CATI Performance</h3>
-              <button
-                onClick={() => setShowCatiFilters(!showCatiFilters)}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-              >
-                <Filter className="w-4 h-4" />
-                {showCatiFilters ? 'Hide Filters' : 'Show Filters'}
-              </button>
-            </div>
-
-            {/* CATI Performance Filters */}
-            {showCatiFilters && (
-              <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {/* Note: Date Range filter removed - using main date filter above */}
-                  
-                  {/* Assembly Constituency */}
-                  <div className="relative" ref={catiAcDropdownRef}>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Assembly Constituency</label>
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                      <input
-                        type="text"
-                        placeholder={catiFilters.ac ? catiFilters.ac : "Search AC..."}
-                        value={catiFilters.ac ? catiFilters.ac : catiAcSearchTerm}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          setCatiAcSearchTerm(value);
-                          setShowCatiACDropdown(true);
-                          handleCatiFilterChange('ac', '');
-                        }}
-                        onFocus={() => {
-                          setShowCatiACDropdown(true);
-                          if (catiFilters.ac) {
-                            setCatiAcSearchTerm(catiFilters.ac);
-                            handleCatiFilterChange('ac', '');
-                          }
-                        }}
-                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                      {catiFilters.ac && (
-                        <button
-                          onClick={() => {
-                            handleCatiFilterChange('ac', '');
-                            setCatiAcSearchTerm('');
-                            setShowCatiACDropdown(false);
-                          }}
-                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                    {showCatiACDropdown && (() => {
-                      const catiFilteredACs = !catiAcSearchTerm.trim() 
-                        ? allACObjects 
-                        : allACObjects.filter(ac => {
-                            const searchLower = catiAcSearchTerm.toLowerCase();
-                            const searchNumeric = catiAcSearchTerm.trim();
-                            const nameMatch = ac.name.toLowerCase().includes(searchLower);
-                            const numericCodeMatch = ac.numericCode && (
-                              ac.numericCode === searchNumeric || 
-                              ac.numericCode.includes(searchNumeric) ||
-                              searchNumeric.includes(ac.numericCode)
-                            );
-                            return nameMatch || numericCodeMatch;
-                          });
-                      return catiFilteredACs.length > 0 ? (
-                        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                          {catiFilteredACs.map(ac => {
-                          const isSelected = catiFilters.ac === ac.name;
-                          return (
-                            <div
-                              key={ac.name}
-                              onClick={() => {
-                                handleCatiFilterChange('ac', ac.name);
-                                setCatiAcSearchTerm('');
-                                setShowCatiACDropdown(false);
-                              }}
-                              className={`px-4 py-2 cursor-pointer hover:bg-gray-100 transition-colors ${
-                                isSelected ? 'bg-[#E6F0F8]' : ''
-                              }`}
-                            >
-                              <div className="flex items-center justify-between">
-                                <div className="flex-1">
-                                  <div className="font-medium text-gray-900">{ac.name}</div>
-                                  {ac.numericCode && (
-                                    <div className="text-xs text-gray-500">AC Code: {ac.numericCode}</div>
-                                  )}
-                                </div>
-                                {isSelected && (
-                                  <CheckCircle className="w-5 h-5 text-[#373177]" />
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                        </div>
-                      ) : null;
-                    })()}
-                    {showCatiACDropdown && catiAcSearchTerm && (() => {
-                      const catiFilteredACs = allACObjects.filter(ac => {
-                        const searchLower = catiAcSearchTerm.toLowerCase();
-                        const searchNumeric = catiAcSearchTerm.trim();
-                        const nameMatch = ac.name.toLowerCase().includes(searchLower);
-                        const numericCodeMatch = ac.numericCode && (
-                          ac.numericCode === searchNumeric || 
-                          ac.numericCode.includes(searchNumeric) ||
-                          searchNumeric.includes(ac.numericCode)
-                        );
-                        return nameMatch || numericCodeMatch;
-                      });
-                      return catiFilteredACs.length === 0 ? (
-                        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg p-4 text-center text-gray-500 text-sm">
-                          No ACs found matching "{catiAcSearchTerm}"
-                        </div>
-                      ) : null;
-                    })()}
-                  </div>
-                </div>
-
-                {/* CATI Interviewer Filter */}
-                <div className="mt-4 pt-4 border-t border-gray-200">
-                  <div className="relative" ref={catiInterviewerDropdownRef}>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      CATI Interviewers {catiFilters.interviewerIds?.length > 0 && `(${catiFilters.interviewerIds.length} selected)`}
-                    </label>
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="relative flex-1">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                        <input
-                          type="text"
-                          placeholder="Search by name, email, phone, or Member ID..."
-                          value={catiInterviewerSearchTerm}
-                          onChange={(e) => {
-                            setCatiInterviewerSearchTerm(e.target.value);
-                            setShowCatiInterviewerDropdown(true);
-                          }}
-                          onFocus={() => setShowCatiInterviewerDropdown(true)}
-                          className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
-                        {catiFilters.interviewerIds?.length > 0 && (
-                          <button
-                            onClick={clearCatiInterviewerFilters}
-                            className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                            title="Clear all"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={handleCatiInterviewerModeToggle}
-                          className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
-                            catiFilters.interviewerMode === 'include'
-                              ? 'bg-[#E6F0F8]0 text-white'
-                              : 'bg-red-500 text-white'
-                          }`}
-                        >
-                          {catiFilters.interviewerMode === 'include' ? 'Include' : 'Exclude'}
-                        </button>
-                      </div>
-                    </div>
-                    {showCatiInterviewerDropdown && filteredInterviewers.length > 0 && (
-                      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                        {filteredInterviewers.filter(interviewer => {
-                          if (!catiInterviewerSearchTerm.trim()) return true;
-                          const searchLower = catiInterviewerSearchTerm.toLowerCase();
-                          const name = `${interviewer.firstName || ''} ${interviewer.lastName || ''}`.toLowerCase();
-                          const email = (interviewer.email || '').toLowerCase();
-                          const phone = (interviewer.phone || '').toLowerCase();
-                          const memberID = (interviewer.memberID || '').toLowerCase();
-                          return name.includes(searchLower) || email.includes(searchLower) || phone.includes(searchLower) || memberID.includes(searchLower);
-                        }).map(interviewer => {
-                          const interviewerId = interviewer._id?.toString() || interviewer.id?.toString();
-                          const isSelected = catiFilters.interviewerIds?.includes(interviewerId);
-                          return (
-                            <div
-                              key={interviewerId}
-                              onClick={() => handleCatiInterviewerToggle(interviewerId)}
-                              className={`px-4 py-2 cursor-pointer hover:bg-gray-100 transition-colors ${
-                                isSelected ? 'bg-[#E6F0F8]' : ''
-                              }`}
-                            >
-                              <div className="flex items-center justify-between">
-                                <div className="flex-1">
-                                  <div className="font-medium text-gray-900">
-                                    {interviewer.firstName} {interviewer.lastName}
-                                  </div>
-                                  <div className="text-xs text-gray-500">
-                                    {interviewer.email && <span>{interviewer.email}</span>}
-                                    {interviewer.phone && <span className="ml-2">• {interviewer.phone}</span>}
-                                    {interviewer.memberID && <span>• Member ID: {interviewer.memberID}</span>}
-                                  </div>
-                                </div>
-                                {isSelected && (
-                                  <CheckCircle className="w-5 h-5 text-[#373177]" />
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-          
-          {/* Caller Performance */}
-          <div className="mb-8">
-            <h4 className="text-md font-semibold text-gray-800 mb-4">Caller Performance</h4>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="text-center p-3 bg-[#E6F0F8] rounded-lg border border-blue-200">
-                <div className="text-2xl font-bold text-[#373177] mb-1">{analytics.catiPerformance.callerPerformance.callsMade || 0}</div>
-                <div className="text-xs font-medium text-blue-800">Total Number of Dials</div>
-              </div>
-              <div className="text-center p-3 bg-green-50 rounded-lg border border-green-200">
-                <div className="text-2xl font-bold text-green-600 mb-1">{analytics.catiPerformance.callerPerformance.callsAttended || 0}</div>
-                <div className="text-xs font-medium text-green-800">Interviewer Picked up</div>
-              </div>
-              <div className="text-center p-3 bg-orange-50 rounded-lg border border-orange-200">
-                <div className="text-2xl font-bold text-orange-600 mb-1">{analytics.catiPerformance.callerPerformance.callsConnected || 0}</div>
-                <div className="text-xs font-medium text-orange-800">Respondent Picked Up</div>
-              </div>
-              <div className="text-center p-3 bg-indigo-50 rounded-lg border border-indigo-200">
-                <div className="text-2xl font-bold text-indigo-600 mb-1">{analytics.catiPerformance.callerPerformance.totalTalkDuration || '0:00:00'}</div>
-                <div className="text-xs font-medium text-indigo-800">Talk Duration</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Number Stats */}
-          <div className="mb-8">
-            <h4 className="text-md font-semibold text-gray-800 mb-4">Number Stats</h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="text-center p-3 bg-gray-50 rounded-lg border border-gray-200">
-                <div className="text-2xl font-bold text-gray-600 mb-1">{analytics.catiPerformance.numberStats.callNotReceived}</div>
-                <div className="text-xs font-medium text-gray-800">Call Not Received to Telecaller</div>
-              </div>
-              <div className="text-center p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                <div className="text-2xl font-bold text-yellow-600 mb-1">{analytics.catiPerformance.numberStats.ringing}</div>
-                <div className="text-xs font-medium text-yellow-800">Respondent Ph. Ringing</div>
-              </div>
-              <div className="text-center p-3 bg-red-50 rounded-lg border border-red-200">
-                <div className="text-2xl font-bold text-red-600 mb-1">{analytics.catiPerformance.numberStats.notRinging}</div>
-                <div className="text-xs font-medium text-red-800">Respondent Ph. Not Ringing</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Call Not Ring Status */}
-          <div className="mb-8">
-            <h4 className="text-md font-semibold text-gray-800 mb-4">Call Not Ring Status</h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="text-center p-3 bg-gray-50 rounded-lg border border-gray-200">
-                <div className="text-2xl font-bold text-gray-600 mb-1">{analytics.catiPerformance.callNotRingStatus.switchOff}</div>
-                <div className="text-xs font-medium text-gray-800">Switch Off</div>
-              </div>
-              <div className="text-center p-3 bg-red-50 rounded-lg border border-red-200">
-                <div className="text-2xl font-bold text-red-600 mb-1">{analytics.catiPerformance.callNotRingStatus.numberNotReachable}</div>
-                <div className="text-xs font-medium text-red-800">Number Not Reachable</div>
-              </div>
-              <div className="text-center p-3 bg-orange-50 rounded-lg border border-orange-200">
-                <div className="text-2xl font-bold text-orange-600 mb-1">{analytics.catiPerformance.callNotRingStatus.numberDoesNotExist}</div>
-                <div className="text-xs font-medium text-orange-800">Number Does Not Exist</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Call Ring Status */}
-          <div className="mb-8">
-            <h4 className="text-md font-semibold text-gray-800 mb-4">Call Ring Status</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="text-center p-3 bg-green-50 rounded-lg border border-green-200">
-                <div className="text-2xl font-bold text-green-600 mb-1">{analytics.catiPerformance.callRingStatus.callsConnected}</div>
-                <div className="text-xs font-medium text-green-800">Respondent Picked Up</div>
-              </div>
-              <div className="text-center p-3 bg-red-50 rounded-lg border border-red-200">
-                <div className="text-2xl font-bold text-red-600 mb-1">{analytics.catiPerformance.callRingStatus.callsNotConnected}</div>
-                <div className="text-xs font-medium text-red-800">Calls Not Connected</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Interviewer Performance Table */}
-          {catiStats?.interviewerStats && catiStats.interviewerStats.length > 0 && (
-            <div className="mt-8">
-              <div className="flex justify-between items-center mb-4">
-                <h4 className="text-md font-semibold text-gray-800">Interviewer Performance</h4>
-                <button
-                  onClick={() => {
-                    if (!catiStats?.interviewerStats || catiStats.interviewerStats.length === 0) {
-                      showError('No data to export');
-                      return;
-                    }
-                    
-                    const csvData = catiStats.interviewerStats.map(stat => ({
-                      'S.No': stat.sNo || '',
-                      'Interviewer ID': stat.memberID || 'N/A',
-                      'Caller Name': stat.interviewerName || 'N/A',
-                      'Caller Mobile No.': stat.interviewerPhone || 'N/A',
-                      'Number of Dials': stat.numberOfDials || 0,
-                      'Calls Connected': stat.callsConnected || 0,
-                      'Incomplete': stat.incomplete || 0,
-                      'Completed': stat.completed || 0,
-                      'Approved': stat.approved || 0,
-                      'Under QC Queue': stat.underQCQueue || 0,
-                      'Processing in Batch': stat.processingInBatch || 0,
-                      'Rejected': stat.rejected || 0,
-                      'Incomplete': stat.incomplete || 0,
-                      'Form Duration': stat.formDuration || '0:00:00',
-                      'Call Not Received to Telecaller': stat.callNotReceivedToTelecaller || 0,
-                      'Interviewer Picked up': stat.ringing || 0,
-                      'Not Ringing': stat.notRinging || 0,
-                      'Switch Off': stat.switchOff || 0,
-                      'Number Not Reachable': stat.numberNotReachable || 0,
-                      'Number Does Not Exist': stat.numberDoesNotExist || 0,
-                      'No Response by Telecaller': stat.noResponseByTelecaller || 0
-                    }));
-                    
-                    const csvContent = [Object.keys(csvData[0]), ...csvData.map(row => Object.values(row))]
-                      .map(row => row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(','))
-                      .join('\n');
-                    
-                    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                    const url = window.URL.createObjectURL(blob);
-                    const link = document.createElement('a');
-                    link.href = url;
-                    link.download = `interviewer_performance_cati_${survey?.surveyName?.replace(/[^a-z0-9]/gi, '_') || 'survey'}_${new Date().toISOString().split('T')[0]}.csv`;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    window.URL.revokeObjectURL(url);
-                  }}
-                  className="flex items-center gap-2 px-4 py-2 bg-[#001D48] text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-                            >
-                  <Download className="w-4 h-4" />
-                  <span>Export as CSV</span>
-                            </button>
-                        </div>
-              <div className="bg-white border border-gray-200 rounded-lg overflow-hidden overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">S.No</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Interviewer ID</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Caller Name</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Caller Mobile No.</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Number of Dials</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Calls Connected</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Incomplete</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Completed</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Approved</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Under QC Queue</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Processing in Batch</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Rejected</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Form Duration</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Call Not Received to Telecaller</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Interviewer Picked up</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Not Ringing</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Switch Off</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Number Not Reachable</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Number Does Not Exist</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">No Response by Telecaller</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                    {(() => {
-                      // Calculate totals for all columns
-                      const totals = catiStats.interviewerStats.reduce((acc, stat) => {
-                        acc.numberOfDials += stat.numberOfDials || 0;
-                        acc.callsConnected += stat.callsConnected || 0;
-                        acc.completed += stat.completed || 0;
-                        acc.approved += stat.approved || 0;
-                        acc.underQCQueue += stat.underQCQueue || 0;
-                        acc.processingInBatch += stat.processingInBatch || 0;
-                        acc.rejected += stat.rejected || 0;
-                        acc.incomplete += stat.incomplete || 0;
-                        acc.callNotReceivedToTelecaller += stat.callNotReceivedToTelecaller || 0;
-                        acc.ringing += stat.ringing || 0;
-                        acc.notRinging += stat.notRinging || 0;
-                        acc.switchOff += stat.switchOff || 0;
-                        acc.numberNotReachable += stat.numberNotReachable || 0;
-                        acc.numberDoesNotExist += stat.numberDoesNotExist || 0;
-                        acc.noResponseByTelecaller += stat.noResponseByTelecaller || 0;
-                        
-                        // Parse and sum form duration (format: "HH:MM:SS" or seconds as number)
-                        let durationSeconds = 0;
-                        if (stat.formDuration) {
-                          if (typeof stat.formDuration === 'number') {
-                            durationSeconds += stat.formDuration;
-                          } else if (typeof stat.formDuration === 'string') {
-                            const parts = stat.formDuration.split(':');
-                            if (parts.length === 3) {
-                              // Format: "HH:MM:SS"
-                              durationSeconds += parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseInt(parts[2]);
-                            } else if (parts.length === 2) {
-                              // Format: "MM:SS"
-                              durationSeconds += parseInt(parts[0]) * 60 + parseInt(parts[1]);
-                            } else {
-                              // Try parsing as seconds
-                              const parsed = parseInt(stat.formDuration);
-                              if (!isNaN(parsed)) durationSeconds += parsed;
-                            }
-                          }
-                        }
-                        acc.totalFormDurationSeconds += durationSeconds;
-                        
-                        return acc;
-                      }, {
-                        numberOfDials: 0,
-                        callsConnected: 0,
-                        completed: 0,
-                        approved: 0,
-                        underQCQueue: 0,
-                        processingInBatch: 0,
-                        rejected: 0,
-                        incomplete: 0,
-                        callNotReceivedToTelecaller: 0,
-                        ringing: 0,
-                        notRinging: 0,
-                        switchOff: 0,
-                        numberNotReachable: 0,
-                        numberDoesNotExist: 0,
-                        noResponseByTelecaller: 0,
-                        totalFormDurationSeconds: 0
-                      });
-                      
-                      // Format total form duration
-                      const formatDuration = (seconds) => {
-                        const hours = Math.floor(seconds / 3600);
-                        const minutes = Math.floor((seconds % 3600) / 60);
-                        const secs = seconds % 60;
-                        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-                      };
-                      
-                      return (
-                        <>
-                          {/* Total Row */}
-                          <tr className="bg-[#E6F0F8] border-b-2 border-[#373177] font-semibold">
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">Total</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">-</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">-</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">-</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.numberOfDials}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.callsConnected}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.incomplete}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.completed}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.approved}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.underQCQueue}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.processingInBatch}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.rejected}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{formatDuration(totals.totalFormDurationSeconds)}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.callNotReceivedToTelecaller}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.ringing}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.notRinging}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.switchOff}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.numberNotReachable}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.numberDoesNotExist}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.noResponseByTelecaller}</td>
-                          </tr>
-                          {/* Individual Interviewer Rows */}
-                          {catiStats.interviewerStats.map((stat, index) => (
-                            <tr key={stat.interviewerId || index} className="hover:bg-gray-50">
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.sNo || index + 1}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.memberID || 'N/A'}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.interviewerName || 'N/A'}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.interviewerPhone || 'N/A'}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.numberOfDials || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.callsConnected || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.incomplete || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.completed || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.approved || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.underQCQueue || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.processingInBatch || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.rejected || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.formDuration || '0:00:00'}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.callNotReceivedToTelecaller || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.ringing || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.notRinging || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.switchOff || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.numberNotReachable || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.numberDoesNotExist || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.noResponseByTelecaller || 0}</td>
-                            </tr>
-                          ))}
-                        </>
-                      );
-                    })()}
-                      </tbody>
-                    </table>
-                  </div>
-            </div>
-          )}
-        </div>
-        )}
 
         {/* AC Performance Modal */}
         {showACModal && (() => {
