@@ -2076,6 +2076,62 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
     return visible;
   }, [allQuestions, responsesKey, selectedAC, hasByeElection, survey, acFromSessionData, isCatiMode]); // Removed evaluateConditions from dependencies to prevent infinite loops
 
+  // Calculate maximum possible questions from current state
+  // This considers all questions that could potentially be shown based on all possible conditional paths
+  const maxPossibleQuestions = useMemo(() => {
+    if (!allQuestions || allQuestions.length === 0) {
+      return 0;
+    }
+    
+    let maxCount = 0;
+    
+    for (const question of allQuestions) {
+      if (!question) continue;
+      
+      // Check if question has conditions
+      const hasConditions = question.conditions && question.conditions.length > 0;
+      
+      if (!hasConditions) {
+        // Questions without conditions are always shown
+        maxCount++;
+      } else {
+        // For questions with conditions, check if they could potentially be shown
+        // A question could be shown if:
+        // 1. Its conditions are already met (it's currently visible), OR
+        // 2. It has conditions that reference questions that haven't been answered yet (could potentially be met)
+        
+        // Check if conditions are already met (question is currently visible)
+        const isCurrentlyVisible = evaluateConditions(question);
+        
+        // Check if conditions reference questions that haven't been answered yet
+        const hasUnansweredDependencies = question.conditions.some((cond) => {
+          const response = responses[cond.questionId];
+          return response === undefined || response === null || response === '';
+        });
+        
+        // Special handling for Q7 in target survey - only count if AC has bye-election
+        const isTargetSurvey = survey && (survey._id === '68fd1915d41841da463f0d46' || survey.id === '68fd1915d41841da463f0d46');
+        let shouldCountQ7 = true;
+        if (isTargetSurvey) {
+          const questionNum = String(question.questionNumber || '').toLowerCase();
+          const isQ7 = questionNum === '7' || questionNum === '7.0';
+          
+          if (isQ7) {
+            const acToCheck = selectedAC || acFromSessionData;
+            shouldCountQ7 = acToCheck && hasByeElection;
+          }
+        }
+        
+        // Count if currently visible OR could potentially be shown (has unanswered dependencies)
+        if (shouldCountQ7 && (isCurrentlyVisible || hasUnansweredDependencies)) {
+          maxCount++;
+        }
+      }
+    }
+    
+    return maxCount;
+  }, [allQuestions, responses, evaluateConditions, selectedAC, hasByeElection, survey, acFromSessionData]);
+
   // EXACTLY like React Native - currentQuestionIndex is an index into visibleQuestions
   // Ensure index is within bounds (but don't update state to avoid loops)
   const safeQuestionIndex = useMemo(() => {
@@ -5143,12 +5199,12 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
 
                   <div className="flex items-center space-x-4">
                     <span className="text-sm text-gray-600 font-medium">
-                      Question {currentQuestionIndex + 1} of {visibleQuestions.length}
+                      Question {currentQuestionIndex + 1} of {maxPossibleQuestions || visibleQuestions.length}
                     </span>
                     <div className="w-32 bg-gray-200 rounded-full h-2">
                       <div 
                         className="bg-[#E6F0F8]0 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${((currentQuestionIndex + 1) / visibleQuestions.length) * 100}%` }}
+                        style={{ width: `${((currentQuestionIndex + 1) / (maxPossibleQuestions || visibleQuestions.length)) * 100}%` }}
                       ></div>
                     </div>
                   </div>
