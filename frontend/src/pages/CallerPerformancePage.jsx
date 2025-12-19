@@ -39,6 +39,10 @@ const CallerPerformancePage = () => {
   const [showCatiFilters, setShowCatiFilters] = useState(true);
   const { showError } = useToast();
 
+  // Pagination state for Interviewer Performance table
+  const [interviewerPage, setInterviewerPage] = useState(1);
+  const [interviewerPageSize] = useState(25); // Show 25 interviewers per page
+
   // CATI Performance filter states
   const [catiFilters, setCatiFilters] = useState({
     dateRange: 'all',
@@ -444,6 +448,8 @@ const CallerPerformancePage = () => {
       // Only refetch CATI stats, not the full survey/responses data
       // Responses are still needed for dropdowns, but stats come from backend API
       fetchCatiStats(catiFilters);
+      // Reset to first page when filters change
+      setInterviewerPage(1);
     }
   }, [surveyId, survey, catiFilters.dateRange, catiFilters.startDate, catiFilters.endDate, catiFilters.interviewerIds, catiFilters.interviewerMode, catiFilters.ac]);
 
@@ -1147,7 +1153,12 @@ const CallerPerformancePage = () => {
           {catiStats?.interviewerStats && catiStats.interviewerStats.length > 0 && (
             <div className="mt-8">
               <div className="flex justify-between items-center mb-4">
-                <h4 className="text-md font-semibold text-gray-800">Interviewer Performance</h4>
+                <div className="flex items-center gap-4">
+                  <h4 className="text-md font-semibold text-gray-800">Interviewer Performance</h4>
+                  <span className="text-sm text-gray-600">
+                    ({catiStats.interviewerStats.length} total interviewers)
+                  </span>
+                </div>
                 <button
                   onClick={() => {
                     if (!catiStats?.interviewerStats || catiStats.interviewerStats.length === 0) {
@@ -1226,7 +1237,8 @@ const CallerPerformancePage = () => {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {(() => {
-                      // Calculate totals for all columns
+                      // Calculate totals for ALL interviewers (not just paginated ones)
+                      // This ensures totals are accurate regardless of pagination
                       const totals = catiStats.interviewerStats.reduce((acc, stat) => {
                         acc.numberOfDials += stat.numberOfDials || 0;
                         acc.callsConnected += stat.callsConnected || 0;
@@ -1291,9 +1303,16 @@ const CallerPerformancePage = () => {
                         return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
                       };
                       
+                      // Calculate pagination
+                      const totalInterviewers = catiStats.interviewerStats.length;
+                      const totalPages = Math.ceil(totalInterviewers / interviewerPageSize);
+                      const startIndex = (interviewerPage - 1) * interviewerPageSize;
+                      const endIndex = startIndex + interviewerPageSize;
+                      const paginatedStats = catiStats.interviewerStats.slice(startIndex, endIndex);
+                      
                       return (
                         <>
-                          {/* Total Row */}
+                          {/* Total Row - Always show totals from ALL interviewers */}
                           <tr className="bg-[#E6F0F8] border-b-2 border-[#373177] font-semibold">
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">Total</td>
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">-</td>
@@ -1316,37 +1335,104 @@ const CallerPerformancePage = () => {
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.numberDoesNotExist}</td>
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-[#373177] font-bold">{totals.noResponseByTelecaller}</td>
                           </tr>
-                          {/* Individual Interviewer Rows */}
-                          {catiStats.interviewerStats.map((stat, index) => (
-                            <tr key={stat.interviewerId || index} className="hover:bg-gray-50">
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.sNo || index + 1}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.memberID || 'N/A'}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.interviewerName || 'N/A'}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.interviewerPhone || 'N/A'}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.numberOfDials || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.callsConnected || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.incomplete || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.completed || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.approved || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.underQCQueue || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.processingInBatch || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.rejected || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.formDuration || '0:00:00'}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.callNotReceivedToTelecaller || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.ringing || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.notRinging || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.switchOff || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.numberNotReachable || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.numberDoesNotExist || 0}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.noResponseByTelecaller || 0}</td>
-                            </tr>
-                          ))}
+                          {/* Individual Interviewer Rows - Paginated */}
+                          {paginatedStats.map((stat, index) => {
+                            // Calculate actual row number (accounting for pagination)
+                            const actualIndex = startIndex + index;
+                            return (
+                              <tr key={stat.interviewerId || actualIndex} className="hover:bg-gray-50">
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.sNo || actualIndex + 1}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.memberID || 'N/A'}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.interviewerName || 'N/A'}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.interviewerPhone || 'N/A'}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.numberOfDials || 0}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.callsConnected || 0}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.incomplete || 0}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.completed || 0}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.approved || 0}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.underQCQueue || 0}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.processingInBatch || 0}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.rejected || 0}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.formDuration || '0:00:00'}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.callNotReceivedToTelecaller || 0}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.ringing || 0}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.notRinging || 0}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.switchOff || 0}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.numberNotReachable || 0}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.numberDoesNotExist || 0}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{stat.noResponseByTelecaller || 0}</td>
+                              </tr>
+                            );
+                          })}
                         </>
                       );
                     })()}
                   </tbody>
                 </table>
               </div>
+              
+              {/* Pagination Controls */}
+              {catiStats.interviewerStats.length > interviewerPageSize && (
+                <div className="mt-4 flex items-center justify-between">
+                  <div className="text-sm text-gray-700">
+                    Showing {((interviewerPage - 1) * interviewerPageSize) + 1} to {Math.min(interviewerPage * interviewerPageSize, catiStats.interviewerStats.length)} of {catiStats.interviewerStats.length} interviewers
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setInterviewerPage(prev => Math.max(1, prev - 1))}
+                      disabled={interviewerPage === 1}
+                      className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                        interviewerPage === 1
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          : 'bg-[#001D48] text-white hover:bg-blue-700'
+                      }`}
+                    >
+                      Previous
+                    </button>
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: Math.min(5, Math.ceil(catiStats.interviewerStats.length / interviewerPageSize)) }, (_, i) => {
+                        let pageNum;
+                        const totalPages = Math.ceil(catiStats.interviewerStats.length / interviewerPageSize);
+                        
+                        if (totalPages <= 5) {
+                          pageNum = i + 1;
+                        } else if (interviewerPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (interviewerPage >= totalPages - 2) {
+                          pageNum = totalPages - 4 + i;
+                        } else {
+                          pageNum = interviewerPage - 2 + i;
+                        }
+                        
+                        return (
+                          <button
+                            key={pageNum}
+                            onClick={() => setInterviewerPage(pageNum)}
+                            className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                              interviewerPage === pageNum
+                                ? 'bg-[#373177] text-white'
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            }`}
+                          >
+                            {pageNum}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <button
+                      onClick={() => setInterviewerPage(prev => Math.min(Math.ceil(catiStats.interviewerStats.length / interviewerPageSize), prev + 1))}
+                      disabled={interviewerPage >= Math.ceil(catiStats.interviewerStats.length / interviewerPageSize)}
+                      className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                        interviewerPage >= Math.ceil(catiStats.interviewerStats.length / interviewerPageSize)
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          : 'bg-[#001D48] text-white hover:bg-blue-700'
+                      }`}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
