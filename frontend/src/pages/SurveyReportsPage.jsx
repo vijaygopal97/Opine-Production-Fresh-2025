@@ -390,7 +390,43 @@ const SurveyReportsPage = () => {
     };
   }, []);
 
-  // Fetch survey and analytics data
+  // Fetch analytics from backend API (optimized with aggregation)
+  const fetchAnalytics = async (currentFilters = filters) => {
+    try {
+      console.log('🚀 Fetching analytics from backend with filters:', currentFilters);
+      
+      // Prepare filters for backend API
+      const analyticsFilters = {
+        dateRange: currentFilters.dateRange || 'all',
+        startDate: currentFilters.startDate || '',
+        endDate: currentFilters.endDate || '',
+        status: currentFilters.status || 'approved_rejected_pending',
+        interviewMode: currentFilters.interviewMode || '',
+        ac: currentFilters.ac || '',
+        district: currentFilters.district || '',
+        lokSabha: currentFilters.lokSabha || '',
+        interviewerIds: currentFilters.interviewerIds || [],
+        interviewerMode: currentFilters.interviewerMode || 'include'
+      };
+
+      const analyticsResponse = await surveyAPI.getSurveyAnalytics(surveyId, analyticsFilters);
+      
+      if (analyticsResponse.success && analyticsResponse.data) {
+        console.log('✅ Analytics fetched from backend:', analyticsResponse.data);
+        setAnalyticsFromBackend(analyticsResponse.data);
+      } else {
+        console.warn('⚠️ Analytics API returned unsuccessful response:', analyticsResponse);
+        setAnalyticsFromBackend(null);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching analytics from backend:', error);
+      // Fallback to client-side calculation
+      setAnalyticsFromBackend(null);
+      // Don't show error to user - will fallback to client-side calculation
+    }
+  };
+
+  // Fetch survey and responses data (for dropdowns and other features)
   const fetchSurveyData = async () => {
     try {
       setLoading(true);
@@ -411,12 +447,13 @@ const SurveyReportsPage = () => {
         console.log('🔍🔍🔍 surveyData.modes:', surveyData?.modes);
         setSurvey(surveyData);
         
-        // Fetch all responses for analytics - fetch all statuses (Approved, Rejected, Pending_Approval) for comprehensive analytics
-        // Client-side filtering will handle status filtering
+        // Fetch responses for dropdown population (AC, Interviewer filters)
+        // We still need responses for dropdowns, but we don't need all 10,000 for analytics
+        // Fetch a reasonable amount for dropdown population
         const params = {
           page: 1,
-          limit: 10000, // Get all responses for comprehensive analytics
-          status: 'approved_rejected_pending' // Fetch all statuses (Approved, Rejected, Pending_Approval) for comprehensive analytics
+          limit: 10000, // Keep same limit for dropdown population (AC/Interviewer lists need all responses)
+          status: 'approved_rejected_pending' // Fetch all statuses for dropdown population
         };
         
         const response = await surveyResponseAPI.getSurveyResponses(surveyId, params);
@@ -432,8 +469,9 @@ const SurveyReportsPage = () => {
           r.interviewMode?.toUpperCase() === 'CATI'
         );
         }
-        setAnalyticsFromBackend(null); // Ensure old analytics path is taken by useMemo
 
+        // Fetch analytics from backend API (with current filters)
+        await fetchAnalytics(filters);
 
         // Fetch AC Performance Stats
         try {
@@ -584,11 +622,21 @@ const SurveyReportsPage = () => {
     fetchAssignedInterviewers();
   }, [isProjectManagerRoute, user]);
   
+  // Fetch survey and responses data on initial load
   useEffect(() => {
     if (surveyId) {
       fetchSurveyData();
     }
-  }, [surveyId, filters.status, filters.dateRange, filters.startDate, filters.endDate, filters.interviewMode, filters.ac, filters.district, filters.lokSabha, filters.interviewerIds, filters.interviewerMode]);
+  }, [surveyId]);
+
+  // Refetch analytics when filters change (optimized - only analytics, not full data)
+  useEffect(() => {
+    if (surveyId && survey) {
+      // Only refetch analytics, not the full survey/responses data
+      // Responses are still needed for dropdowns, but analytics come from backend API
+      fetchAnalytics(filters);
+    }
+  }, [filters.status, filters.dateRange, filters.startDate, filters.endDate, filters.interviewMode, filters.ac, filters.district, filters.lokSabha, filters.interviewerIds, filters.interviewerMode]);
 
 
   // Helper function to calculate dates from dateRange
@@ -1101,17 +1149,23 @@ const SurveyReportsPage = () => {
 
     const totalResponsesData = sortedData.map(item => item.count);
     
-    // Calculate CAPI and CATI data from daily stats
+    // Use CAPI and CATI data from backend daily stats (if available)
     const capiData = sortedData.map(item => {
-      // This would need to be calculated from actual response data
-      // For now, we'll estimate based on total responses
-      return Math.round(item.count * (analytics.capiResponses / analytics.totalResponses));
+      // Backend now provides daily CAPI/CATI breakdown
+      if (item.capi !== undefined) {
+        return item.capi;
+      }
+      // Fallback: estimate based on total responses (for backward compatibility)
+      return Math.round(item.count * (analytics.capiResponses / Math.max(analytics.totalResponses, 1)));
     });
     
     const catiData = sortedData.map(item => {
-      // This would need to be calculated from actual response data
-      // For now, we'll estimate based on total responses
-      return Math.round(item.count * (analytics.catiResponses / analytics.totalResponses));
+      // Backend now provides daily CAPI/CATI breakdown
+      if (item.cati !== undefined) {
+        return item.cati;
+      }
+      // Fallback: estimate based on total responses (for backward compatibility)
+      return Math.round(item.count * (analytics.catiResponses / Math.max(analytics.totalResponses, 1)));
     });
 
     return {
@@ -1302,6 +1356,111 @@ const SurveyReportsPage = () => {
   const analytics = useMemo(() => {
     // If we have analytics from backend (optimized aggregation), use it directly
     if (analyticsFromBackend) {
+      // Enhance AC stats: Add ACs with 0 responses and AC/PC codes
+      let acStats = analyticsFromBackend.acStats || [];
+      
+      // Helper to normalize AC name for comparison
+      const normalizeACName = (acName) => {
+        if (!acName || typeof acName !== 'string') return '';
+        return acName.trim().toLowerCase().replace(/\s+/g, ' ');
+      };
+      
+      // Helper to get AC/PC data
+      const getACPCData = (acName, acCodeFromStat = null) => {
+        let numericACCode = acCodeFromStat || '';
+        
+        if (!numericACCode) {
+          const acData = getACByName(acName);
+          if (acData?.acCode) {
+            numericACCode = getNumericACCode(acData.acCode);
+          }
+        }
+        
+        // Check cache
+        if (acPCMappingCache.has(acName)) {
+          const cached = acPCMappingCache.get(acName);
+          return {
+            acCode: numericACCode || cached.acCode || '',
+            pcCode: cached.pcCode || '',
+            pcName: cached.pcName || ''
+          };
+        }
+        
+        return {
+          acCode: numericACCode,
+          pcCode: '',
+          pcName: ''
+        };
+      };
+      
+      // Enhance existing AC stats with AC/PC codes if missing
+      acStats = acStats.map(stat => {
+        if (!stat.acCode || !stat.pcCode) {
+          const acPCData = getACPCData(stat.ac, stat.acCode);
+          return {
+            ...stat,
+            acCode: stat.acCode || acPCData.acCode || '',
+            pcCode: stat.pcCode || acPCData.pcCode || '',
+            pcName: stat.pcName || acPCData.pcName || '',
+            // Ensure all required fields are present
+            autoRejected: stat.autoRejected || 0,
+            manualRejected: stat.manualRejected || 0,
+            underQC: stat.underQC || 0,
+            psCovered: stat.psCovered || 0
+          };
+        }
+        return stat;
+      });
+      
+      // Get all ACs for the state and add missing ones (with 0 responses)
+      const allStateACs = getAllACsForState();
+      const acsWithResponsesNormalized = new Set(
+        acStats.map(stat => normalizeACName(stat.ac))
+      );
+      
+      // Add ACs with 0 responses
+      const acsWithZeroResponses = allStateACs
+        .filter(acName => {
+          const normalized = normalizeACName(acName);
+          return !acsWithResponsesNormalized.has(normalized);
+        })
+        .map(acName => {
+          const acPCData = getACPCData(acName);
+          return {
+            ac: acName,
+            acCode: acPCData.acCode,
+            pcCode: acPCData.pcCode,
+            pcName: acPCData.pcName,
+            count: 0,
+            capi: 0,
+            cati: 0,
+            percentage: 0,
+            interviewersCount: 0,
+            approved: 0,
+            rejected: 0,
+            autoRejected: 0,
+            manualRejected: 0,
+            underQC: 0,
+            psCovered: 0,
+            femalePercentage: 0,
+            withoutPhonePercentage: 0,
+            scPercentage: 0,
+            muslimPercentage: 0,
+            age18to24Percentage: 0,
+            age50PlusPercentage: 0
+          };
+        })
+        .sort((a, b) => a.ac.localeCompare(b.ac));
+      
+      // Combine: ACs with responses first (sorted by count), then ACs with 0 responses (sorted by name)
+      acStats = [
+        ...acStats.sort((a, b) => b.count - a.count),
+        ...acsWithZeroResponses
+      ];
+      
+      // Store allStateACs for modal use
+      acStats._allStateACs = allStateACs;
+      
       // Add assigned interviewers with 0 responses for project managers if needed
       let interviewerStats = analyticsFromBackend.interviewerStats || [];
       
@@ -1344,6 +1503,7 @@ const SurveyReportsPage = () => {
       
       return {
         ...analyticsFromBackend,
+        acStats,
         interviewerStats
       };
     }

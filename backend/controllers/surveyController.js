@@ -4292,10 +4292,45 @@ exports.getSurveyAnalytics = async (req, res) => {
     // For accurate AC extraction, we need to use JavaScript processing
     // Fetch minimal data: responses array, selectedAC, selectedPollingStation, interviewer, status, interviewMode, createdAt, verificationData
     // This is still much faster than fetching full documents
-    const minimalResponses = await SurveyResponse.find(matchFilter)
+    let minimalResponses = await SurveyResponse.find(matchFilter)
       .select('responses selectedAC selectedPollingStation interviewer status interviewMode createdAt verificationData')
       .populate('interviewer', 'firstName lastName memberId')
       .lean();
+
+    // Apply AC, district, lokSabha filters after extraction (since they're in responses array)
+    // These filters need to be applied after extracting from responses
+    if (ac || district || lokSabha) {
+      const { getRespondentInfo } = require('../utils/respondentInfoUtils');
+      minimalResponses = minimalResponses.filter(response => {
+        const respondentInfo = getRespondentInfo(response.responses || [], response, survey);
+        
+        // AC filter
+        if (ac && ac.trim()) {
+          const responseAC = respondentInfo.ac;
+          if (!responseAC || responseAC === 'N/A' || responseAC.toLowerCase() !== ac.toLowerCase()) {
+            return false;
+          }
+        }
+        
+        // District filter
+        if (district && district.trim()) {
+          const responseDistrict = respondentInfo.district;
+          if (!responseDistrict || responseDistrict === 'N/A' || responseDistrict.toLowerCase() !== district.toLowerCase()) {
+            return false;
+          }
+        }
+        
+        // Lok Sabha filter
+        if (lokSabha && lokSabha.trim()) {
+          const responseLokSabha = respondentInfo.lokSabha;
+          if (!responseLokSabha || responseLokSabha === 'N/A' || responseLokSabha.toLowerCase() !== lokSabha.toLowerCase()) {
+            return false;
+          }
+        }
+        
+        return true;
+      });
+    }
 
     // Process responses using same logic as frontend
     const acMap = new Map();
@@ -4304,7 +4339,7 @@ exports.getSurveyAnalytics = async (req, res) => {
     const interviewerMap = new Map();
     const genderMap = new Map();
     const ageMap = new Map();
-    const dailyMap = new Map();
+    const dailyMap = new Map(); // Format: { date: { total: count, capi: count, cati: count } }
     let totalResponseTime = 0;
 
     minimalResponses.forEach(response => {
@@ -4458,6 +4493,7 @@ exports.getSurveyAnalytics = async (req, res) => {
       if (response.interviewer) {
         const interviewerName = `${response.interviewer.firstName} ${response.interviewer.lastName}`;
         const interviewerMemberId = response.interviewer.memberId || '';
+        const interviewerId = response.interviewer._id || response.interviewer.id || null;
         const currentCount = interviewerMap.get(interviewerName) || {
           total: 0,
           capi: 0,
@@ -4474,11 +4510,15 @@ exports.getSurveyAnalytics = async (req, res) => {
           muslimCount: 0,
           age18to24Count: 0,
           age50PlusCount: 0,
-          memberId: interviewerMemberId
+          memberId: interviewerMemberId,
+          interviewerId: interviewerId
         };
         
         if (!currentCount.memberId && interviewerMemberId) {
           currentCount.memberId = interviewerMemberId;
+        }
+        if (!currentCount.interviewerId && interviewerId) {
+          currentCount.interviewerId = interviewerId;
         }
         currentCount.total += 1;
         
@@ -4597,15 +4637,22 @@ exports.getSurveyAnalytics = async (req, res) => {
         ageMap.set(ageGroup, (ageMap.get(ageGroup) || 0) + 1);
       }
       
-      // Daily stats
+      // Daily stats with CAPI/CATI breakdown
       const date = new Date(response.createdAt).toDateString();
-      dailyMap.set(date, (dailyMap.get(date) || 0) + 1);
+      const currentDaily = dailyMap.get(date) || { total: 0, capi: 0, cati: 0 };
+      currentDaily.total += 1;
+      if (interviewMode === 'CAPI') {
+        currentDaily.capi += 1;
+      } else if (interviewMode === 'CATI') {
+        currentDaily.cati += 1;
+      }
+      dailyMap.set(date, currentDaily);
       
       // Response time
       totalResponseTime += (response.responses?.reduce((sum, resp) => sum + (resp.responseTime || 0), 0) || 0);
     });
 
-    // Calculate total responses
+    // Calculate total responses and basic stats
     const totalResponses = minimalResponses.length;
     const capiResponses = minimalResponses.filter(r => r.interviewMode?.toUpperCase() === 'CAPI').length;
     const catiResponses = minimalResponses.filter(r => r.interviewMode?.toUpperCase() === 'CATI').length;
@@ -4654,7 +4701,7 @@ exports.getSurveyAnalytics = async (req, res) => {
     // Format interviewer stats
     const interviewerStats = Array.from(interviewerMap.entries()).map(([interviewer, data]) => ({
       interviewer: interviewer,
-      interviewerId: null, // Will be populated if needed
+      interviewerId: data.interviewerId || null,
       memberId: data.memberId || '',
       count: data.total,
       capi: data.capi,
@@ -4681,37 +4728,42 @@ exports.getSurveyAnalytics = async (req, res) => {
     const genderStats = Object.fromEntries(genderMap);
     const ageStats = Object.fromEntries(ageMap);
 
-    // Daily stats are already calculated from minimalResponses
+    // Daily stats are already calculated from minimalResponses (with CAPI/CATI breakdown)
     const dailyStats = Array.from(dailyMap.entries())
-      .map(([date, count]) => ({ date, count }))
+      .map(([date, data]) => ({ 
+        date, 
+        count: data.total || data, // Support both old format (number) and new format (object)
+        capi: data.capi || 0,
+        cati: data.cati || 0
+      }))
       .sort((a, b) => new Date(a.date) - new Date(b.date));
 
     // Calculate completion rate and average response time
-    const completionRate = survey?.sampleSize ? (basicStats.totalResponses / survey.sampleSize) * 100 : 0;
-    const averageResponseTime = basicStats.totalResponses > 0 
-      ? (basicStats.totalResponseTime / basicStats.totalResponses) 
+    const completionRate = survey?.sampleSize ? (totalResponses / survey.sampleSize) * 100 : 0;
+    const averageResponseTime = totalResponses > 0 
+      ? (totalResponseTime / totalResponses) 
       : 0;
 
     // Return analytics data
     res.status(200).json({
       success: true,
       data: {
-        totalResponses: basicStats.totalResponses,
-        capiResponses: basicStats.capiResponses,
-        catiResponses: basicStats.catiResponses,
+        totalResponses,
+        capiResponses,
+        catiResponses,
         completionRate,
         averageResponseTime,
         acStats,
         districtStats,
         lokSabhaStats,
         interviewerStats,
-        genderStats: genderMap,
-        ageStats: ageMap,
+        genderStats: Object.fromEntries(genderMap),
+        ageStats: Object.fromEntries(ageMap),
         dailyStats,
         capiPerformance: {
-          approved: basicStats.capiApproved,
-          rejected: basicStats.capiRejected,
-          total: basicStats.capiResponses
+          approved: capiApproved,
+          rejected: capiRejected,
+          total: capiResponses
         }
       }
     });
