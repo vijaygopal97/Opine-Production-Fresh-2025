@@ -4,7 +4,9 @@ const {
   getRoundNumbersByAC,
   getGroupsByAC,
   getPollingStationsByGroup,
-  getPollingStationGPS
+  getPollingStationGPS,
+  checkPollingStationsUpdate,
+  downloadPollingStations
 } = require('../controllers/pollingStationController');
 const { protect } = require('../middleware/auth');
 
@@ -15,6 +17,8 @@ router.get('/rounds/:state/:acIdentifier', getRoundNumbersByAC);
 router.get('/groups/:state/:acIdentifier', getGroupsByAC);
 router.get('/stations/:state/:acIdentifier/:groupName', getPollingStationsByGroup);
 router.get('/gps/:state/:acIdentifier/:groupName/:stationName', getPollingStationGPS);
+router.get('/check-update', checkPollingStationsUpdate);
+router.get('/download', downloadPollingStations);
 // Get AC metadata by AC code (numeric)
 router.get('/ac/:acCode', async (req, res) => {
   try {

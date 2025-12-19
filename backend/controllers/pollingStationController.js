@@ -1,4 +1,7 @@
 const { loadData, findACNumberByName, getGroupsForAC } = require('../utils/pollingStationHelper');
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 /**
  * @desc    Get available round numbers for a specific AC
@@ -226,10 +229,100 @@ const getPollingStationGPS = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Check if polling_stations.json has been updated (returns hash and metadata)
+ * @route   GET /api/polling-stations/check-update
+ * @access  Private
+ */
+const checkPollingStationsUpdate = async (req, res) => {
+  try {
+    const filePath = path.join(__dirname, '../data/polling_stations.json');
+    
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({
+        success: false,
+        message: 'Polling stations file not found'
+      });
+    }
+
+    // Read file and calculate hash
+    const fileContent = fs.readFileSync(filePath, 'utf8');
+    const hash = crypto.createHash('sha256').update(fileContent).digest('hex');
+    const stats = fs.statSync(filePath);
+    
+    res.json({
+      success: true,
+      data: {
+        hash: hash,
+        lastModified: stats.mtime.toISOString(),
+        size: stats.size
+      }
+    });
+  } catch (error) {
+    console.error('Error checking polling stations update:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to check polling stations update',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * @desc    Download the latest polling_stations.json file
+ * @route   GET /api/polling-stations/download
+ * @access  Private
+ */
+const downloadPollingStations = async (req, res) => {
+  try {
+    const filePath = path.join(__dirname, '../data/polling_stations.json');
+    
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({
+        success: false,
+        message: 'Polling stations file not found'
+      });
+    }
+
+    // Check If-None-Match header for conditional request
+    const clientHash = req.headers['if-none-match'];
+    if (clientHash) {
+      const fileContent = fs.readFileSync(filePath, 'utf8');
+      const serverHash = crypto.createHash('sha256').update(fileContent).digest('hex');
+      
+      if (clientHash === serverHash) {
+        return res.status(304).end(); // Not Modified
+      }
+    }
+
+    // Send file with proper headers
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', 'attachment; filename="polling_stations.json"');
+    
+    // Calculate and set ETag
+    const fileContent = fs.readFileSync(filePath, 'utf8');
+    const hash = crypto.createHash('sha256').update(fileContent).digest('hex');
+    res.setHeader('ETag', hash);
+    
+    // Send file
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
+  } catch (error) {
+    console.error('Error downloading polling stations:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to download polling stations file',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getRoundNumbersByAC,
   getGroupsByAC,
   getPollingStationsByGroup,
-  getPollingStationGPS
+  getPollingStationGPS,
+  checkPollingStationsUpdate,
+  downloadPollingStations
 };
 
