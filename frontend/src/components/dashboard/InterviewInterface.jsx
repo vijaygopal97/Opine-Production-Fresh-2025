@@ -1034,7 +1034,7 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
         if (question.questionNumber === '17' || (question.questionNumber && String(question.questionNumber).toLowerCase() === '17')) {
           console.log(`🔍 Q17 Filtered: enabledForCATI=false for CATI mode`);
         }
-        return false;
+      return false;
       }
       // Also hide questions that are CAPI-only (enabledForCAPI is true but enabledForCATI is not true)
       // This catches cases where Survey Builder sets "show only in CAPI" but doesn't explicitly set enabledForCATI to false
@@ -1444,7 +1444,7 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
             const qText = getMainText(q.text || '').toLowerCase();
             if (q.questionNumber === '17' || qText.includes('second choice')) {
               console.log(`🔍 Q17 Debug: Checking Q${q.questionNumber} (id: ${q.id}) - questionNumber match: ${q.questionNumber === '17'}, text: "${getMainText(q.text || '').substring(0, 60)}..."`);
-            }
+        }
           }
           return matches;
         });
@@ -1471,7 +1471,7 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
           console.warn(`⚠️ Could not find Q${number}${subQuestion ? '.' + subQuestion : ''} for order position ${orderIndex + 1}. Available questions: ${questionsFromQ1.map((q, i) => `[${i}]Q${q.questionNumber || '?'}`).join(', ')}`);
         }
       });
-
+      
       // Add remaining questions (not in desired order) at the end
       const remainingQuestions = questionsFromQ1.filter((_, idx) => !usedIndices.has(idx));
 
@@ -1588,9 +1588,9 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
         <span className={options.className || ''}>
           {paragraphs.map((paragraph, index) => {
             const displayText = getLanguageText(paragraph.trim(), selectedLanguageIndex);
-            return (
-              <React.Fragment key={index}>
-                {index > 0 && <><br /><br /></>}
+              return (
+                <React.Fragment key={index}>
+                  {index > 0 && <><br /><br /></>}
                 {displayText}
               </React.Fragment>
             );
@@ -4848,8 +4848,8 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
         <div className="flex items-center space-x-4">
           {/* Language Selector Dropdown */}
           {detectAvailableLanguages.length > 1 && (
-            <div className="flex items-center space-x-2 px-2 py-1 bg-gray-100 rounded-lg">
-              <span className="text-sm">🌐</span>
+          <div className="flex items-center space-x-2 px-2 py-1 bg-gray-100 rounded-lg">
+            <span className="text-sm">🌐</span>
               <select
                 value={selectedLanguageIndex}
                 onChange={(e) => setSelectedLanguageIndex(parseInt(e.target.value, 10))}
@@ -4862,7 +4862,7 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                   </option>
                 ))}
               </select>
-            </div>
+          </div>
           )}
           {/* CATI Respondent Info */}
           {isCatiMode && catiRespondent && (

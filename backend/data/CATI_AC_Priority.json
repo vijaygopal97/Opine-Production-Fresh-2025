@@ -2,12 +2,17 @@
   {
     "Type": "CATI",
     "AC_Name": "Mekliganj",
-    "Priority": 1
+    "Priority": "0"
   },
   {
     "Type": "CATI",
     "AC_Name": "Mathabhanga",
     "Priority": "0"
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Bidhannagar",
+    "Priority": 1
   }
 ]
 

@@ -109,7 +109,7 @@ export const parseMultiTranslation = (text) => {
  */
 export const parseTranslation = (text) => {
   const languages = parseMultiTranslation(text);
-  
+
   return {
     mainText: languages[0] || '',
     translation: languages.length > 1 ? languages[1] : null

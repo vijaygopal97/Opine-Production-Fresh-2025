@@ -992,11 +992,115 @@ const uploadAudioFile = async (req, res) => {
   }
 };
 
-// Get all interviews conducted by the logged-in interviewer
+// Get interviewer statistics (lightweight endpoint using aggregation)
+const getInterviewerStats = async (req, res) => {
+  try {
+    const interviewerId = req.user.id;
+    
+    // Convert interviewerId to ObjectId for proper matching
+    const interviewerObjectId = new mongoose.Types.ObjectId(interviewerId);
+    
+    console.log('📊 getInterviewerStats - Interviewer ID:', interviewerId);
+    console.log('📊 getInterviewerStats - Interviewer ObjectId:', interviewerObjectId);
+
+    // Use MongoDB aggregation to get counts efficiently
+    const stats = await SurveyResponse.aggregate([
+      {
+        $match: {
+          interviewer: interviewerObjectId
+        }
+      },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    console.log('📊 getInterviewerStats - Aggregation results:', JSON.stringify(stats, null, 2));
+
+    // Initialize counts
+    let approved = 0;
+    let rejected = 0;
+    let pendingApproval = 0;
+    let totalCompleted = 0;
+
+    // Process aggregation results
+    stats.forEach(stat => {
+      const status = stat._id;
+      const count = stat.count;
+      
+      console.log(`📊 Processing status: ${status}, count: ${count}`);
+
+      // Handle null/undefined status (shouldn't happen, but be safe)
+      if (!status) {
+        console.log(`⚠️ Found interview with null/undefined status, count: ${count}`);
+        return;
+      }
+
+      if (status === 'Approved') {
+        approved = count;
+        totalCompleted += count;
+      } else if (status === 'Rejected') {
+        rejected = count;
+        totalCompleted += count;
+      } else if (status === 'Pending_Approval') {
+        pendingApproval = count;
+        totalCompleted += count;
+      } else {
+        // Log any unexpected status values for debugging
+        console.log(`⚠️ Unexpected status value: ${status}, count: ${count}`);
+      }
+    });
+
+    console.log('📊 getInterviewerStats - Final counts:', {
+      totalCompleted,
+      approved,
+      rejected,
+      pendingApproval
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalCompleted,
+        approved,
+        rejected,
+        pendingApproval
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching interviewer stats:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch interviewer statistics',
+      error: error.message
+    });
+  }
+};
+
+// Get all interviews conducted by the logged-in interviewer (with pagination)
 const getMyInterviews = async (req, res) => {
   try {
     const interviewerId = req.user.id;
-    const { search, status, gender, ageMin, ageMax, sortBy = 'endTime', sortOrder = 'desc' } = req.query;
+    const { 
+      search, 
+      status, 
+      gender, 
+      ageMin, 
+      ageMax, 
+      sortBy = 'endTime', 
+      sortOrder = 'desc',
+      page = 1,
+      limit = 20
+    } = req.query;
+
+    // Parse pagination params
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 20;
+    const skip = (pageNum - 1) * limitNum;
 
     // Build query
     let query = { interviewer: interviewerId };
@@ -1010,13 +1114,38 @@ const getMyInterviews = async (req, res) => {
     const sort = {};
     sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
 
-    // Find interviews with populated survey data
+    // Get total count for pagination (before filtering)
+    const totalCount = await SurveyResponse.countDocuments(query);
+
+    // Find interviews with minimal populated survey data (only surveyName)
     let interviews = await SurveyResponse.find(query)
-      .populate('survey', 'surveyName description category sections')
+      .populate('survey', 'surveyName') // Only populate surveyName, not full sections
       .sort(sort)
+      .skip(skip)
+      .limit(limitNum)
       .lean();
 
-    console.log('getMyInterviews - Found interviews:', interviews.length);
+    console.log('getMyInterviews - Found interviews:', interviews.length, 'out of', totalCount);
+
+    // Apply search filter if provided (client-side filtering for now)
+    if (search) {
+      const searchRegex = new RegExp(search, 'i');
+      interviews = interviews.filter(interview => {
+        // Search in survey name, response ID, session ID
+        const basicMatch = interview.survey?.surveyName?.match(searchRegex) ||
+                          interview.responseId?.toString().includes(search) ||
+                          interview.sessionId?.match(searchRegex);
+        
+        // Search in respondent name
+        const respondentNameMatch = interview.responses?.some(response => {
+          const isNameQuestion = response.questionText.toLowerCase().includes('name') || 
+                                response.questionText.toLowerCase().includes('respondent');
+          return isNameQuestion && response.response?.toString().toLowerCase().includes(search.toLowerCase());
+        });
+        
+        return basicMatch || respondentNameMatch;
+      });
+    }
 
     // Apply search filter if provided
     if (search) {
@@ -1198,53 +1327,34 @@ const getMyInterviews = async (req, res) => {
     };
 
     // Transform the data to include calculated fields
-    const transformedInterviews = await Promise.all(interviews.map(async (interview) => {
-      // Calculate effective questions (only questions that were actually shown to the user)
-      const effectiveQuestions = interview.responses?.filter(r => {
-        // If not skipped, it was shown and answered
-        if (!r.isSkipped) return true;
-        
-        // If skipped, check if it was due to unmet conditions
-        const surveyQuestion = findQuestionByText(r.questionText, interview.survey);
-        const hasConditions = surveyQuestion?.conditions && surveyQuestion.conditions.length > 0;
-        
-        if (hasConditions) {
-          // Check if conditions were met
-          const conditionsMet = areConditionsMet(surveyQuestion.conditions, interview.responses);
-          
-          // If conditions were not met, this question was never shown
-          if (!conditionsMet) {
-            return false;
-          }
-        }
-        
-        // If no conditions or conditions were met, user saw it and chose to skip
-        return true;
-      }).length || 0;
-      
+    // Note: We skip signed URL generation and complex calculations for better performance
+    // Signed URLs can be generated on-demand when viewing interview details
+    const transformedInterviews = interviews.map((interview) => {
       const answeredQuestions = interview.responses?.filter(r => !r.isSkipped).length || 0;
-      const completionPercentage = effectiveQuestions > 0 ? Math.round((answeredQuestions / effectiveQuestions) * 100) : 0;
-
-      // Add signed URL to audio recording if present
-      let audioRecording = interview.audioRecording;
-      if (audioRecording && audioRecording.audioUrl) {
-        audioRecording = await addSignedUrlToAudio(audioRecording);
-      }
+      const totalQuestions = interview.responses?.length || 0;
+      const completionPercentage = totalQuestions > 0 ? Math.round((answeredQuestions / totalQuestions) * 100) : 0;
 
       return {
         ...interview,
-        totalQuestions: effectiveQuestions, // Use effective questions instead of all responses
+        totalQuestions,
         answeredQuestions,
-        completionPercentage,
-        audioRecording // Include audio with signed URL
+        completionPercentage
+        // Note: audioRecording is included but without signed URL for performance
+        // Signed URLs should be generated on-demand when needed
       };
-    }));
+    });
+
+    // Calculate total pages
+    const totalPages = Math.ceil(totalCount / limitNum);
 
     res.status(200).json({
       success: true,
       data: {
         interviews: transformedInterviews,
-        total: transformedInterviews.length
+        total: totalCount,
+        page: pageNum,
+        limit: limitNum,
+        totalPages
       }
     });
 
@@ -4457,6 +4567,7 @@ module.exports = {
   uploadAudioFile,
   getAudioSignedUrl,
   getMyInterviews,
+  getInterviewerStats,
   getPendingApprovals,
   getApprovalStats,
   getNextReviewAssignment,

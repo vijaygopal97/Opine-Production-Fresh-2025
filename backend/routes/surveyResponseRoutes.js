@@ -15,6 +15,7 @@ const {
   getGenderResponseCounts,
   uploadAudioFile,
   getMyInterviews,
+  getInterviewerStats,
   getPendingApprovals,
   getApprovalStats,
   getNextReviewAssignment,
@@ -109,8 +110,11 @@ router.post('/upload-audio', upload.single('audio'), uploadAudioFile);
 router.get('/audio-signed-url', getAudioSignedUrl);
 router.get('/audio-signed-url/:responseId', getAudioSignedUrl);
 
-// Get all interviews conducted by the logged-in interviewer
+// Get all interviews conducted by the logged-in interviewer (with pagination)
 router.get('/my-interviews', getMyInterviews);
+
+// Get interviewer statistics (lightweight endpoint using aggregation)
+router.get('/interviewer-stats', getInterviewerStats);
 
 // Get approval statistics (optimized endpoint using aggregation)
 router.get('/approval-stats', getApprovalStats);

@@ -31,28 +31,28 @@ const COMPANY_CODE = 'TEST001';
 // ============================================================================
 const interviewersToAdd = [
   {
-    name: 'Jahanara khatun',
-    phone: '8509141476',
-    memberId: '3581',
-    email: 'cati3581@gmail.com' // Optional - will auto-generate if not provided
+    name: 'ISRAJ AHMED FAKIR',
+    phone: '8250400240',
+    memberId: '3586',
+    email: 'cati3586@gmail.com' // Optional - will auto-generate if not provided
   },
   {
-    name: 'Anish Dey',
-    phone: '8509515203',
-    memberId: '3582',
-    email: 'cati3582@gmail.com' // Optional - will auto-generate if not provided
+    name: 'RIMA KHATUN',
+    phone: '6296752358',
+    memberId: '3587',
+    email: 'cati3587@gmail.com' // Optional - will auto-generate if not provided
   },
   {
-    name: 'Avishek chandra Saw',
-    phone: '8101747197',
-    memberId: '3583',
-    email: 'cati3583@gmail.com' // Optional - will auto-generate if not provided
+    name: 'ISMAIL SEIKH',
+    phone: '8509159662',
+    memberId: '3588',
+    email: 'cati3588@gmail.com' // Optional - will auto-generate if not provided
   },
   {
-    name: 'Sonia Mondal',
-    phone: '6297927591',
-    memberId: '3584',
-    email: 'cati3584@gmail.com' // Optional - will auto-generate if not provided
+    name: 'MANARANJAN NASKAR',
+    phone: '9062951396',
+    memberId: '3589',
+    email: 'cati3589@gmail.com' // Optional - will auto-generate if not provided
   },
   // Add more interviewers here...
 ];
@@ -445,13 +445,53 @@ const main = async () => {
     });
     const assignedBy = companyAdmin ? companyAdmin._id : referenceUser._id;
 
+    console.log('🔍 Checking for existing member IDs...\n');
+    const existingMembers = [];
+    const newMembers = [];
+    
+    for (const userInfo of interviewersToAdd) {
+      const existingUser = await User.findOne({ 
+        memberId: userInfo.memberId 
+      });
+      
+      if (existingUser) {
+        existingMembers.push({
+          memberId: userInfo.memberId,
+          name: userInfo.name,
+          existingEmail: existingUser.email,
+          existingName: `${existingUser.firstName} ${existingUser.lastName}`
+        });
+        console.log(`⚠️  Member ID ${userInfo.memberId} (${userInfo.name}) already exists:`);
+        console.log(`   Existing Name: ${existingUser.firstName} ${existingUser.lastName}`);
+        console.log(`   Existing Email: ${existingUser.email}\n`);
+      } else {
+        newMembers.push(userInfo);
+      }
+    }
+    
+    if (existingMembers.length > 0) {
+      console.log('='.repeat(80));
+      console.log(`⚠️  Found ${existingMembers.length} existing member ID(s) - These will be SKIPPED:`);
+      existingMembers.forEach(m => {
+        console.log(`   - Member ID: ${m.memberId} | Name: ${m.name} | Existing: ${m.existingName} (${m.existingEmail})`);
+      });
+      console.log('='.repeat(80));
+      console.log(`\n📝 Will create ${newMembers.length} new interviewer(s)\n`);
+    }
+    
+    if (newMembers.length === 0) {
+      console.log('⚠️  All member IDs already exist. Nothing to create.');
+      await mongoose.disconnect();
+      process.exit(0);
+    }
+
     console.log('🚀 Creating/Updating CATI Interviewers\n');
     console.log('='.repeat(80));
     
     const results = [];
     const loginTests = [];
     
-    for (const userInfo of interviewersToAdd) {
+    for (const userInfo of newMembers) {
       try {
         const nameParts = userInfo.name.split(/\s+/);
         const firstName = nameParts[0] || 'CATI';

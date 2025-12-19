@@ -429,8 +429,8 @@ const SurveyReportsPage = () => {
           setResponses(response.data.responses);
           // Check if there are CATI responses
           hasCatiResponses = response.data?.responses?.some(r => 
-            r.interviewMode?.toUpperCase() === 'CATI'
-          );
+          r.interviewMode?.toUpperCase() === 'CATI'
+        );
         }
         setAnalyticsFromBackend(null); // Ensure old analytics path is taken by useMemo
 

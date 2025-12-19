@@ -211,7 +211,7 @@ const SurveyApprovals = () => {
   // Fetch pending approvals when filters or pagination change (for company admins only)
   useEffect(() => {
     if (user?.userType !== 'quality_agent') {
-      fetchPendingApprovals();
+    fetchPendingApprovals();
       // Refresh stats when filters change (in case they affect stats)
       fetchApprovalStats();
     }
@@ -2683,35 +2683,35 @@ const SurveyApprovals = () => {
         </div>
       ) : (
         <>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{width: '240px'}}>
-                    Interview Details
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Respondent Info
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Progress
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Duration
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Audio
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {sortedInterviews.map((interview) => {
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{width: '240px'}}>
+                  Interview Details
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Respondent Info
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Progress
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Duration
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Audio
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {sortedInterviews.map((interview) => {
                 const surveyId = interview.survey?._id || interview.survey?.survey?._id || fullSurveyData?._id;
                 const respondentInfo = getRespondentInfo(interview.responses, surveyId);
                 return (
@@ -2889,21 +2889,21 @@ const SurveyApprovals = () => {
                             // Handle CAPI interviews (existing logic)
                             if (interview.audioRecording?.hasAudio) {
                               return (
-                                <button
-                                  onClick={() => handlePlayAudio(
-                                    interview.audioRecording.audioUrl, 
-                                    interview._id,
-                                    interview.audioRecording.signedUrl
-                                  )}
-                                  className="inline-flex items-center px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                                >
-                                  {audioPlaying === interview._id ? (
-                                    <Pause className="w-4 h-4 mr-1" />
-                                  ) : (
-                                    <Play className="w-4 h-4 mr-1" />
-                                  )}
-                                  {audioPlaying === interview._id ? 'Pause' : 'Play'}
-                                </button>
+                            <button
+                              onClick={() => handlePlayAudio(
+                                interview.audioRecording.audioUrl, 
+                                interview._id,
+                                interview.audioRecording.signedUrl
+                              )}
+                              className="inline-flex items-center px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                            >
+                              {audioPlaying === interview._id ? (
+                                <Pause className="w-4 h-4 mr-1" />
+                              ) : (
+                                <Play className="w-4 h-4 mr-1" />
+                              )}
+                              {audioPlaying === interview._id ? 'Pause' : 'Play'}
+                            </button>
                               );
                             }
                             
@@ -3125,12 +3125,12 @@ const SurveyApprovals = () => {
                       <ChevronRight className="w-4 h-4" />
                     </button>
                   </div>
-                </div>
+        </div>
               )}
             </>
           )}
         </>
-      )}
+          )}
         </>
       )}
     </div>
@@ -4567,64 +4567,64 @@ const SurveyApprovals = () => {
 
                   {/* Question 6: Name Matching */}
                   {shouldShowVerificationQuestion('name', selectedInterview) && (
-                    <div className="space-y-2">
-                      <label className="block text-sm font-medium text-gray-700">
-                        6. Name of the Respondent Matching? (উত্তরদাতার নাম কি মিলে গেছে?)
-                        <span className="text-red-500 ml-1">*</span>
-                      </label>
-                      {selectedInterview && (
-                        <div className="mb-3 p-2 bg-[#E6F0F8] border-l-4 border-blue-500 rounded">
-                          <span className="text-sm font-medium text-blue-700">Response: </span>
-                          <span className="text-sm text-[#373177]">{getVerificationResponses(selectedInterview).name}</span>
-                        </div>
-                      )}
-                      <div className="space-y-2">
-                        <label className="flex items-center space-x-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="nameMatching"
-                            value="1"
-                            checked={verificationForm.nameMatching === '1'}
-                            onChange={(e) => handleVerificationFormChange('nameMatching', e.target.value)}
-                            className="w-4 h-4 text-[#373177] border-gray-300 focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-gray-700">1 - Matched (মিলে গেছে)</span>
-                        </label>
-                        <label className="flex items-center space-x-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="nameMatching"
-                            value="2"
-                            checked={verificationForm.nameMatching === '2'}
-                            onChange={(e) => handleVerificationFormChange('nameMatching', e.target.value)}
-                            className="w-4 h-4 text-[#373177] border-gray-300 focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-gray-700">2 - Not Matched (মেলেনি)</span>
-                        </label>
-                        <label className="flex items-center space-x-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="nameMatching"
-                            value="3"
-                            checked={verificationForm.nameMatching === '3'}
-                            onChange={(e) => handleVerificationFormChange('nameMatching', e.target.value)}
-                            className="w-4 h-4 text-[#373177] border-gray-300 focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-gray-700">3 - Cannot hear the response clearly (উত্তর স্পষ্টভাবে শোনা যাচ্ছে না)</span>
-                        </label>
-                        <label className="flex items-center space-x-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="nameMatching"
-                            value="4"
-                            checked={verificationForm.nameMatching === '4'}
-                            onChange={(e) => handleVerificationFormChange('nameMatching', e.target.value)}
-                            className="w-4 h-4 text-[#373177] border-gray-300 focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-gray-700">4 - Did not ask (জিজ্ঞাসা করা হয়নি)</span>
-                        </label>
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      6. Name of the Respondent Matching? (উত্তরদাতার নাম কি মিলে গেছে?)
+                      <span className="text-red-500 ml-1">*</span>
+                    </label>
+                    {selectedInterview && (
+                      <div className="mb-3 p-2 bg-[#E6F0F8] border-l-4 border-blue-500 rounded">
+                        <span className="text-sm font-medium text-blue-700">Response: </span>
+                        <span className="text-sm text-[#373177]">{getVerificationResponses(selectedInterview).name}</span>
                       </div>
+                    )}
+                    <div className="space-y-2">
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="nameMatching"
+                          value="1"
+                          checked={verificationForm.nameMatching === '1'}
+                          onChange={(e) => handleVerificationFormChange('nameMatching', e.target.value)}
+                          className="w-4 h-4 text-[#373177] border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">1 - Matched (মিলে গেছে)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="nameMatching"
+                          value="2"
+                          checked={verificationForm.nameMatching === '2'}
+                          onChange={(e) => handleVerificationFormChange('nameMatching', e.target.value)}
+                          className="w-4 h-4 text-[#373177] border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">2 - Not Matched (মেলেনি)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="nameMatching"
+                          value="3"
+                          checked={verificationForm.nameMatching === '3'}
+                          onChange={(e) => handleVerificationFormChange('nameMatching', e.target.value)}
+                          className="w-4 h-4 text-[#373177] border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">3 - Cannot hear the response clearly (উত্তর স্পষ্টভাবে শোনা যাচ্ছে না)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="nameMatching"
+                          value="4"
+                          checked={verificationForm.nameMatching === '4'}
+                          onChange={(e) => handleVerificationFormChange('nameMatching', e.target.value)}
+                          className="w-4 h-4 text-[#373177] border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">4 - Did not ask (জিজ্ঞাসা করা হয়নি)</span>
+                      </label>
                     </div>
+                  </div>
                   )}
 
                   {/* Question 7: Age Matching */}
