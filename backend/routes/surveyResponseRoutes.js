@@ -16,6 +16,7 @@ const {
   uploadAudioFile,
   getMyInterviews,
   getPendingApprovals,
+  getApprovalStats,
   getNextReviewAssignment,
   releaseReviewAssignment,
   submitVerification,
@@ -110,6 +111,9 @@ router.get('/audio-signed-url/:responseId', getAudioSignedUrl);
 
 // Get all interviews conducted by the logged-in interviewer
 router.get('/my-interviews', getMyInterviews);
+
+// Get approval statistics (optimized endpoint using aggregation)
+router.get('/approval-stats', getApprovalStats);
 
 // Get pending approval responses for company admin
 router.get('/pending-approvals', getPendingApprovals);

@@ -1264,7 +1264,12 @@ const getPendingApprovals = async (req, res) => {
     const companyId = req.user.company;
     const userId = req.user.id;
     const userType = req.user.userType;
-    const { search, gender, ageMin, ageMax, sortBy = 'endTime', sortOrder = 'desc' } = req.query;
+    const { search, gender, ageMin, ageMax, sortBy = 'endTime', sortOrder = 'desc', page = 1, limit = 15 } = req.query;
+    
+    // Parse pagination params
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 15;
+    const skip = (pageNum - 1) * limitNum;
 
     console.log('getPendingApprovals - User company ID:', companyId);
     console.log('getPendingApprovals - User:', req.user.email, req.user.userType);
@@ -1765,9 +1770,15 @@ const getPendingApprovals = async (req, res) => {
       return transformed;
     });
 
-    // Add signed URLs to audio recordings
+    // Calculate total count BEFORE pagination (for pagination metadata)
+    const totalInterviews = transformedInterviews.length;
+    
+    // Apply pagination to transformed interviews
+    const paginatedInterviews = transformedInterviews.slice(skip, skip + limitNum);
+    
+    // Add signed URLs to audio recordings (only for paginated results)
     const { getAudioSignedUrl: getAudioUrl } = require('../utils/cloudStorage');
-    const interviewsWithSignedUrls = await Promise.all(transformedInterviews.map(async (interview) => {
+    const interviewsWithSignedUrls = await Promise.all(paginatedInterviews.map(async (interview) => {
       if (interview.audioRecording && interview.audioRecording.audioUrl) {
         try {
           const signedUrl = await getAudioUrl(interview.audioRecording.audioUrl, 3600);
@@ -1783,11 +1794,24 @@ const getPendingApprovals = async (req, res) => {
       return interview;
     }));
 
+    // Calculate pagination metadata
+    const totalPages = Math.ceil(totalInterviews / limitNum);
+    const hasNext = pageNum < totalPages;
+    const hasPrev = pageNum > 1;
+
     res.status(200).json({
       success: true,
       data: {
         interviews: interviewsWithSignedUrls,
-        total: interviewsWithSignedUrls.length
+        total: totalInterviews,
+        pagination: {
+          currentPage: pageNum,
+          totalPages,
+          totalInterviews,
+          limit: limitNum,
+          hasNext,
+          hasPrev
+        }
       }
     });
 
@@ -1797,6 +1821,127 @@ const getPendingApprovals = async (req, res) => {
       success: false,
       message: 'Failed to fetch pending approvals',
       error: error.message
+    });
+  }
+};
+
+// @desc    Get approval statistics for dashboard (optimized with aggregation)
+// @route   GET /api/survey-responses/approval-stats
+// @access  Private (Company Admin, Project Manager)
+const getApprovalStats = async (req, res) => {
+  try {
+    const companyId = req.user.company;
+    const userType = req.user.userType;
+    
+    // For quality agents, return empty stats (they don't need company-wide stats)
+    if (userType === 'quality_agent') {
+      return res.status(200).json({
+        success: true,
+        message: 'Approval statistics retrieved successfully',
+        data: {
+          stats: {
+            total: 0,
+            pending: 0,
+            withAudio: 0,
+            completed: 0,
+            rejected: 0
+          }
+        }
+      });
+    }
+
+    // Convert companyId to ObjectId if needed
+    const companyObjectId = mongoose.Types.ObjectId.isValid(companyId) 
+      ? (typeof companyId === 'string' ? new mongoose.Types.ObjectId(companyId) : companyId)
+      : companyId;
+
+    // Get all survey IDs for this company
+    const companySurveys = await Survey.find({ company: companyObjectId }).select('_id').lean();
+    const surveyIds = companySurveys.map(s => s._id);
+
+    // If no surveys, return zero stats
+    if (surveyIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: 'Approval statistics retrieved successfully',
+        data: {
+          stats: {
+            total: 0,
+            pending: 0,
+            withAudio: 0,
+            completed: 0,
+            rejected: 0
+          }
+        }
+      });
+    }
+
+    // Use aggregation to calculate stats efficiently
+    const statsResult = await SurveyResponse.aggregate([
+      {
+        $match: {
+          survey: { $in: surveyIds }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalPending: {
+            $sum: { $cond: [{ $eq: ['$status', 'Pending_Approval'] }, 1, 0] }
+          },
+          totalApproved: {
+            $sum: { $cond: [{ $eq: ['$status', 'Approved'] }, 1, 0] }
+          },
+          totalRejected: {
+            $sum: { $cond: [{ $eq: ['$status', 'Rejected'] }, 1, 0] }
+          },
+          withAudio: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $ne: ['$audioRecording', null] },
+                    { $ne: ['$audioRecording.audioUrl', null] },
+                    { $ne: ['$audioRecording.audioUrl', ''] }
+                  ]
+                },
+                1,
+                0
+              ]
+            }
+          }
+        }
+      }
+    ]);
+
+    // Extract stats from aggregation result
+    const stats = statsResult[0] || {
+      totalPending: 0,
+      totalApproved: 0,
+      totalRejected: 0,
+      withAudio: 0
+    };
+
+    res.status(200).json({
+      success: true,
+      message: 'Approval statistics retrieved successfully',
+      data: {
+        stats: {
+          total: stats.totalPending,
+          pending: stats.totalPending,
+          withAudio: stats.withAudio,
+          completed: stats.totalApproved,
+          rejected: stats.totalRejected
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get approval stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 };
@@ -4313,6 +4458,7 @@ module.exports = {
   getAudioSignedUrl,
   getMyInterviews,
   getPendingApprovals,
+  getApprovalStats,
   getNextReviewAssignment,
   releaseReviewAssignment,
   submitVerification,

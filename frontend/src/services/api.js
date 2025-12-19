@@ -866,6 +866,16 @@ export const surveyResponseAPI = {
     }
   },
 
+  // Get approval statistics (optimized endpoint using aggregation)
+  getApprovalStats: async () => {
+    try {
+      const response = await api.get('/api/survey-responses/approval-stats');
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
   // Get next available response from queue for review (Queue-based assignment)
   getNextReviewAssignment: async (params = {}) => {
     try {

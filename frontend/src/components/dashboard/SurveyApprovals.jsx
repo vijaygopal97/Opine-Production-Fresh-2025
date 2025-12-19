@@ -18,6 +18,8 @@ import {
   X,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   FileText,
   Headphones,
   Download,
@@ -38,8 +40,18 @@ import api from '../../services/api';
 const SurveyApprovals = () => {
   const { user } = useAuth();
   const [interviews, setInterviews] = useState([]);
-  const [allResponses, setAllResponses] = useState([]);
+  const [allResponses, setAllResponses] = useState([]); // Keep for backward compatibility if needed elsewhere
+  const [approvalStatsData, setApprovalStatsData] = useState({
+    total: 0,
+    pending: 0,
+    withAudio: 0,
+    completed: 0,
+    rejected: 0
+  });
   const [loading, setLoading] = useState(true);
+  const [pagination, setPagination] = useState({});
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterGender, setFilterGender] = useState('');
   const [filterMode, setFilterMode] = useState('');
@@ -138,27 +150,38 @@ const SurveyApprovals = () => {
     }
   };
 
-  // Fetch all responses for stats
-  const fetchAllResponses = async () => {
+  // Fetch approval statistics (optimized - uses aggregation endpoint)
+  const fetchApprovalStats = async () => {
     try {
-      // For quality agents, we don't need to fetch all company responses
-      // Stats will be calculated from the filtered interviews array
+      // For quality agents, stats are calculated from interviews array (handled in stats calculation)
       if (user?.userType === 'quality_agent') {
         return;
       }
-      const response = await surveyResponseAPI.getDebugResponses();
-      setAllResponses(response.data.responses || []);
+      const response = await surveyResponseAPI.getApprovalStats();
+      if (response.success && response.data.stats) {
+        // Store stats directly instead of fetching all responses
+        setApprovalStatsData(response.data.stats);
+      }
     } catch (error) {
-      console.error('Error fetching all responses:', error);
+      console.error('Error fetching approval stats:', error);
+      // Set default values on error
+      setApprovalStatsData({
+        total: 0,
+        pending: 0,
+        withAudio: 0,
+        completed: 0,
+        rejected: 0
+      });
     }
   };
 
-  // Fetch all responses for stats and pending approvals list (for company admins)
+  // Fetch approval stats and pending approvals list on initial load (for company admins)
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
       try {
-        await fetchAllResponses();
+        // Use optimized stats endpoint instead of fetching all responses
+        await fetchApprovalStats();
         // For company admins, also fetch the pending approvals list
         if (user?.userType !== 'quality_agent') {
           await fetchPendingApprovals();
@@ -172,12 +195,14 @@ const SurveyApprovals = () => {
     loadData();
   }, [user?.userType]);
 
-  // Fetch pending approvals when filters change (for company admins only)
+  // Fetch pending approvals when filters or pagination change (for company admins only)
   useEffect(() => {
     if (user?.userType !== 'quality_agent') {
-    fetchPendingApprovals();
+      fetchPendingApprovals();
+      // Refresh stats when filters change (in case they affect stats)
+      fetchApprovalStats();
     }
-  }, [searchTerm, filterGender, filterMode, ageRange, sortBy, sortOrder, user?.userType]);
+  }, [searchTerm, filterGender, filterMode, ageRange, sortBy, sortOrder, currentPage, pageSize, user?.userType]);
 
   // Timer for assignment expiration
   useEffect(() => {
@@ -459,12 +484,15 @@ const SurveyApprovals = () => {
         ageMin: ageRange.min,
         ageMax: ageRange.max,
         sortBy,
-        sortOrder
+        sortOrder,
+        page: currentPage,
+        limit: pageSize
       };
       
       const response = await surveyResponseAPI.getPendingApprovals(params);
       
       setInterviews(response.data.interviews || []);
+      setPagination(response.data.pagination || {});
     } catch (error) {
       console.error('Error fetching pending approvals:', error);
       showError('Failed to fetch pending approvals');
@@ -822,8 +850,8 @@ const SurveyApprovals = () => {
         setCatiRecordingBlobUrl(null);
       }
       
-      // Refresh stats
-      await fetchAllResponses();
+      // Refresh stats using optimized endpoint
+      await fetchApprovalStats();
       
     } catch (error) {
       console.error('Error submitting verification:', error);
@@ -1954,12 +1982,12 @@ const SurveyApprovals = () => {
     completed: 0, // Approved responses are not in pending list - would need separate API call
     rejected: 0 // Rejected responses are not in pending list - would need separate API call
   } : {
-    // Company admin stats - calculated from all company responses
-    total: allResponses.filter(i => i.status === 'Pending_Approval').length,
-    pending: allResponses.filter(i => i.status === 'Pending_Approval').length,
-    withAudio: allResponses.filter(i => i.audioRecording?.hasAudio).length,
-    completed: allResponses.filter(i => i.status === 'Approved').length,
-    rejected: allResponses.filter(i => i.status === 'Rejected').length
+    // Company admin stats - use optimized stats from aggregation endpoint
+    total: approvalStatsData.total || 0,
+    pending: approvalStatsData.pending || 0,
+    withAudio: approvalStatsData.withAudio || 0,
+    completed: approvalStatsData.completed || 0,
+    rejected: approvalStatsData.rejected || 0
   };
 
 
@@ -2080,7 +2108,10 @@ const SurveyApprovals = () => {
             <label className="text-xs font-medium text-gray-600 mb-1">Gender</label>
             <select
               value={filterGender}
-              onChange={(e) => setFilterGender(e.target.value)}
+              onChange={(e) => {
+                setFilterGender(e.target.value);
+                setCurrentPage(1); // Reset to first page when filtering
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             >
               <option value="">All Genders</option>
@@ -2111,7 +2142,10 @@ const SurveyApprovals = () => {
                 type="number"
                 placeholder="Min"
                 value={ageRange.min}
-                onChange={(e) => setAgeRange(prev => ({ ...prev, min: e.target.value }))}
+                onChange={(e) => {
+                  setAgeRange(prev => ({ ...prev, min: e.target.value }));
+                  setCurrentPage(1); // Reset to first page when filtering
+                }}
                 className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
               />
               <span className="flex items-center text-gray-500">-</span>
@@ -2119,7 +2153,10 @@ const SurveyApprovals = () => {
                 type="number"
                 placeholder="Max"
                 value={ageRange.max}
-                onChange={(e) => setAgeRange(prev => ({ ...prev, max: e.target.value }))}
+                onChange={(e) => {
+                  setAgeRange(prev => ({ ...prev, max: e.target.value }));
+                  setCurrentPage(1); // Reset to first page when filtering
+                }}
                 className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
               />
             </div>
@@ -2169,7 +2206,10 @@ const SurveyApprovals = () => {
                 <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                   Gender: {filterGender}
                   <button
-                    onClick={() => setFilterGender('')}
+                    onClick={() => {
+                      setFilterGender('');
+                      setCurrentPage(1); // Reset to first page when clearing filter
+                    }}
                     className="ml-1 text-green-600 hover:text-green-800"
                   >
                     <X className="w-3 h-3" />
@@ -2180,7 +2220,10 @@ const SurveyApprovals = () => {
                 <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-[#E8E6F5] text-purple-800">
                   Mode: {filterMode.toUpperCase()}
                   <button
-                    onClick={() => setFilterMode('')}
+                    onClick={() => {
+                      setFilterMode('');
+                      setCurrentPage(1); // Reset to first page when clearing filter
+                    }}
                     className="ml-1 text-[#373177] hover:text-purple-800"
                   >
                     <X className="w-3 h-3" />
@@ -2191,7 +2234,10 @@ const SurveyApprovals = () => {
                 <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-[#E8E6F5] text-purple-800">
                   Age: {ageRange.min || '0'} - {ageRange.max || '∞'}
                   <button
-                    onClick={() => setAgeRange({ min: '', max: '' })}
+                    onClick={() => {
+                      setAgeRange({ min: '', max: '' });
+                      setCurrentPage(1); // Reset to first page when clearing filter
+                    }}
                     className="ml-1 text-[#373177] hover:text-purple-800"
                   >
                     <X className="w-3 h-3" />
@@ -2369,35 +2415,36 @@ const SurveyApprovals = () => {
           <p className="text-gray-600">All survey responses have been reviewed and approved.</p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{width: '240px'}}>
-                  Interview Details
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Respondent Info
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Progress
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Duration
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Audio
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {sortedInterviews.map((interview) => {
+        <>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{width: '240px'}}>
+                    Interview Details
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Respondent Info
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Progress
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Duration
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Audio
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {sortedInterviews.map((interview) => {
                 const surveyId = interview.survey?._id || interview.survey?.survey?._id || fullSurveyData?._id;
                 const respondentInfo = getRespondentInfo(interview.responses, surveyId);
                 return (
@@ -2671,8 +2718,86 @@ const SurveyApprovals = () => {
                   })}
                 </tbody>
               </table>
-        </div>
+          </div>
+          
+          {/* Results Summary and Pagination */}
+          {pagination.totalInterviews !== undefined && (
+            <>
+              {/* Results Summary */}
+              <div className="flex items-center justify-between text-sm text-gray-600 mt-4 mb-4">
+                <div>
+                  Showing {interviews.length} of {pagination.totalInterviews || 0} pending approvals
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span>Per page:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(parseInt(e.target.value));
+                      setCurrentPage(1); // Reset to first page when changing page size
+                    }}
+                    className="px-2 py-1 border border-gray-300 rounded text-sm"
+                  >
+                    <option value={15}>15</option>
+                    <option value={30}>30</option>
+                    <option value={45}>45</option>
+                    <option value={60}>60</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Pagination Controls */}
+              {pagination.totalPages > 1 && (
+                <div className="flex items-center justify-between mt-4">
+                  <div className="text-sm text-gray-700">
+                    Page {pagination.currentPage || 1} of {pagination.totalPages || 1}
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                      disabled={!pagination.hasPrev}
+                      className="px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    
+                    {/* Page Numbers */}
+                    {Array.from({ length: Math.min(5, pagination.totalPages || 1) }, (_, i) => {
+                      const pageNum = (pagination.currentPage || 1) <= 3 
+                        ? i + 1 
+                        : (pagination.currentPage || 1) + i - 2;
+                      
+                      if (pageNum > pagination.totalPages) return null;
+                      
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => setCurrentPage(pageNum)}
+                          className={`px-3 py-2 border rounded-lg transition-colors ${
+                            pageNum === (pagination.currentPage || 1)
+                              ? 'bg-[#001D48] text-white border-[#373177]'
+                              : 'border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+                    
+                    <button
+                      onClick={() => setCurrentPage((prev) => prev + 1)}
+                      disabled={!pagination.hasNext}
+                      className="px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
+        </>
+      )}
         </>
       )}
     </div>
