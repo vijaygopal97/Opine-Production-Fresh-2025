@@ -22,6 +22,7 @@ import { surveyResponseAPI, surveyAPI } from '../services/api';
 import { useToast } from '../contexts/ToastContext';
 import ResponseDetailsModal from '../components/dashboard/ResponseDetailsModal';
 import { getMainText } from '../utils/translations';
+import { getACByName } from '../utils/assemblyConstituencies';
 import assemblyConstituenciesData from '../data/assemblyConstituencies.json';
 
 const ViewResponsesPage = () => {
@@ -217,10 +218,18 @@ const ViewResponsesPage = () => {
     }));
   };
 
-  // Get all AC objects for dropdown
-  const allACObjects = useMemo(() => {
-    return getAllACsForState();
-  }, [survey, responses, assemblyConstituencies]);
+  // Helper function to extract numeric AC code from full AC code (same as reports page)
+  const getNumericACCode = (acCode) => {
+    if (!acCode || typeof acCode !== 'string') return '';
+    
+    // Remove state prefix (alphabets at the start) and extract numeric part
+    const numericPart = acCode.replace(/^[A-Z]+/, '');
+    
+    // Remove leading zeros and return as string
+    // If all zeros, return "0", otherwise return the number without leading zeros
+    const numericValue = parseInt(numericPart, 10);
+    return isNaN(numericValue) ? '' : numericValue.toString();
+  };
 
   // Get all interviewer objects from responses
   const allInterviewerObjects = useMemo(() => {
@@ -253,19 +262,6 @@ const ViewResponsesPage = () => {
     return Array.from(interviewerMap.values());
   }, [responses]);
 
-  // Filter ACs based on search term
-  const filteredACs = useMemo(() => {
-    if (!acSearchTerm.trim()) {
-      return allACObjects;
-    }
-
-    const searchLower = acSearchTerm.toLowerCase();
-    return allACObjects.filter(ac => {
-      const nameMatch = ac.name?.toLowerCase().includes(searchLower);
-      const codeMatch = ac.numericCode?.toString().includes(searchLower);
-      return nameMatch || codeMatch;
-    });
-  }, [allACObjects, acSearchTerm]);
 
   // Filter interviewers based on search term
   const filteredInterviewers = useMemo(() => {
@@ -1503,13 +1499,95 @@ const ViewResponsesPage = () => {
         'age'
       ]);
 
-      const acResponse = responses.find(r => {
-        if (!r || !r.questionText) return false;
-        const questionText = getMainText(r.questionText || '');
-        if (!questionText) return false;
-        const lowerText = String(questionText).toLowerCase();
-        return lowerText.includes('assembly') || lowerText.includes('constituency');
-      });
+      // Comprehensive AC extraction function (same as reports page)
+      const extractACFromResponse = (responses, responseData) => {
+        // Helper to validate if a value is a valid AC name (not yes/no/consent answers)
+        const isValidACName = (value) => {
+          if (!value || typeof value !== 'string') return false;
+          const cleaned = getMainText(value).trim();
+          if (!cleaned || cleaned === 'N/A' || cleaned === '') return false;
+          
+          const lower = cleaned.toLowerCase();
+          // Reject common non-AC values
+          const invalidValues = ['yes', 'no', 'y', 'n', 'true', 'false', 'ok', 'okay', 'sure', 'agree', 'disagree', 'consent'];
+          if (invalidValues.includes(lower)) return false;
+          if (lower.startsWith('yes') || lower.startsWith('no')) return false;
+          if (lower.match(/^yes[_\s]/i) || lower.match(/^no[_\s]/i)) return false;
+          
+          // Must be longer than 2 characters
+          if (cleaned.length <= 2) return false;
+          
+          // Should look like a valid name (has capital letters or multiple words)
+          const hasCapitalLetters = /[A-Z]/.test(cleaned);
+          const hasMultipleWords = cleaned.split(/\s+/).length > 1;
+          const looksLikeName = hasCapitalLetters || hasMultipleWords;
+          
+          return looksLikeName;
+        };
+
+        // Priority 1: Check selectedAC field
+        if (responseData?.selectedAC && isValidACName(responseData.selectedAC)) {
+          return getMainText(String(responseData.selectedAC)).trim();
+        }
+        
+        // Priority 2: Check selectedPollingStation.acName
+        if (responseData?.selectedPollingStation?.acName && isValidACName(responseData.selectedPollingStation.acName)) {
+          return getMainText(String(responseData.selectedPollingStation.acName)).trim();
+        }
+        
+        // Priority 3: Check responses array for questionId === 'ac-selection'
+        if (responses && Array.isArray(responses)) {
+          const acSelectionResponse = responses.find(r => 
+            r.questionId === 'ac-selection' && r.response
+          );
+          if (acSelectionResponse && isValidACName(acSelectionResponse.response)) {
+            return getMainText(String(acSelectionResponse.response)).trim();
+          }
+          
+          // Priority 4: Check for questionType that indicates AC selection
+          const acTypeResponse = responses.find(r => 
+            (r.questionType === 'ac_selection' || 
+             r.questionType === 'assembly_constituency' ||
+             r.questionType === 'ac') && 
+            r.response
+          );
+          if (acTypeResponse && isValidACName(acTypeResponse.response)) {
+            return getMainText(String(acTypeResponse.response)).trim();
+          }
+          
+          // Priority 5: Search by question text containing "assembly" or "constituency"
+          // BUT exclude questions that are consent/agreement questions
+          const acTextResponses = responses.filter(r => {
+            if (!r.questionText || !r.response) return false;
+            const questionText = getMainText(r.questionText).toLowerCase();
+            const hasAssembly = questionText.includes('assembly');
+            const hasConstituency = questionText.includes('constituency');
+            
+            // Exclude consent/agreement questions
+            const isConsentQuestion = questionText.includes('consent') || 
+                                      questionText.includes('agree') ||
+                                      questionText.includes('participate') ||
+                                      questionText.includes('willing') ||
+                                      questionText.includes('do you') ||
+                                      questionText.includes('would you');
+            
+            return (hasAssembly || hasConstituency) && !isConsentQuestion;
+          });
+          
+          // Try each potential AC response and validate it
+          for (const acResponse of acTextResponses) {
+            if (isValidACName(acResponse.response)) {
+              return getMainText(String(acResponse.response)).trim();
+            }
+          }
+        }
+        
+        return null;
+      };
+
+      // Extract AC using comprehensive function
+      const extractedAC = extractACFromResponse(responses, responseData);
+      const acName = extractedAC || 'N/A';
 
       // Get city from GPS location if available, otherwise from responses
       let city = 'N/A';
@@ -1524,7 +1602,6 @@ const ViewResponsesPage = () => {
       }
 
       // Get district from AC using assemblyConstituencies.json
-      const acName = acResponse?.response || 'N/A';
       const district = getDistrictFromAC(acName);
 
       // Get Lok Sabha from AC using assemblyConstituencies.json
@@ -1604,12 +1681,95 @@ const ViewResponsesPage = () => {
       return lower.includes('age') || lower.includes('year');
     });
 
-    const acResponse = responses.find(r => 
-      r.questionText && (
-        r.questionText.toLowerCase().includes('assembly') ||
-        r.questionText.toLowerCase().includes('constituency')
-      )
-    );
+    // Comprehensive AC extraction function (same as reports page)
+    const extractACFromResponse = (responses, responseData) => {
+      // Helper to validate if a value is a valid AC name (not yes/no/consent answers)
+      const isValidACName = (value) => {
+        if (!value || typeof value !== 'string') return false;
+        const cleaned = getMainText(value).trim();
+        if (!cleaned || cleaned === 'N/A' || cleaned === '') return false;
+        
+        const lower = cleaned.toLowerCase();
+        // Reject common non-AC values
+        const invalidValues = ['yes', 'no', 'y', 'n', 'true', 'false', 'ok', 'okay', 'sure', 'agree', 'disagree', 'consent'];
+        if (invalidValues.includes(lower)) return false;
+        if (lower.startsWith('yes') || lower.startsWith('no')) return false;
+        if (lower.match(/^yes[_\s]/i) || lower.match(/^no[_\s]/i)) return false;
+        
+        // Must be longer than 2 characters
+        if (cleaned.length <= 2) return false;
+        
+        // Should look like a valid name (has capital letters or multiple words)
+        const hasCapitalLetters = /[A-Z]/.test(cleaned);
+        const hasMultipleWords = cleaned.split(/\s+/).length > 1;
+        const looksLikeName = hasCapitalLetters || hasMultipleWords;
+        
+        return looksLikeName;
+      };
+
+      // Priority 1: Check selectedAC field
+      if (responseData?.selectedAC && isValidACName(responseData.selectedAC)) {
+        return getMainText(String(responseData.selectedAC)).trim();
+      }
+      
+      // Priority 2: Check selectedPollingStation.acName
+      if (responseData?.selectedPollingStation?.acName && isValidACName(responseData.selectedPollingStation.acName)) {
+        return getMainText(String(responseData.selectedPollingStation.acName)).trim();
+      }
+      
+      // Priority 3: Check responses array for questionId === 'ac-selection'
+      if (responses && Array.isArray(responses)) {
+        const acSelectionResponse = responses.find(r => 
+          r.questionId === 'ac-selection' && r.response
+        );
+        if (acSelectionResponse && isValidACName(acSelectionResponse.response)) {
+          return getMainText(String(acSelectionResponse.response)).trim();
+        }
+        
+        // Priority 4: Check for questionType that indicates AC selection
+        const acTypeResponse = responses.find(r => 
+          (r.questionType === 'ac_selection' || 
+           r.questionType === 'assembly_constituency' ||
+           r.questionType === 'ac') && 
+          r.response
+        );
+        if (acTypeResponse && isValidACName(acTypeResponse.response)) {
+          return getMainText(String(acTypeResponse.response)).trim();
+        }
+        
+        // Priority 5: Search by question text containing "assembly" or "constituency"
+        // BUT exclude questions that are consent/agreement questions
+        const acTextResponses = responses.filter(r => {
+          if (!r.questionText || !r.response) return false;
+          const questionText = getMainText(r.questionText).toLowerCase();
+          const hasAssembly = questionText.includes('assembly');
+          const hasConstituency = questionText.includes('constituency');
+          
+          // Exclude consent/agreement questions
+          const isConsentQuestion = questionText.includes('consent') || 
+                                    questionText.includes('agree') ||
+                                    questionText.includes('participate') ||
+                                    questionText.includes('willing') ||
+                                    questionText.includes('do you') ||
+                                    questionText.includes('would you');
+          
+          return (hasAssembly || hasConstituency) && !isConsentQuestion;
+        });
+        
+        // Try each potential AC response and validate it
+        for (const acResponse of acTextResponses) {
+          if (isValidACName(acResponse.response)) {
+            return getMainText(String(acResponse.response)).trim();
+          }
+        }
+      }
+      
+      return null;
+    };
+
+    // Extract AC using comprehensive function
+    const extractedAC = extractACFromResponse(responses, responseData);
+    const acName = extractedAC || 'N/A';
 
     // Get city from GPS location if available, otherwise from responses
     let city = 'N/A';
@@ -1626,7 +1786,6 @@ const ViewResponsesPage = () => {
     }
 
     // Get district from AC using assemblyConstituencies.json
-    const acName = acResponse?.response || 'N/A';
     const district = getDistrictFromAC(acName);
 
     // Get Lok Sabha from AC using assemblyConstituencies.json
@@ -1666,6 +1825,67 @@ const ViewResponsesPage = () => {
       state: state
     };
   };
+
+  // Get all AC objects for dropdown - from actual responses (like reports page)
+  // Must be defined after getRespondentInfo
+  const allACObjects = useMemo(() => {
+    if (!responses || responses.length === 0) return [];
+
+    const acMap = new Map(); // Map to store AC objects with name and code
+
+    responses.forEach(response => {
+      // Only include responses with Approved, Rejected, or Pending_Approval status
+      if (response.status === 'Approved' || 
+          response.status === 'Rejected' || 
+          response.status === 'Pending_Approval') {
+        const respondentInfo = getRespondentInfo(response.responses, response);
+        
+        if (respondentInfo.ac && respondentInfo.ac !== 'N/A') {
+          const acName = respondentInfo.ac;
+          
+          // Get AC code from assembly constituencies data
+          if (!acMap.has(acName)) {
+            const acData = getACByName(acName);
+            const fullCode = acData?.acCode || '';
+            const numericCode = getNumericACCode(fullCode);
+            
+            acMap.set(acName, {
+              name: acName,
+              code: fullCode, // Keep full code for reference
+              numericCode: numericCode // Numeric code for display and search
+            });
+          }
+        }
+      }
+    });
+
+    return Array.from(acMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [responses]);
+
+  // Filter ACs based on search term (name or numeric code) - same as reports page
+  // Must be defined after allACObjects
+  const filteredACs = useMemo(() => {
+    if (!allACObjects) return [];
+    
+    if (!acSearchTerm.trim()) {
+      return allACObjects;
+    }
+
+    const searchLower = acSearchTerm.toLowerCase();
+    const searchNumeric = acSearchTerm.trim(); // For numeric search, don't lowercase
+    
+    return allACObjects.filter(ac => {
+      const nameMatch = ac.name?.toLowerCase().includes(searchLower);
+      // Search by numeric code (exact match or partial match)
+      const numericCodeMatch = ac.numericCode && (
+        ac.numericCode === searchNumeric || 
+        ac.numericCode.includes(searchNumeric) ||
+        searchNumeric.includes(ac.numericCode)
+      );
+      
+      return nameMatch || numericCodeMatch;
+    });
+  }, [allACObjects, acSearchTerm]);
 
   // Get unique filter options from original unfiltered responses
   const getFilterOptions = useMemo(() => {
@@ -1850,11 +2070,14 @@ const ViewResponsesPage = () => {
         return false;
       }
 
-      // AC filter - case insensitive
-      if (filters.ac && respondentInfo.ac && filters.ac) {
+      // AC filter - case insensitive (same logic as reports page)
+      if (filters.ac && respondentInfo.ac && respondentInfo.ac !== 'N/A') {
         if (String(respondentInfo.ac).toLowerCase() !== String(filters.ac).toLowerCase()) {
           return false;
         }
+      } else if (filters.ac && (!respondentInfo.ac || respondentInfo.ac === 'N/A')) {
+        // If filter is set but AC is N/A, exclude this response
+        return false;
       }
 
       // City filter - case insensitive
