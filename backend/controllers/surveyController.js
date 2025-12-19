@@ -361,6 +361,50 @@ exports.getSurveys = async (req, res) => {
 // @desc    Get a single survey
 // @route   GET /api/surveys/:id
 // @access  Private (Company Admin, Project Manager, Interviewer)
+// Get full survey data (with sections and questions) - optimized endpoint for interview interface
+exports.getSurveyFull = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Find survey with full data (sections and questions)
+    const survey = await Survey.findById(id)
+      .select('surveyName description mode sections questions assignACs acAssignmentState status version');
+
+    if (!survey) {
+      return res.status(404).json({
+        success: false,
+        message: 'Survey not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        survey: {
+          id: survey._id,
+          surveyName: survey.surveyName,
+          description: survey.description,
+          mode: survey.mode,
+          sections: survey.sections,
+          questions: survey.questions,
+          assignACs: survey.assignACs,
+          acAssignmentState: survey.acAssignmentState,
+          status: survey.status,
+          version: survey.version
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get survey full error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch survey',
+      error: error.message
+    });
+  }
+};
+
 exports.getSurvey = async (req, res) => {
   try {
     const { id } = req.params;

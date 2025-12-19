@@ -4,6 +4,7 @@ const {
   createSurvey,
   getSurveys,
   getSurvey,
+  getSurveyFull,
   updateSurvey,
   deleteSurvey,
   publishSurvey,
@@ -77,6 +78,10 @@ router.route('/:id/cati-stats')
 router.route('/:id/respondent-contacts')
   .get(protect, authorize('company_admin', 'project_manager'), getRespondentContacts)
   .put(protect, authorize('company_admin', 'project_manager'), saveRespondentContacts);
+
+// Full survey data endpoint (with sections and questions) - must come before /:id route
+router.route('/:id/full')
+  .get(protect, authorize('company_admin', 'project_manager', 'interviewer'), getSurveyFull);
 
 // Generic /:id route must be LAST to avoid matching specific routes like /overall-stats
 router.route('/:id')

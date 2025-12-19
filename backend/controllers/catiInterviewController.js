@@ -372,115 +372,156 @@ const startCatiInterview = async (req, res) => {
     console.log('🔍 Queue initialized');
 
     // Get next available respondent from queue with AC priority-based selection
-    console.log('🔍 Finding next respondent in queue with AC priority logic...');
+    // OPTIMIZED: Use MongoDB aggregation instead of fetching all documents
+    console.log('🔍 Finding next respondent in queue with AC priority logic (optimized aggregation)...');
     
-    // Load AC priority map
+    // Load AC priority map (cached)
     const acPriorityMap = await loadACPriorityMap();
     console.log('📋 AC Priority Map loaded:', Object.keys(acPriorityMap).length, 'ACs');
     
-    // Create normalized priority map for case-insensitive matching
-    const normalizedPriorityMap = {};
+    // Build priority arrays for aggregation
+    const priorityACs = {}; // priority -> [AC names]
+    const excludedACs = []; // Priority 0 ACs
+    const allPrioritizedACs = []; // All ACs in priority map (for exclusion check)
+    
     Object.entries(acPriorityMap).forEach(([acName, priority]) => {
-      normalizedPriorityMap[normalizeACName(acName)] = priority;
-    });
-    
-    // Get all pending respondents
-    const allPendingRespondents = await CatiRespondentQueue.find({
-      survey: surveyId,
-      status: 'pending'
-    }).lean(); // Use lean() for better performance
-    
-    console.log('🔍 Total pending respondents:', allPendingRespondents.length);
-    
-    if (allPendingRespondents.length === 0) {
-      console.log('⚠️  No pending respondents available');
-      return res.status(200).json({
-        success: false,
-        message: 'No Pending Respondents',
-        data: {
-          message: 'All respondents have been processed or are currently assigned. Please check back later or contact your administrator.',
-          hasPendingRespondents: false
-        }
-      });
-    }
-    
-    // Group respondents by AC priority
-    const respondentsByPriority = {};
-    const excludedACs = new Set(); // Priority 0 ACs (use Set to avoid duplicates)
-    const nonPrioritizedRespondents = [];
-    
-    allPendingRespondents.forEach(respondent => {
-      const acName = respondent.respondentContact?.ac;
-      if (!acName) {
-        // No AC specified, treat as non-prioritized
-        nonPrioritizedRespondents.push(respondent);
-        return;
-      }
+      allPrioritizedACs.push(acName);
+      allPrioritizedACs.push(normalizeACName(acName)); // Also include normalized version
       
-      // Try exact match first, then normalized match
-      let priority = acPriorityMap[acName];
-      if (priority === undefined) {
-        priority = normalizedPriorityMap[normalizeACName(acName)];
-      }
-      
-      if (priority === undefined || priority === null) {
-        // AC not in priority list, treat as non-prioritized
-        nonPrioritizedRespondents.push(respondent);
-      } else if (priority === 0) {
-        // Priority 0 = excluded from assignment
-        excludedACs.add(acName);
-        console.log(`🚫 Excluding respondent from Priority 0 AC: ${acName}`);
-      } else {
-        // AC has a priority (1, 2, 3, etc.)
-        if (!respondentsByPriority[priority]) {
-          respondentsByPriority[priority] = [];
+      if (priority === 0) {
+        excludedACs.push(acName);
+        excludedACs.push(normalizeACName(acName)); // Also exclude normalized version
+      } else if (priority > 0) {
+        if (!priorityACs[priority]) {
+          priorityACs[priority] = [];
         }
-        respondentsByPriority[priority].push(respondent);
+        priorityACs[priority].push(acName);
+        priorityACs[priority].push(normalizeACName(acName)); // Also include normalized version
       }
     });
     
-    console.log('📊 Respondents grouped by priority:', Object.keys(respondentsByPriority).map(p => `Priority ${p}: ${respondentsByPriority[p].length}`).join(', '));
-    console.log('📊 Non-prioritized respondents:', nonPrioritizedRespondents.length);
-    console.log('🚫 Excluded ACs (Priority 0):', excludedACs.size > 0 ? Array.from(excludedACs).join(', ') : 'None');
-    
-    // Find the highest priority that has pending respondents
-    let selectedRespondent = null;
-    const sortedPriorities = Object.keys(respondentsByPriority)
+    // Get sorted priority list (ascending: 1, 2, 3...)
+    const sortedPriorities = Object.keys(priorityACs)
       .map(p => parseInt(p, 10))
       .filter(p => !isNaN(p) && p > 0)
-      .sort((a, b) => a - b); // Sort ascending (1, 2, 3...)
+      .sort((a, b) => a - b);
     
-    console.log('🔍 Sorted priorities with pending respondents:', sortedPriorities);
+    console.log('📊 Priority ACs:', Object.keys(priorityACs).map(p => `Priority ${p}: ${priorityACs[p].length / 2} unique ACs`).join(', '));
+    console.log('🚫 Excluded ACs (Priority 0):', excludedACs.length / 2, 'unique ACs');
     
-    // Select from highest priority (lowest number = highest priority)
+    // Try to find respondent using aggregation pipeline (most efficient)
+    let selectedRespondent = null;
+    
+    // First, try each priority level in order (highest priority first)
     for (const priority of sortedPriorities) {
-      const priorityRespondents = respondentsByPriority[priority];
-      if (priorityRespondents && priorityRespondents.length > 0) {
-        // Randomly select from this priority group to get a mix of ACs
-        const randomIndex = Math.floor(Math.random() * priorityRespondents.length);
-        selectedRespondent = priorityRespondents[randomIndex];
-        console.log(`✅ Selected respondent from Priority ${priority} AC (random selection from ${priorityRespondents.length} respondents)`);
+      const acNames = priorityACs[priority];
+      
+      // Build aggregation pipeline to select one random respondent from this priority
+      // Use case-insensitive matching with $regex
+      const pipeline = [
+        {
+          $match: {
+            survey: new mongoose.Types.ObjectId(surveyId),
+            status: 'pending',
+            'respondentContact.ac': { 
+              $exists: true,
+              $ne: null,
+              $ne: ''
+            }
+          }
+        },
+        {
+          $addFields: {
+            normalizedAC: {
+              $toLower: {
+                $trim: {
+                  input: { $ifNull: ['$respondentContact.ac', ''] }
+                }
+              }
+            }
+          }
+        },
+        {
+          $match: {
+            $or: [
+              { 'respondentContact.ac': { $in: acNames } },
+              { normalizedAC: { $in: acNames.map(ac => ac.toLowerCase()) } }
+            ]
+          }
+        },
+        // Random sample - get one random document
+        { $sample: { size: 1 } }
+      ];
+      
+      const results = await CatiRespondentQueue.aggregate(pipeline);
+      
+      if (results && results.length > 0) {
+        selectedRespondent = results[0];
+        console.log(`✅ Selected respondent from Priority ${priority} AC using aggregation`);
         console.log(`📍 Selected AC: ${selectedRespondent.respondentContact?.ac}`);
         break;
       }
     }
     
     // If no prioritized ACs have pending respondents, select from non-prioritized
-    if (!selectedRespondent && nonPrioritizedRespondents.length > 0) {
-      // Randomly select from non-prioritized respondents
-      const randomIndex = Math.floor(Math.random() * nonPrioritizedRespondents.length);
-      selectedRespondent = nonPrioritizedRespondents[randomIndex];
-      console.log(`✅ Selected respondent from non-prioritized ACs (random selection from ${nonPrioritizedRespondents.length} respondents)`);
-      console.log(`📍 Selected AC: ${selectedRespondent.respondentContact?.ac || 'No AC specified'}`);
+    if (!selectedRespondent) {
+      console.log('🔍 No prioritized respondents found, selecting from non-prioritized...');
+      
+      // Build aggregation for non-prioritized (AC not in priority list or no AC)
+      const nonPrioritizedPipeline = [
+        {
+          $match: {
+            survey: new mongoose.Types.ObjectId(surveyId),
+            status: 'pending',
+            $or: [
+              { 'respondentContact.ac': { $exists: false } },
+              { 'respondentContact.ac': null },
+              { 'respondentContact.ac': '' }
+            ]
+          }
+        },
+        { $sample: { size: 1 } }
+      ];
+      
+      // Also try ACs that are not in priority list
+      const nonPrioritizedWithAC = [
+        {
+          $match: {
+            survey: new mongoose.Types.ObjectId(surveyId),
+            status: 'pending',
+            'respondentContact.ac': { 
+              $exists: true,
+              $ne: null,
+              $ne: '',
+              $nin: allPrioritizedACs // Exclude all prioritized ACs
+            }
+          }
+        },
+        { $sample: { size: 1 } }
+      ];
+      
+      const [nonPrioritizedResults, nonPrioritizedWithACResults] = await Promise.all([
+        CatiRespondentQueue.aggregate(nonPrioritizedPipeline),
+        CatiRespondentQueue.aggregate(nonPrioritizedWithAC)
+      ]);
+      
+      if (nonPrioritizedResults && nonPrioritizedResults.length > 0) {
+        selectedRespondent = nonPrioritizedResults[0];
+        console.log(`✅ Selected respondent from non-prioritized (no AC) using aggregation`);
+      } else if (nonPrioritizedWithACResults && nonPrioritizedWithACResults.length > 0) {
+        selectedRespondent = nonPrioritizedWithACResults[0];
+        console.log(`✅ Selected respondent from non-prioritized ACs using aggregation`);
+        console.log(`📍 Selected AC: ${selectedRespondent.respondentContact?.ac || 'No AC specified'}`);
+      }
     }
     
-    // If still no respondent found, fall back to original logic (shouldn't happen, but safety check)
+    // Final fallback: if still no respondent found, use simple query
     if (!selectedRespondent) {
-      console.log('⚠️  No respondent found with priority logic, falling back to original query...');
+      console.log('⚠️  No respondent found with aggregation, using fallback query...');
       const fallbackRespondent = await CatiRespondentQueue.findOne({
         survey: surveyId,
         status: 'pending'
-      }).sort({ priority: -1, createdAt: 1 });
+      }).sort({ createdAt: 1 }).lean();
       
       if (!fallbackRespondent) {
         console.log('⚠️  No pending respondents available');
@@ -496,8 +537,10 @@ const startCatiInterview = async (req, res) => {
       selectedRespondent = fallbackRespondent;
     }
     
-    // Convert lean document back to Mongoose document for saving
-    const nextRespondent = await CatiRespondentQueue.findById(selectedRespondent._id);
+    // Convert to Mongoose document for saving
+    const nextRespondent = selectedRespondent._id 
+      ? await CatiRespondentQueue.findById(selectedRespondent._id)
+      : await CatiRespondentQueue.findOne({ _id: selectedRespondent._id });
     
     console.log('🔍 Next respondent found:', nextRespondent ? 'Yes' : 'No');
     if (!nextRespondent) {
@@ -548,6 +591,7 @@ const startCatiInterview = async (req, res) => {
     session.markQuestionReached(0, 0, 'first');
     await session.save();
 
+    // Return minimal survey data for faster response (full survey can be fetched separately if needed)
     res.status(200).json({
       success: true,
       data: {
@@ -556,9 +600,10 @@ const startCatiInterview = async (req, res) => {
           id: survey._id,
           surveyName: survey.surveyName,
           description: survey.description,
-          sections: survey.sections,
-          questions: survey.questions,
-          mode: survey.mode
+          mode: survey.mode,
+          assignACs: survey.assignACs,
+          acAssignmentState: survey.acAssignmentState
+          // Note: sections and questions are NOT included - use /api/surveys/:id/full endpoint if needed
         },
         respondent: {
           id: nextRespondent._id,

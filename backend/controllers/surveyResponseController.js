@@ -164,6 +164,7 @@ const startInterview = async (req, res) => {
     session.markQuestionReached(0, 0, 'first');
     await session.save();
 
+    // Return minimal survey data for faster response (full survey can be fetched separately if needed)
     res.status(200).json({
       success: true,
       data: {
@@ -172,9 +173,10 @@ const startInterview = async (req, res) => {
           id: survey._id,
           surveyName: survey.surveyName,
           description: survey.description,
-          sections: survey.sections,
-          questions: survey.questions,
-          mode: survey.mode
+          mode: survey.mode,
+          assignACs: survey.assignACs,
+          acAssignmentState: survey.acAssignmentState
+          // Note: sections and questions are NOT included - use /api/surveys/:id/full endpoint if needed
         },
         currentPosition: {
           sectionIndex: 0,
