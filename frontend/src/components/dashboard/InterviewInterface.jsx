@@ -1323,7 +1323,7 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
     });
     
     // Special handling for survey 68fd1915d41841da463f0d46: Dynamic question reordering for CATI mode
-    const TARGET_SURVEY_ID = '68fd1915d41841da463f0d46';
+    // TARGET_SURVEY_ID is already declared above, reuse it
     if (isCatiMode && survey && (survey._id === TARGET_SURVEY_ID || survey.id === TARGET_SURVEY_ID)) {
       // Helper function to identify questions by questionNumber ONLY (no text patterns)
       // Simple and reliable: match by questionNumber only
@@ -1939,13 +1939,13 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
           if (typeof responseValue === 'object' && responseValue !== null) {
             responseValue = responseValue.value || responseValue.text || responseValue;
           }
-          const responseStr = String(responseValue || '').trim();
-          const conditionStr = String(condition.value || '').trim();
-          const responseNum = parseFloat(responseStr);
-          const conditionNum = parseFloat(conditionStr);
+          const responseStrNum = String(responseValue || '').trim();
+          const conditionStrNum = String(condition.value || '').trim();
+          const responseNum = parseFloat(responseStrNum);
+          const conditionNum = parseFloat(conditionStrNum);
           met = !isNaN(responseNum) && !isNaN(conditionNum) && responseNum > conditionNum;
           if (question.questionNumber === '7') {
-            console.log(`🔍 Q7 Condition Debug: questionId=${condition.questionId}, response="${response}" (extracted: "${responseValue}", as string: "${responseStr}", parsed: ${responseNum}), condition.value="${condition.value}" (as string: "${conditionStr}", parsed: ${conditionNum}), met=${met}`);
+            console.log(`🔍 Q7 Condition Debug: questionId=${condition.questionId}, response="${response}" (extracted: "${responseValue}", as string: "${responseStrNum}", parsed: ${responseNum}), condition.value="${condition.value}" (as string: "${conditionStrNum}", parsed: ${conditionNum}), met=${met}`);
           }
           break;
         case 'less_than':
@@ -2036,7 +2036,7 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
           console.log(`🔍 Q7 Filtered by conditions: questionNumber=${question.questionNumber}, id=${question.id}, conditions=${JSON.stringify(question.conditions)}, responses=${JSON.stringify(responses)}`);
           // Also log which question ID the condition is checking
           if (question.conditions && question.conditions.length > 0) {
-            question.conditions.forEach((cond: any, idx: number) => {
+            question.conditions.forEach((cond, idx) => {
               const condResponse = responses[cond.questionId];
               console.log(`🔍 Q7 Condition ${idx + 1}: questionId=${cond.questionId}, operator=${cond.operator}, value=${cond.value}, response=${condResponse}`);
             });
