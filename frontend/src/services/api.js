@@ -1214,10 +1214,25 @@ export const masterDataAPI = {
 };
 
 export const pollingStationAPI = {
-  // Get groups for an AC (state and AC name or number)
-  getGroupsByAC: async (state, acIdentifier) => {
+  // Get available round numbers for an AC
+  getRoundNumbersByAC: async (state, acIdentifier) => {
     try {
-      const response = await api.get(`/api/polling-stations/groups/${encodeURIComponent(state)}/${encodeURIComponent(acIdentifier)}`);
+      const response = await api.get(`/api/polling-stations/rounds/${encodeURIComponent(state)}/${encodeURIComponent(acIdentifier)}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching round numbers:', error);
+      throw error;
+    }
+  },
+  
+  // Get groups for an AC (state and AC name or number)
+  getGroupsByAC: async (state, acIdentifier, roundNumber = null) => {
+    try {
+      let url = `/api/polling-stations/groups/${encodeURIComponent(state)}/${encodeURIComponent(acIdentifier)}`;
+      if (roundNumber) {
+        url += `?roundNumber=${encodeURIComponent(roundNumber)}`;
+      }
+      const response = await api.get(url);
       return response.data;
     } catch (error) {
       console.error('Error fetching groups:', error);
@@ -1226,9 +1241,13 @@ export const pollingStationAPI = {
   },
   
   // Get polling stations for a group
-  getPollingStationsByGroup: async (state, acIdentifier, groupName) => {
+  getPollingStationsByGroup: async (state, acIdentifier, groupName, roundNumber = null) => {
     try {
-      const response = await api.get(`/api/polling-stations/stations/${encodeURIComponent(state)}/${encodeURIComponent(acIdentifier)}/${encodeURIComponent(groupName)}`);
+      let url = `/api/polling-stations/stations/${encodeURIComponent(state)}/${encodeURIComponent(acIdentifier)}/${encodeURIComponent(groupName)}`;
+      if (roundNumber) {
+        url += `?roundNumber=${encodeURIComponent(roundNumber)}`;
+      }
+      const response = await api.get(url);
       return response.data;
     } catch (error) {
       console.error('Error fetching polling stations:', error);

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const {
+  getRoundNumbersByAC,
   getGroupsByAC,
   getPollingStationsByGroup,
   getPollingStationGPS
@@ -10,6 +11,7 @@ const { protect } = require('../middleware/auth');
 // All routes require authentication
 router.use(protect);
 
+router.get('/rounds/:state/:acIdentifier', getRoundNumbersByAC);
 router.get('/groups/:state/:acIdentifier', getGroupsByAC);
 router.get('/stations/:state/:acIdentifier/:groupName', getPollingStationsByGroup);
 router.get('/gps/:state/:acIdentifier/:groupName/:stationName', getPollingStationGPS);

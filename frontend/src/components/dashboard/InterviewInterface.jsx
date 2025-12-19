@@ -125,14 +125,17 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
     pcNo: null,
     pcName: null,
     district: null,
+    roundNumber: null,
     groupName: null,
     stationName: null,
     gpsLocation: null,
     latitude: null,
     longitude: null
   });
+  const [availableRoundNumbers, setAvailableRoundNumbers] = useState([]);
   const [availableGroups, setAvailableGroups] = useState([]);
   const [availablePollingStations, setAvailablePollingStations] = useState([]);
+  const [loadingRoundNumbers, setLoadingRoundNumbers] = useState(false);
   const [loadingGroups, setLoadingGroups] = useState(false);
   const [loadingStations, setLoadingStations] = useState(false);
   
@@ -2223,14 +2226,38 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
         pcNo: null,
         pcName: null,
         district: null,
+        roundNumber: null,
         groupName: null,
         stationName: null,
         gpsLocation: null,
         latitude: null,
         longitude: null
       });
+      setAvailableRoundNumbers([]);
       setAvailableGroups([]);
       setAvailablePollingStations([]);
+    }
+    
+    // Handle polling station round number selection
+    if (questionId === 'polling-station-round') {
+      setSelectedPollingStation(prev => ({
+        ...prev,
+        roundNumber: response,
+        groupName: null, // Reset group when round changes
+        stationName: null, // Reset station when round changes
+        gpsLocation: null,
+        latitude: null,
+        longitude: null
+      }));
+      setAvailableGroups([]);
+      setAvailablePollingStations([]);
+      // Clear polling station selection responses when round changes
+      setResponses(prev => ({
+        ...prev,
+        'polling-station-group': null,
+        'polling-station-station': null,
+        'polling-station-selection': null
+      }));
     }
     
     // Handle polling station group selection
@@ -2311,10 +2338,43 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
     }
   }, []);
 
-  // Fetch groups when AC is selected
+  // Fetch round numbers when AC is selected
+  useEffect(() => {
+    const fetchRoundNumbers = async () => {
+      if (!selectedAC) {
+        setAvailableRoundNumbers([]);
+        setSelectedPollingStation(prev => ({ ...prev, roundNumber: null }));
+        return;
+      }
+      
+      try {
+        setLoadingRoundNumbers(true);
+        const state = survey?.acAssignmentState || 'West Bengal';
+        const response = await pollingStationAPI.getRoundNumbersByAC(state, selectedAC);
+        
+        if (response.success && response.data.rounds) {
+          const rounds = response.data.rounds || [];
+          setAvailableRoundNumbers(rounds);
+          // Auto-select first round if available and none selected
+          if (rounds.length > 0 && !selectedPollingStation.roundNumber) {
+            setSelectedPollingStation(prev => ({ ...prev, roundNumber: rounds[0] }));
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching round numbers:', error);
+        setAvailableRoundNumbers([]);
+      } finally {
+        setLoadingRoundNumbers(false);
+      }
+    };
+    
+    fetchRoundNumbers();
+  }, [selectedAC, survey?.acAssignmentState]);
+
+  // Fetch groups when AC and Round Number are selected
   useEffect(() => {
     const fetchGroups = async () => {
-      if (!selectedAC) {
+      if (!selectedAC || !selectedPollingStation.roundNumber) {
         setAvailableGroups([]);
         return;
       }
@@ -2323,7 +2383,7 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
         setLoadingGroups(true);
         // Default to West Bengal for now (polling station data is for West Bengal)
         const state = survey?.acAssignmentState || 'West Bengal';
-        const response = await pollingStationAPI.getGroupsByAC(state, selectedAC);
+        const response = await pollingStationAPI.getGroupsByAC(state, selectedAC, selectedPollingStation.roundNumber);
         
         if (response.success) {
           const newGroups = response.data.groups || [];
@@ -2364,12 +2424,12 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
     };
     
     fetchGroups();
-  }, [selectedAC, survey?.acAssignmentState]);
+  }, [selectedAC, selectedPollingStation.roundNumber, survey?.acAssignmentState]);
 
-  // Fetch polling stations when group is selected
+  // Fetch polling stations when group and round number are selected
   useEffect(() => {
     const fetchPollingStations = async () => {
-      if (!selectedPollingStation.groupName || !selectedPollingStation.acName) {
+      if (!selectedPollingStation.groupName || !selectedPollingStation.acName || !selectedPollingStation.roundNumber) {
         setAvailablePollingStations([]);
         return;
       }
@@ -2380,7 +2440,8 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
         const response = await pollingStationAPI.getPollingStationsByGroup(
           state,
           selectedPollingStation.acName,
-          selectedPollingStation.groupName
+          selectedPollingStation.groupName,
+          selectedPollingStation.roundNumber
         );
         
         if (response.success) {
@@ -2402,7 +2463,7 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
     };
     
     fetchPollingStations();
-  }, [selectedPollingStation.groupName, selectedPollingStation.acName, selectedPollingStation.state, survey?.acAssignmentState]);
+  }, [selectedPollingStation.groupName, selectedPollingStation.acName, selectedPollingStation.roundNumber, selectedPollingStation.state, survey?.acAssignmentState]);
 
   // Update polling station GPS when station is selected
   useEffect(() => {
@@ -4564,33 +4625,70 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
       case 'polling_station':
         return (
           <div className="space-y-4">
-            {/* Group Selection */}
+            {/* Round Number Selection */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Select Group <span className="text-red-500">*</span>
+                Select Round Number <span className="text-red-500">*</span>
               </label>
-              {loadingGroups ? (
-                <div className="p-4 text-center text-gray-500">Loading groups...</div>
-              ) : availableGroups.length === 0 ? (
-                <div className="p-4 text-center text-gray-500">No groups available. Please select an AC first.</div>
+              {loadingRoundNumbers ? (
+                <div className="p-4 text-center text-gray-500">Loading round numbers...</div>
+              ) : availableRoundNumbers.length === 0 ? (
+                <div className="p-4 text-center text-gray-500">No round numbers available. Please select an AC first.</div>
               ) : (
                 <select
-                  value={selectedPollingStation.groupName || ''}
+                  value={selectedPollingStation.roundNumber || ''}
                   onChange={(e) => {
-                    handleResponseChange('polling-station-group', e.target.value);
+                    const roundNumber = e.target.value;
+                    setSelectedPollingStation(prev => ({
+                      ...prev,
+                      roundNumber: roundNumber,
+                      groupName: null, // Reset group when round changes
+                      stationName: null // Reset station when round changes
+                    }));
+                    handleResponseChange('polling-station-round', roundNumber);
                   }}
                   className="w-full p-4 text-lg border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200"
                   required={required}
                 >
-                  <option value="">Select a group...</option>
-                  {availableGroups.map((group, index) => (
-                    <option key={index} value={group.name}>
-                      {group.name} ({group.polling_station_count} stations)
+                  <option value="">Select a round number...</option>
+                  {availableRoundNumbers.map((round, index) => (
+                    <option key={index} value={round}>
+                      Round {round}
                     </option>
                   ))}
                 </select>
               )}
             </div>
+
+            {/* Group Selection - Only show if round number is selected */}
+            {selectedPollingStation.roundNumber && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Group <span className="text-red-500">*</span>
+                </label>
+                {loadingGroups ? (
+                  <div className="p-4 text-center text-gray-500">Loading groups...</div>
+                ) : availableGroups.length === 0 ? (
+                  <div className="p-4 text-center text-gray-500">No groups available for this round. Please select a different round.</div>
+                ) : (
+                  <select
+                    value={selectedPollingStation.groupName || ''}
+                    onChange={(e) => {
+                      handleResponseChange('polling-station-group', e.target.value);
+                    }}
+                    className="w-full p-4 text-lg border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200"
+                    required={required}
+                  >
+                    <option value="">Select a group...</option>
+                    {availableGroups.map((group, index) => (
+                      <option key={index} value={group.name}>
+                        {group.name} ({group.polling_station_count} stations)
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
 
             {/* Polling Station Selection - Only show if group is selected */}
             {selectedPollingStation.groupName && (
