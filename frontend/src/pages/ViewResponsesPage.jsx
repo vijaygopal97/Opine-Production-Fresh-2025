@@ -16,7 +16,11 @@ import {
   BarChart3,
   X,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Database,
+  FileText,
+  Activity,
+  ListChecks
 } from 'lucide-react';
 import { surveyResponseAPI, surveyAPI } from '../services/api';
 import { useToast } from '../contexts/ToastContext';
@@ -24,6 +28,349 @@ import ResponseDetailsModal from '../components/dashboard/ResponseDetailsModal';
 import { getMainText } from '../utils/translations';
 import { getACByName } from '../utils/assemblyConstituencies';
 import assemblyConstituenciesData from '../data/assemblyConstituencies.json';
+
+// Enhanced Loading Screen Component for Responses Page - Modern & Data-Driven
+const ResponsesLoadingScreen = () => {
+  const [loadingTextIndex, setLoadingTextIndex] = useState(0);
+  const [progress, setProgress] = useState(0);
+  const [dataPoints, setDataPoints] = useState([]);
+  const [particles, setParticles] = useState([]);
+
+  const loadingTexts = [
+    'Fetching survey responses...',
+    'Loading response data...',
+    'Processing respondent information...',
+    'Organizing response records...',
+    'Preparing data tables...',
+    'Finalizing response view...'
+  ];
+
+  const loadingStages = [
+    { icon: Database, text: 'Fetching Data', color: 'text-blue-500' },
+    { icon: FileText, text: 'Loading Responses', color: 'text-emerald-500' },
+    { icon: Activity, text: 'Processing', color: 'text-purple-500' },
+    { icon: ListChecks, text: 'Organizing', color: 'text-orange-500' }
+  ];
+
+  useEffect(() => {
+    const textInterval = setInterval(() => {
+      setLoadingTextIndex((prev) => (prev + 1) % loadingTexts.length);
+    }, 2500);
+
+    const progressInterval = setInterval(() => {
+      setProgress((prev) => {
+        if (prev < 90) return prev + Math.random() * 2;
+        return prev;
+      });
+    }, 350);
+
+    const generateDataPoints = () => {
+      const points = Array.from({ length: 12 }, (_, i) => ({
+        id: i,
+        height: Math.random() * 70 + 15,
+        delay: i * 0.08,
+        duration: 1 + Math.random() * 0.5
+      }));
+      setDataPoints(points);
+    };
+
+    const generateParticles = () => {
+      const newParticles = Array.from({ length: 20 }, (_, i) => ({
+        id: Date.now() + i,
+        x: Math.random() * 100,
+        y: Math.random() * 100,
+        size: Math.random() * 4 + 2,
+        duration: Math.random() * 3 + 2,
+        delay: Math.random() * 2
+      }));
+      setParticles(newParticles);
+    };
+
+    generateDataPoints();
+    generateParticles();
+
+    const dataInterval = setInterval(generateDataPoints, 2500);
+    const particleInterval = setInterval(generateParticles, 5000);
+
+    return () => {
+      clearInterval(textInterval);
+      clearInterval(progressInterval);
+      clearInterval(dataInterval);
+      clearInterval(particleInterval);
+    };
+  }, []);
+
+  const currentStageIndex = Math.min(Math.floor(progress / 25), 3);
+
+  return (
+    <div className="fixed inset-0 w-screen h-screen bg-gradient-to-br from-slate-50 via-blue-50/40 to-slate-100 flex items-center justify-center p-4 z-50 overflow-hidden">
+
+      {/* Animated Background Particles */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        {particles.map((particle) => (
+          <div
+            key={particle.id}
+            className="absolute rounded-full bg-gradient-to-br from-[#001D48]/20 to-[#003366]/10 blur-sm"
+            style={{
+              left: `${particle.x}%`,
+              top: `${particle.y}%`,
+              width: `${particle.size}px`,
+              height: `${particle.size}px`,
+              animation: `float ${particle.duration}s ease-in-out infinite`,
+              animationDelay: `${particle.delay}s`
+            }}
+          />
+        ))}
+      </div>
+
+      {/* Floating Grid Background */}
+      <div className="absolute inset-0 opacity-[0.03]"
+        style={{
+          backgroundImage: `
+            linear-gradient(#001D48 1px, transparent 1px),
+            linear-gradient(90deg, #001D48 1px, transparent 1px)
+          `,
+          backgroundSize: '50px 50px'
+        }}
+      />
+
+      <div className="w-full max-w-3xl mx-auto relative">
+        <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/50 p-8 lg:p-12 relative overflow-hidden">
+
+          {/* Animated Border Glow */}
+          <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-[#001D48]/10 via-[#003366]/10 to-[#001D48]/10 opacity-50 animate-border-flow" />
+
+          <div className="relative space-y-8">
+
+            {/* Circular Progress */}
+            <div className="flex flex-col items-center space-y-6">
+
+              {/* Central Circular Progress */}
+              <div className="relative">
+                <svg className="w-32 h-32 transform -rotate-90">
+                  <circle
+                    cx="64"
+                    cy="64"
+                    r="56"
+                    stroke="currentColor"
+                    strokeWidth="8"
+                    fill="none"
+                    className="text-gray-200"
+                  />
+                  <circle
+                    cx="64"
+                    cy="64"
+                    r="56"
+                    stroke="url(#gradient-responses)"
+                    strokeWidth="8"
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeDasharray={`${2 * Math.PI * 56}`}
+                    strokeDashoffset={`${2 * Math.PI * 56 * (1 - progress / 100)}`}
+                    className="transition-all duration-500 ease-out drop-shadow-lg"
+                  />
+                  <defs>
+                    <linearGradient id="gradient-responses" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#001D48" />
+                      <stop offset="50%" stopColor="#003366" />
+                      <stop offset="100%" stopColor="#001D48" />
+                    </linearGradient>
+                  </defs>
+                </svg>
+
+                {/* Center Content */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-[#001D48]">
+                      {Math.round(Math.min(progress, 95))}%
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">Loading</div>
+                  </div>
+                </div>
+
+                {/* Rotating Ring */}
+                <div className="absolute inset-0 flex items-center justify-center animate-spin-slow">
+                  <div className="w-36 h-36 rounded-full border-2 border-dashed border-[#001D48]/20" />
+                </div>
+              </div>
+            </div>
+
+            {/* Dynamic Bar Chart Visualization */}
+            <div className="w-full">
+              <div className="flex items-end justify-center gap-1.5 h-24 px-4">
+                {dataPoints.map((point) => (
+                  <div
+                    key={point.id}
+                    className="flex-1 max-w-[40px] rounded-t-lg bg-gradient-to-t from-[#001D48] via-[#003366] to-[#0055AA] relative overflow-hidden group transition-all duration-700 ease-out shadow-lg"
+                    style={{
+                      height: `${point.height}%`,
+                      animation: `pulse-bar ${point.duration}s ease-in-out infinite alternate`
+                    }}
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-t from-transparent via-white/30 to-transparent animate-shimmer-up opacity-60" />
+                    <div className="absolute top-0 left-0 right-0 h-1 bg-white/50 rounded-full blur-sm" />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Loading Stage Indicators */}
+            <div className="flex items-center justify-center gap-6 flex-wrap">
+              {loadingStages.map((stage, index) => {
+                const Icon = stage.icon;
+                const isActive = index === currentStageIndex;
+                const isCompleted = index < currentStageIndex;
+
+                return (
+                  <div
+                    key={index}
+                    className={`flex items-center gap-2 transition-all duration-500 ${
+                      isActive ? 'scale-110' : isCompleted ? 'opacity-50' : 'opacity-30'
+                    }`}
+                  >
+                    <div className={`p-2 rounded-lg ${
+                      isActive
+                        ? 'bg-[#001D48] text-white shadow-lg'
+                        : isCompleted
+                        ? 'bg-emerald-100 text-emerald-600'
+                        : 'bg-gray-100 text-gray-400'
+                    } transition-all duration-500`}>
+                      <Icon className={`w-4 h-4 ${isActive ? 'animate-pulse' : ''}`} />
+                    </div>
+                    <span className={`text-sm font-medium ${
+                      isActive ? 'text-[#001D48]' : 'text-gray-400'
+                    } transition-all duration-500`}>
+                      {stage.text}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Main Loading Text */}
+            <div className="text-center space-y-2">
+              <h3 className="text-xl font-semibold text-[#001D48] animate-fade-in-up">
+                {loadingTexts[loadingTextIndex]}
+              </h3>
+              <p className="text-sm text-gray-500">
+                Please wait while we load your survey responses
+              </p>
+            </div>
+
+            {/* Linear Progress Bar */}
+            <div className="w-full space-y-2">
+              <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden shadow-inner">
+                <div
+                  className="h-full bg-gradient-to-r from-[#001D48] via-[#003366] to-[#0055AA] rounded-full transition-all duration-500 ease-out relative overflow-hidden"
+                  style={{ width: `${Math.min(progress, 95)}%` }}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-shimmer-fast" />
+                </div>
+              </div>
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>Loading responses...</span>
+                <span>{Math.round(Math.min(progress, 95))}%</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      {/* Custom CSS Animations */}
+      <style>{`
+        @keyframes float {
+          0%, 100% {
+            transform: translateY(0px) translateX(0px);
+            opacity: 0.7;
+          }
+          50% {
+            transform: translateY(-20px) translateX(10px);
+            opacity: 1;
+          }
+        }
+
+        @keyframes pulse-bar {
+          0% {
+            transform: scaleY(0.9);
+            opacity: 0.8;
+          }
+          100% {
+            transform: scaleY(1);
+            opacity: 1;
+          }
+        }
+
+        @keyframes fade-in-up {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .animate-fade-in-up {
+          animation: fade-in-up 0.6s ease-out;
+        }
+
+        @keyframes shimmer-up {
+          0% {
+            transform: translateY(100%);
+          }
+          100% {
+            transform: translateY(-100%);
+          }
+        }
+
+        .animate-shimmer-up {
+          animation: shimmer-up 2s ease-in-out infinite;
+        }
+
+        @keyframes shimmer-fast {
+          0% {
+            transform: translateX(-100%);
+          }
+          100% {
+            transform: translateX(100%);
+          }
+        }
+
+        .animate-shimmer-fast {
+          animation: shimmer-fast 1.5s ease-in-out infinite;
+        }
+
+        @keyframes border-flow {
+          0%, 100% {
+            opacity: 0.3;
+          }
+          50% {
+            opacity: 0.6;
+          }
+        }
+
+        .animate-border-flow {
+          animation: border-flow 3s ease-in-out infinite;
+        }
+
+        @keyframes spin-slow {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+
+        .animate-spin-slow {
+          animation: spin-slow 8s linear infinite;
+        }
+      `}</style>
+    </div>
+  );
+};
 
 const ViewResponsesPage = () => {
   const { surveyId } = useParams();
@@ -37,6 +384,7 @@ const ViewResponsesPage = () => {
   const [responses, setResponses] = useState([]);
   const [originalResponses, setOriginalResponses] = useState([]); // Store original unfiltered responses
   const [loading, setLoading] = useState(true);
+  const [filterLoading, setFilterLoading] = useState(false); // Loading state for filter changes
   const [pagination, setPagination] = useState({
     currentPage: 1,
     totalPages: 1,
@@ -1572,7 +1920,7 @@ const ViewResponsesPage = () => {
                                       questionText.includes('would you');
             
             return (hasAssembly || hasConstituency) && !isConsentQuestion;
-          });
+      });
           
           // Try each potential AC response and validate it
           for (const acResponse of acTextResponses) {
@@ -2179,6 +2527,23 @@ const ViewResponsesPage = () => {
       currentPage: 1
     }));
   }, [filtersKey]);
+
+  // Show loading overlay when filters change
+  useEffect(() => {
+    // Skip on initial load (when originalResponses is empty)
+    if (!originalResponses || originalResponses.length === 0) return;
+    
+    // Show loading overlay when filters change
+    setFilterLoading(true);
+    
+    // Hide loading overlay after filtering completes
+    // Use a small delay to ensure smooth animation even for fast client-side filtering
+    const timer = setTimeout(() => {
+      setFilterLoading(false);
+    }, 150); // Small delay for smooth UX
+    
+    return () => clearTimeout(timer);
+  }, [filtersKey, originalResponses]);
 
   // Paginated responses for table
   const paginatedResponses = useMemo(() => {
@@ -3181,15 +3546,42 @@ const ViewResponsesPage = () => {
     setShowResponseDetails(true);
   };
 
-  if (loading) {
+  // Modern Filter Loading Overlay Component
+  const FilterLoadingOverlay = () => {
+    if (!filterLoading) return null;
+    
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#001D48] mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading responses...</p>
+      <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40 flex items-center justify-center pointer-events-none transition-opacity duration-200">
+        <div className="bg-white rounded-2xl shadow-2xl p-8 flex flex-col items-center space-y-4 pointer-events-auto animate-[fadeIn_0.2s_ease-in-out]">
+          <div className="relative">
+            <div className="w-16 h-16 border-4 border-[#001D48]/20 border-t-[#001D48] rounded-full animate-spin"></div>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <FileText className="w-6 h-6 text-[#001D48] animate-pulse" />
+            </div>
+          </div>
+          <div className="text-center">
+            <p className="text-sm font-semibold text-gray-900">Applying filters...</p>
+            <p className="text-xs text-gray-500 mt-1">Please wait while we update the responses</p>
+          </div>
         </div>
+        <style>{`
+          @keyframes fadeIn {
+            from {
+              opacity: 0;
+              transform: scale(0.95);
+            }
+            to {
+              opacity: 1;
+              transform: scale(1);
+            }
+          }
+        `}</style>
       </div>
     );
+  };
+
+  if (loading) {
+    return <ResponsesLoadingScreen />;
   }
 
   if (!survey) {
@@ -3210,6 +3602,7 @@ const ViewResponsesPage = () => {
 
   return (
     <>
+      <FilterLoadingOverlay />
       <div className="min-h-screen bg-gray-50 w-full view-responses-page">
         {/* Header */}
         <div className="bg-white border-b border-gray-200 w-full">

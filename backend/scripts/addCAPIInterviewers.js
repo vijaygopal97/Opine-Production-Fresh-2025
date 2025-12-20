@@ -34,16 +34,102 @@ const COUNTRY = 'India';
 // ADD INTERVIEWER DETAILS HERE
 // ============================================================================
 const interviewersToAdd = [
-  // Example format:
-  // {
-  //   name: 'Hari Sankar Mahato',
-  //   phone: '8340667307',
-  //   whatsapp: '8340667307',
-  //   email: 'harishankarm757@gmail.com',
-  //   memberId: '4007',
-  //   ac: 'Bandwan'
-  // },
-  // Add more interviewers here...
+  {
+    name: 'Bipasha Lohar',
+    phone: '6295419141',
+    whatsapp: '6295419141',
+    email: 'bipshaloh6282@gmail.com',
+    memberId: 'CAPI408',
+    ac: 'Purulia'
+  },
+  {
+    name: 'SK MD YUNAS',
+    phone: '7699532888',
+    whatsapp: '7699532888',
+    email: 'capi431@gmail.com',
+    memberId: 'CAPI431',
+    ac: 'PurbaBurdwan'
+  },
+  {
+    name: 'SHAIKH ZEENATH SAMIM',
+    phone: '9547841271',
+    whatsapp: '9547841271',
+    email: 'capi432@gmail.com',
+    memberId: 'CAPI432',
+    ac: 'PurbaBurdwan'
+  },
+  {
+    name: 'SHAIKH MAHAROOF HAQUE',
+    phone: '7602977829',
+    whatsapp: '7602977829',
+    email: 'capi438@gmail.com',
+    memberId: 'CAPI438',
+    ac: 'PurbaBurdwan'
+  },
+  {
+    name: 'SK ROBIUL',
+    phone: '9144352907',
+    whatsapp: '9144352907',
+    email: 'capi440@gmail.com',
+    memberId: 'CAPI440',
+    ac: 'PurbaBurdwan'
+  },
+  {
+    name: 'Bumba Dangar',
+    phone: '8945983325',
+    whatsapp: '8945983325',
+    email: 'capi488@gmail.com',
+    memberId: 'CAPI488',
+    ac: 'PurbaBurdwan'
+  },
+  {
+    name: 'SK SAHABUDDIN',
+    phone: '8597544677',
+    whatsapp: '8597544677',
+    email: 'capi498@gmail.com',
+    memberId: 'CAPI498',
+    ac: 'PurbaBurdwan'
+  },
+  {
+    name: 'Jharna Mondal',
+    phone: '9332646654',
+    whatsapp: '9332646654',
+    email: 'capi499@gmail.com',
+    memberId: 'CAPI499',
+    ac: 'PaschimBurdwan'
+  },
+  {
+    name: 'Manoj Panda',
+    phone: '7602995165',
+    whatsapp: '7602995165',
+    email: 'capi581@gmail.com',
+    memberId: 'CAPI581',
+    ac: 'Hooghly'
+  },
+  {
+    name: 'Roni Mondal',
+    phone: '7810880347',
+    whatsapp: '7810880347',
+    email: 'capi582@gmail.com',
+    memberId: 'CAPI582',
+    ac: 'Hooghly'
+  },
+  {
+    name: 'Subhajit Bhattacharya',
+    phone: '8250426283',
+    whatsapp: '8250426283',
+    email: 'capi588@gmail.com',
+    memberId: 'CAPI588',
+    ac: 'Hooghly'
+  },
+  {
+    name: 'Sonali Debnath',
+    phone: '9876543210',
+    whatsapp: '9876543210',
+    email: 'capi583@gmail.com',
+    memberId: 'CAPI583',
+    ac: 'Hooghly'
+  }
 ];
 
 // ============================================================================

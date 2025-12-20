@@ -13,6 +13,21 @@
     "Type": "CATI",
     "AC_Name": "Bidhannagar",
     "Priority": 1
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Bhabanipur",
+    "Priority": 1
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Ballygunge",
+    "Priority": 1
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Barabani",
+    "Priority": 1
   }
 ]
 

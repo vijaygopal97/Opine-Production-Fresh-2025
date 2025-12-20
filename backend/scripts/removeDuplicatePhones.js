@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 const CatiRespondentQueue = require('../models/CatiRespondentQueue');
+const Survey = require('../models/Survey');
 
 // Survey ID to process
 const SURVEY_ID = '68fd1915d41841da463f0d46';
@@ -20,7 +21,241 @@ async function connectDB() {
 }
 
 /**
- * Remove duplicate phone numbers, keeping only the first occurrence
+ * Normalize phone number (remove spaces, dashes, parentheses, etc.)
+ */
+function normalizePhone(phone) {
+  if (!phone) return '';
+  return phone.toString().trim().replace(/[\s\-\(\)]/g, '');
+}
+
+/**
+ * Find the respondent contacts JSON file path
+ */
+function findRespondentContactsFile(survey) {
+  const path = require('path');
+  const fs = require('fs');
+  
+  const possiblePaths = [];
+  
+  // Check if survey has respondentContactsFile field
+  if (survey.respondentContactsFile) {
+    if (path.isAbsolute(survey.respondentContactsFile)) {
+      possiblePaths.push(survey.respondentContactsFile);
+    } else {
+      // Try relative to backend directory
+      possiblePaths.push(path.join(__dirname, '..', survey.respondentContactsFile));
+      // Try relative to project root
+      possiblePaths.push(path.join('/var/www/opine', survey.respondentContactsFile));
+    }
+  }
+  
+  // Also try default paths
+  possiblePaths.push(path.join('/var/www/opine', 'data', 'respondent-contacts', `${SURVEY_ID}.json`));
+  possiblePaths.push(path.join(__dirname, '..', 'data', 'respondent-contacts', `${SURVEY_ID}.json`));
+  
+  // Also check Optimised-backup directory
+  possiblePaths.push(path.join('/var/www/Optimised-backup', 'opine', 'data', 'respondent-contacts', `${SURVEY_ID}.json`));
+  
+  // Find the first existing file
+  for (const filePath of possiblePaths) {
+    try {
+      if (fs.existsSync(filePath)) {
+        return filePath;
+      }
+    } catch (error) {
+      continue;
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Remove duplicate phone numbers from respondent contacts JSON file
+ */
+async function removeDuplicatePhonesFromSurveyFile() {
+  try {
+    console.log('\n🔍 Step 1: Cleaning duplicates from respondent contacts JSON file...');
+    console.log(`📋 Survey ID: ${SURVEY_ID}\n`);
+
+    // Find the survey
+    const survey = await Survey.findById(SURVEY_ID);
+    if (!survey) {
+      console.log('⚠️  Survey not found!');
+      return {
+        totalContacts: 0,
+        uniquePhones: 0,
+        kept: 0,
+        deleted: 0,
+        filePath: null
+      };
+    }
+
+    // Find the JSON file
+    const filePath = findRespondentContactsFile(survey);
+    if (!filePath) {
+      console.log('⚠️  Respondent contacts JSON file not found!');
+      console.log('   Checked default locations but file does not exist.\n');
+      return {
+        totalContacts: 0,
+        uniquePhones: 0,
+        kept: 0,
+        deleted: 0,
+        filePath: null
+      };
+    }
+
+    console.log(`✅ Found JSON file at: ${filePath}\n`);
+
+    // Read the JSON file
+    const fs = require('fs');
+    let allContacts = [];
+    try {
+      const fileContent = fs.readFileSync(filePath, 'utf8');
+      allContacts = JSON.parse(fileContent);
+      if (!Array.isArray(allContacts)) {
+        console.log('⚠️  File content is not an array!');
+        return {
+          totalContacts: 0,
+          uniquePhones: 0,
+          kept: 0,
+          deleted: 0,
+          filePath: filePath
+        };
+      }
+    } catch (fileError) {
+      console.error('❌ Error reading JSON file:', fileError.message);
+      throw fileError;
+    }
+
+    console.log(`📊 Total contacts in JSON file: ${allContacts.length}\n`);
+
+    // Sort contacts by addedAt (oldest first), then by index for consistent ordering
+    const sortedContacts = allContacts
+      .map((contact, index) => ({ ...contact, originalIndex: index }))
+      .sort((a, b) => {
+        const dateA = a.addedAt ? new Date(a.addedAt) : new Date(0);
+        const dateB = b.addedAt ? new Date(b.addedAt) : new Date(0);
+        if (dateA.getTime() !== dateB.getTime()) {
+          return dateA.getTime() - dateB.getTime();
+        }
+        return a.originalIndex - b.originalIndex;
+      });
+
+    // Group by normalized phone number and identify duplicates
+    const phoneMap = new Map();
+    const contactsToKeep = [];
+    const contactsToDelete = [];
+
+    sortedContacts.forEach((contact) => {
+      const phone = contact.phone;
+      if (!phone) {
+        // Keep contacts without phone numbers (shouldn't happen, but be safe)
+        contactsToKeep.push(contact);
+        return;
+      }
+
+      const normalizedPhone = normalizePhone(phone);
+
+      if (!phoneMap.has(normalizedPhone)) {
+        // First occurrence - keep it
+        phoneMap.set(normalizedPhone, contact);
+        contactsToKeep.push(contact);
+      } else {
+        // Duplicate - mark for deletion
+        contactsToDelete.push({
+          ...contact,
+          keptContact: {
+            name: phoneMap.get(normalizedPhone).name,
+            phone: phoneMap.get(normalizedPhone).phone,
+            addedAt: phoneMap.get(normalizedPhone).addedAt
+          }
+        });
+      }
+    });
+
+    console.log(`📊 Analysis Results (JSON file):`);
+    console.log(`   - Total contacts: ${allContacts.length}`);
+    console.log(`   - Unique phone numbers: ${phoneMap.size}`);
+    console.log(`   - Contacts to keep: ${contactsToKeep.length}`);
+    console.log(`   - Contacts to delete: ${contactsToDelete.length}\n`);
+
+    if (contactsToDelete.length === 0) {
+      console.log('✅ No duplicates found in JSON file. Nothing to delete.\n');
+      return {
+        totalContacts: allContacts.length,
+        uniquePhones: phoneMap.size,
+        kept: contactsToKeep.length,
+        deleted: 0,
+        filePath: filePath
+      };
+    }
+
+    // Show summary of what will be deleted
+    console.log('⚠️  Contacts to be deleted from JSON file (keeping first occurrence):\n');
+    console.log('='.repeat(80));
+    
+    // Group deletions by phone for better readability
+    const deletionsByPhone = new Map();
+    contactsToDelete.forEach(contact => {
+      const normalizedPhone = normalizePhone(contact.phone);
+      if (!deletionsByPhone.has(normalizedPhone)) {
+        deletionsByPhone.set(normalizedPhone, []);
+      }
+      deletionsByPhone.get(normalizedPhone).push(contact);
+    });
+
+    let deletionCount = 0;
+    const examplesToShow = Math.min(10, deletionsByPhone.size);
+    let shown = 0;
+    deletionsByPhone.forEach((deletions, phone) => {
+      if (shown < examplesToShow) {
+        const keptContact = deletions[0].keptContact;
+        console.log(`\n📞 Phone: ${phone} (${deletions.length} duplicate(s) to delete)`);
+        console.log(`   ✅ Keeping: ${keptContact.name} - ${keptContact.phone} (Added: ${keptContact.addedAt})`);
+        deletions.forEach((del, idx) => {
+          console.log(`   ❌ Deleting ${idx + 1}: ${del.name} - ${del.phone} (Added: ${del.addedAt})`);
+          deletionCount++;
+        });
+        shown++;
+      }
+    });
+
+    if (deletionsByPhone.size > examplesToShow) {
+      console.log(`\n... and ${deletionsByPhone.size - examplesToShow} more duplicate phone numbers`);
+    }
+
+    console.log('\n' + '='.repeat(80));
+    console.log(`\n🗑️  Ready to delete ${contactsToDelete.length} duplicate contacts from JSON file...\n`);
+
+    // Remove originalIndex from contactsToKeep before saving
+    const cleanedContacts = contactsToKeep.map(({ originalIndex, keptContact, ...contact }) => contact);
+    
+    // Save cleaned contacts back to JSON file
+    console.log('🗑️  Saving cleaned contacts to JSON file...');
+    fs.writeFileSync(filePath, JSON.stringify(cleanedContacts, null, 2), 'utf8');
+
+    console.log(`✅ JSON file cleaned:`);
+    console.log(`   - Deleted: ${contactsToDelete.length} duplicate contacts`);
+    console.log(`   - Kept: ${contactsToKeep.length} unique contacts`);
+    console.log(`   - File: ${filePath}\n`);
+
+    return {
+      totalContacts: allContacts.length,
+      uniquePhones: phoneMap.size,
+      kept: contactsToKeep.length,
+      deleted: contactsToDelete.length,
+      filePath: filePath
+    };
+
+  } catch (error) {
+    console.error('❌ Error removing duplicates from JSON file:', error);
+    throw error;
+  }
+}
+
+/**
+ * Remove duplicate phone numbers from CatiRespondentQueue, keeping only the first occurrence
  */
 async function removeDuplicatePhones() {
   try {
@@ -48,7 +283,7 @@ async function removeDuplicatePhones() {
       }
 
       // Normalize phone number (remove spaces, dashes, etc.)
-      const normalizedPhone = phone.trim().replace(/[\s\-\(\)]/g, '');
+      const normalizedPhone = normalizePhone(phone);
 
       if (!phoneMap.has(normalizedPhone)) {
         // First occurrence - keep it
@@ -100,7 +335,7 @@ async function removeDuplicatePhones() {
     // Group deletions by phone for better readability
     const deletionsByPhone = new Map();
     entriesToDelete.forEach(entry => {
-      const normalizedPhone = entry.phone.trim().replace(/[\s\-\(\)]/g, '');
+      const normalizedPhone = normalizePhone(entry.phone);
       if (!deletionsByPhone.has(normalizedPhone)) {
         deletionsByPhone.set(normalizedPhone, []);
       }
@@ -177,14 +412,35 @@ async function removeDuplicatePhones() {
 async function main() {
   try {
     await connectDB();
-    const result = await removeDuplicatePhones();
+    
+    // Step 1: Clean duplicates from respondent contacts JSON file
+    const surveyResult = await removeDuplicatePhonesFromSurveyFile();
+    
+    // Step 2: Clean duplicates from CatiRespondentQueue
+    const queueResult = await removeDuplicatePhones();
     
     console.log('\n📊 Final Summary:');
     console.log('='.repeat(80));
-    console.log(`   Total entries before: ${result.totalEntries}`);
-    console.log(`   Unique phone numbers: ${result.uniquePhones}`);
-    console.log(`   Entries kept: ${result.kept}`);
-    console.log(`   Entries deleted: ${result.deleted}`);
+    console.log('\n📋 Respondent Contacts JSON File:');
+    console.log(`   Total contacts before: ${surveyResult.totalContacts}`);
+    console.log(`   Unique phone numbers: ${surveyResult.uniquePhones}`);
+    console.log(`   Contacts kept: ${surveyResult.kept}`);
+    console.log(`   Contacts deleted: ${surveyResult.deleted}`);
+    if (surveyResult.filePath) {
+      console.log(`   File path: ${surveyResult.filePath}`);
+    }
+    
+    console.log('\n📋 CatiRespondentQueue:');
+    console.log(`   Total entries before: ${queueResult.totalEntries}`);
+    console.log(`   Unique phone numbers: ${queueResult.uniquePhones}`);
+    console.log(`   Entries kept: ${queueResult.kept}`);
+    console.log(`   Entries deleted: ${queueResult.deleted}`);
+    
+    console.log('\n' + '='.repeat(80));
+    console.log(`\n✅ Total duplicates cleaned:`);
+    console.log(`   - Survey contacts: ${surveyResult.deleted}`);
+    console.log(`   - Queue entries: ${queueResult.deleted}`);
+    console.log(`   - Grand total: ${surveyResult.deleted + queueResult.deleted}`);
     console.log('='.repeat(80));
     
     await mongoose.connection.close();
@@ -203,6 +459,6 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { removeDuplicatePhones };
+module.exports = { removeDuplicatePhones, removeDuplicatePhonesFromSurveyFile };
 
 

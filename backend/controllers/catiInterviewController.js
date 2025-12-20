@@ -511,7 +511,7 @@ const startCatiInterview = async (req, res) => {
       } else if (nonPrioritizedWithACResults && nonPrioritizedWithACResults.length > 0) {
         selectedRespondent = nonPrioritizedWithACResults[0];
         console.log(`✅ Selected respondent from non-prioritized ACs using aggregation`);
-        console.log(`📍 Selected AC: ${selectedRespondent.respondentContact?.ac || 'No AC specified'}`);
+      console.log(`📍 Selected AC: ${selectedRespondent.respondentContact?.ac || 'No AC specified'}`);
       }
     }
     

@@ -31,30 +31,167 @@ const COMPANY_CODE = 'TEST001';
 // ============================================================================
 const interviewersToAdd = [
   {
-    name: 'ISRAJ AHMED FAKIR',
-    phone: '8250400240',
-    memberId: '3586',
-    email: 'cati3586@gmail.com' // Optional - will auto-generate if not provided
+    name: 'KABINA KHATUN',
+    phone: '8250049424',
+    memberId: '500',
+    email: 'cati500@gmail.com'
   },
   {
-    name: 'RIMA KHATUN',
-    phone: '6296752358',
-    memberId: '3587',
-    email: 'cati3587@gmail.com' // Optional - will auto-generate if not provided
+    name: 'PRIYA SHANKAR',
+    phone: '8370823975',
+    memberId: '501',
+    email: 'cati501@gmail.com'
   },
   {
-    name: 'ISMAIL SEIKH',
-    phone: '8509159662',
-    memberId: '3588',
-    email: 'cati3588@gmail.com' // Optional - will auto-generate if not provided
+    name: 'PRANJAL SUTRADHAR',
+    phone: '8509524647',
+    memberId: '502',
+    email: 'cati502@gmail.com'
   },
   {
-    name: 'MANARANJAN NASKAR',
-    phone: '9062951396',
-    memberId: '3589',
-    email: 'cati3589@gmail.com' // Optional - will auto-generate if not provided
+    name: 'ANTARA PRADHAN',
+    phone: '7063239381',
+    memberId: '503',
+    email: 'cati503@gmail.com'
   },
-  // Add more interviewers here...
+  {
+    name: 'LAKSHYA THAPA',
+    phone: '7719219779',
+    memberId: '504',
+    email: 'cati504@gmail.com'
+  },
+  {
+    name: 'ASHTHA SHAH',
+    phone: '8250316305',
+    memberId: '505',
+    email: 'cati505@gmail.com'
+  },
+  {
+    name: 'PRIYANKA PATHAK',
+    phone: '6295242103',
+    memberId: '506',
+    email: 'cati506@gmail.com'
+  },
+  {
+    name: 'HRITESH TAMANG',
+    phone: '8944848649',
+    memberId: '507',
+    email: 'cati507@gmail.com'
+  },
+  {
+    name: 'HIRANMOY PANDIT',
+    phone: '7384638012',
+    memberId: '508',
+    email: 'cati508@gmail.com'
+  },
+  {
+    name: 'SUBHA MALLIK',
+    phone: '7407236511',
+    memberId: '509',
+    email: 'cati509@gmail.com'
+  },
+  {
+    name: 'Jahanara Khatoon',
+    phone: '9382115873',
+    memberId: '510',
+    email: 'cati510@gmail.com'
+  },
+  {
+    name: 'ANIMESH ROY',
+    phone: '8967215263',
+    memberId: '511',
+    email: 'cati511@gmail.com'
+  },
+  {
+    name: 'SAMIRAN DAS',
+    phone: '8597638130',
+    memberId: '512',
+    email: 'cati512@gmail.com'
+  },
+  {
+    name: 'RAJAT ROY',
+    phone: '9064376368',
+    memberId: '513',
+    email: 'cati513@gmail.com'
+  },
+  {
+    name: 'PRATIBHA SHA',
+    phone: '9046720791',
+    memberId: '514',
+    email: 'cati514@gmail.com'
+  },
+  {
+    name: 'APARNA SARKAR',
+    phone: '9332948136',
+    memberId: '515',
+    email: 'cati515@gmail.com'
+  },
+  {
+    name: 'KANIKA KERKETTA',
+    phone: '9647732765',
+    memberId: '516',
+    email: 'cati516@gmail.com'
+  },
+  {
+    name: 'SUSMITA SAHA',
+    phone: '8167029266',
+    memberId: '517',
+    email: 'cati517@gmail.com'
+  },
+  {
+    name: 'KAKALI MAJUMDER',
+    phone: '9064006902',
+    memberId: '518',
+    email: 'cati518@gmail.com'
+  },
+  {
+    name: 'TITHI BISWAS',
+    phone: '9775768489',
+    memberId: '519',
+    email: 'cati519@gmail.com'
+  },
+  {
+    name: 'PUJA KUNDU',
+    phone: '7478824785',
+    memberId: '520',
+    email: 'cati520@gmail.com'
+  },
+  {
+    name: 'SUPANNA MURMU',
+    phone: '9593889417',
+    memberId: '521',
+    email: 'cati521@gmail.com'
+  },
+  {
+    name: 'BRISTI HALDER',
+    phone: '8293506338',
+    memberId: '522',
+    email: 'cati522@gmail.com'
+  },
+  {
+    name: 'NUPUR MONDAL',
+    phone: '7679392167',
+    memberId: '523',
+    email: 'cati523@gmail.com'
+  },
+  {
+    name: 'PUJA DAS',
+    phone: '7501264295',
+    memberId: '524',
+    email: 'cati524@gmail.com'
+  },
+  {
+    name: 'MIM PARVIN',
+    phone: '6295623404',
+    memberId: '525',
+    email: 'cati525@gmail.com'
+  },
+  {
+    name: 'ANASBIN JAMAN',
+    phone: '8391845069',
+    memberId: '526',
+    email: 'cati526@gmail.com'
+  }
 ];
 
 // ============================================================================
@@ -109,110 +246,13 @@ const createInterviewer = async (userData, referenceUser, assignedBy) => {
     }).select('+password');
 
     if (existingUser) {
-      console.log(`⚠️  User already exists (${userData.memberId}). Updating...`);
+      console.log(`⚠️  User already exists with memberId ${userData.memberId}. SKIPPING (not overwriting)...`);
+      console.log(`   Existing Name: ${existingUser.firstName} ${existingUser.lastName}`);
+      console.log(`   Existing Email: ${existingUser.email}`);
+      console.log(`   Existing Member ID: ${existingUser.memberId}\n`);
       
-      const salt = await bcrypt.genSalt(12);
-      const hashedPassword = await bcrypt.hash(password, salt);
-      
-      await User.updateOne(
-        { _id: existingUser._id },
-        {
-          $set: {
-            firstName: firstName,
-            lastName: lastName,
-            email: email.toLowerCase(),
-            phone: phone,
-            memberId: userData.memberId,
-            userType: 'interviewer',
-            interviewModes: 'CATI (Telephonic interview)',
-            password: hashedPassword,
-            companyCode: COMPANY_CODE,
-            company: referenceUser.company || new mongoose.Types.ObjectId('68d33a0cd5e4634e58c4e678'),
-            status: 'active',
-            isActive: true
-          }
-        }
-      );
-      
-      const updatedUser = await User.findById(existingUser._id).select('+password');
-      const passwordValid = await updatedUser.comparePassword(password);
-      
-      if (!passwordValid) {
-        console.log(`⚠️  Password verification failed, retrying...`);
-        const retrySalt = await bcrypt.genSalt(12);
-        const retryHashedPassword = await bcrypt.hash(password, retrySalt);
-        await User.updateOne(
-          { _id: existingUser._id },
-          { $set: { password: retryHashedPassword } }
-        );
-        
-        const retryUser = await User.findById(existingUser._id).select('+password');
-        const retryValid = await retryUser.comparePassword(password);
-        if (!retryValid) {
-          throw new Error(`Password verification failed after retry for ${userData.memberId}`);
-        }
-      }
-      
-      if (!updatedUser.interviewerProfile) {
-        updatedUser.interviewerProfile = {};
-      }
-      updatedUser.interviewerProfile.approvalStatus = 'approved';
-      updatedUser.interviewerProfile.approvalFeedback = 'Approved for CATI';
-      updatedUser.interviewerProfile.approvedBy = referenceUser.interviewerProfile?.approvedBy || assignedBy;
-      updatedUser.interviewerProfile.approvedAt = new Date();
-      updatedUser.interviewerProfile.lastSubmittedAt = new Date();
-      
-      if (referenceUser.interviewerProfile) {
-        const fieldsToCopy = [
-          'age', 'gender', 'languagesSpoken', 'highestDegree',
-          'hasSurveyExperience', 'surveyExperienceYears', 'surveyExperienceDescription',
-          'cvUpload', 'ownsSmartphone', 'smartphoneType', 'androidVersion', 'iosVersion',
-          'willingToTravel', 'hasVehicle', 'willingToRecordAudio', 'agreesToRemuneration',
-          'bankAccountNumber', 'bankName', 'bankIfscCode', 'bankDocumentUpload',
-          'aadhaarNumber', 'aadhaarDocument', 'panNumber', 'panDocument', 'passportPhoto',
-          'agreesToShareInfo', 'agreesToParticipateInSurvey'
-        ];
-        fieldsToCopy.forEach(field => {
-          if (!updatedUser.interviewerProfile[field] && referenceUser.interviewerProfile[field]) {
-            updatedUser.interviewerProfile[field] = referenceUser.interviewerProfile[field];
-          }
-        });
-        if (!updatedUser.interviewerProfile.age) updatedUser.interviewerProfile.age = 28;
-        if (!updatedUser.interviewerProfile.gender) updatedUser.interviewerProfile.gender = 'male';
-        if (!updatedUser.interviewerProfile.languagesSpoken || updatedUser.interviewerProfile.languagesSpoken.length === 0) {
-          updatedUser.interviewerProfile.languagesSpoken = ['Hindi', 'English'];
-        }
-        if (!updatedUser.interviewerProfile.highestDegree) {
-          updatedUser.interviewerProfile.highestDegree = {
-            name: 'B.Tech',
-            institution: 'NIT',
-            year: 2019
-          };
-        }
-        updatedUser.interviewerProfile.bankAccountHolderName = `${firstName.toUpperCase()} ${lastName.toUpperCase()}`;
-      }
-      
-      if (!updatedUser.company) {
-        updatedUser.company = referenceUser.company || new mongoose.Types.ObjectId('68d33a0cd5e4634e58c4e678');
-      }
-      
-      if (!updatedUser.profile || Object.keys(updatedUser.profile).length === 0) {
-        updatedUser.profile = referenceUser.profile || { languages: [], education: [], experience: [] };
-      }
-      if (!updatedUser.preferences || Object.keys(updatedUser.preferences).length === 0) {
-        updatedUser.preferences = referenceUser.preferences;
-      }
-      if (!updatedUser.performance || Object.keys(updatedUser.performance).length === 0) {
-        updatedUser.performance = referenceUser.performance;
-      }
-      
-      await updatedUser.save({ runValidators: false });
-      
-      console.log(`✅ User updated: ${updatedUser.firstName} ${updatedUser.lastName} (${updatedUser.email})`);
-      console.log(`   Member ID: ${updatedUser.memberId}`);
-      console.log(`   User ID: ${updatedUser._id}\n`);
-      
-      return { user: updatedUser, isNew: false };
+      // Return existing user but mark as skipped
+      return { user: existingUser, isNew: false, skipped: true };
     }
 
     const salt = await bcrypt.genSalt(12);
@@ -519,6 +559,18 @@ const main = async () => {
         console.log('-'.repeat(80));
         
         const result = await createInterviewer(interviewerData, referenceUser, assignedBy);
+        
+        // Skip assignment and login test if user was skipped (already exists)
+        if (result.skipped) {
+          console.log(`⏭️  SKIPPED - User already exists, not overwriting\n`);
+          results.push({
+            ...result,
+            interviewerData,
+            skipped: true
+          });
+          continue;
+        }
+        
         await assignToSurvey(result.user._id, assignedBy);
         
         console.log(`🔐 Testing login for ${email}...`);
@@ -547,13 +599,22 @@ const main = async () => {
     console.log('📊 Summary:');
     console.log('='.repeat(80));
     
-    const successful = results.filter(r => r.success !== false && r.user);
+    const successful = results.filter(r => r.success !== false && r.user && !r.skipped);
+    const skipped = results.filter(r => r.skipped);
     const failed = results.filter(r => r.success === false);
     const loginFailed = loginTests.filter(t => !t.success);
     
-    console.log(`✅ Successfully created/updated: ${successful.length}`);
+    console.log(`✅ Successfully created: ${successful.length}`);
+    console.log(`⏭️  Skipped (already exist): ${skipped.length}`);
     console.log(`❌ Failed: ${failed.length}`);
     console.log(`🔐 Login tests passed: ${loginTests.length - loginFailed.length}/${loginTests.length}`);
+    
+    if (skipped.length > 0) {
+      console.log(`\n⏭️  SKIPPED Member IDs (already exist - not overwritten):`);
+      skipped.forEach(result => {
+        console.log(`   - Member ID: ${result.interviewerData.memberId} | Name: ${result.interviewerData.name} | Existing Email: ${result.user.email}`);
+      });
+    }
     
     if (loginFailed.length > 0) {
       console.log(`\n⚠️  Login test failures:`);

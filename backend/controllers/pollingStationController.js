@@ -105,7 +105,7 @@ const getGroupsByAC = async (req, res) => {
             ? stations.filter(s => s.Interview_Round_number === roundNumber)
             : stations;
           return {
-            name: groupName,
+          name: groupName,
             polling_station_count: filteredStations.length
           };
         }).filter(group => group.polling_station_count > 0) // Only return groups with stations
@@ -250,12 +250,60 @@ const checkPollingStationsUpdate = async (req, res) => {
     const hash = crypto.createHash('sha256').update(fileContent).digest('hex');
     const stats = fs.statSync(filePath);
     
+    // Check if client has a stored hash (indicates they've synced before)
+    // If no hash is provided, this is likely a first-time user with bundled file
+    const clientHash = req.headers['if-none-match'] || req.query.hash || null;
+    const isFirstTimeUser = !clientHash || clientHash.trim() === '';
+    
+    // CRITICAL: Check if client hash is a modified hash (from previous first-time user fix)
+    // Format: <hash>_<timestamp> - if it matches our current hash, extract and compare
+    let needsForceUpdate = false;
+    let actualClientHash = clientHash;
+    
+    if (clientHash && clientHash.includes('_')) {
+      // This is a modified hash from previous sync
+      // Extract the actual hash part
+      actualClientHash = clientHash.split('_')[0];
+      // Always force update for modified hashes to ensure they get the clean hash
+      needsForceUpdate = true;
+    }
+    
+    // Check if client hash matches server hash
+    const hashMatches = actualClientHash === hash;
+    
+    // AGGRESSIVE FIX: If hash doesn't match OR it's a modified hash, force update
+    // This ensures users with old/stale hashes always get updates
+    const shouldForceUpdate = isFirstTimeUser || needsForceUpdate || !hashMatches;
+    
+    // Set cache headers to prevent caching of this check endpoint
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    
+    // For users who need update, return modified hash to force download
+    // For users who are up to date, return actual hash
+    let responseHash = hash;
+    if (shouldForceUpdate) {
+      // Return modified hash to force download
+      const timestamp = Math.floor(Date.now() / 1000);
+      responseHash = hash + '_' + timestamp;
+    }
+    
     res.json({
       success: true,
       data: {
-        hash: hash,
+        hash: responseHash,
         lastModified: stats.mtime.toISOString(),
-        size: stats.size
+        size: stats.size,
+        // Force download flag
+        forceDownload: shouldForceUpdate,
+        // Always indicate update needed if hash doesn't match or is modified
+        needsUpdate: shouldForceUpdate,
+        // Include actual hash for reference (without timestamp)
+        actualHash: hash,
+        message: shouldForceUpdate 
+          ? 'Update required. Please download the latest file.' 
+          : undefined
       }
     });
   } catch (error) {
@@ -286,14 +334,50 @@ const downloadPollingStations = async (req, res) => {
 
     // Check If-None-Match header for conditional request
     const clientHash = req.headers['if-none-match'];
-    if (clientHash) {
-      const fileContent = fs.readFileSync(filePath, 'utf8');
-      const serverHash = crypto.createHash('sha256').update(fileContent).digest('hex');
+    
+    // CRITICAL FIX: Enhanced logic to handle all cases
+    // 1. First-time users (no hash)
+    // 2. Users with modified hashes (from previous sync attempts)
+    // 3. Users with stale/old hashes
+    // 4. Users with current hashes (only these get 304)
+    
+    if (clientHash && clientHash.trim() !== '') {
+      // Check if this is a modified hash from check-update endpoint (has timestamp suffix)
+      // Format: <actual_hash>_<timestamp>
+      const isModifiedHash = clientHash.includes('_') && /_\d+$/.test(clientHash);
       
-      if (clientHash === serverHash) {
-        return res.status(304).end(); // Not Modified
+      if (isModifiedHash) {
+        // This is a modified hash - always send the file
+        // Extract the actual hash part (before the underscore) for logging
+        const actualHash = clientHash.split('_')[0];
+        const fileContent = fs.readFileSync(filePath, 'utf8');
+        const serverHash = crypto.createHash('sha256').update(fileContent).digest('hex');
+        
+        // For modified hashes, always send the file (don't return 304)
+        // This ensures users get the file and can store the clean hash
+        console.log(`Modified hash detected (${actualHash.substring(0, 8)}...), forcing download...`);
+        // Continue to send file below
+      } else {
+        // Normal hash comparison for existing users
+        const fileContent = fs.readFileSync(filePath, 'utf8');
+        const serverHash = crypto.createHash('sha256').update(fileContent).digest('hex');
+        
+        if (clientHash === serverHash) {
+          // Only return 304 if client provided a valid hash AND it matches exactly
+          // This means they've synced before and have the current version
+          console.log('Hash matches, returning 304 Not Modified');
+          return res.status(304).end(); // Not Modified
+        } else {
+          // Hash doesn't match - file has changed, send new file
+          console.log(`Hash mismatch - client: ${clientHash.substring(0, 8)}..., server: ${serverHash.substring(0, 8)}...`);
+          // Continue to send file below
+        }
       }
+    } else {
+      // No hash provided (first-time user) - always send the file
+      console.log('No hash provided (first-time user), sending file...');
     }
+    // Continue to send the file for all cases except exact hash match
 
     // Send file with proper headers
     res.setHeader('Content-Type', 'application/json');
@@ -303,6 +387,12 @@ const downloadPollingStations = async (req, res) => {
     const fileContent = fs.readFileSync(filePath, 'utf8');
     const hash = crypto.createHash('sha256').update(fileContent).digest('hex');
     res.setHeader('ETag', hash);
+    
+    // CRITICAL: Set cache headers to prevent caching of JSON file
+    // This ensures users always get the latest version
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     
     // Send file
     const fileStream = fs.createReadStream(filePath);

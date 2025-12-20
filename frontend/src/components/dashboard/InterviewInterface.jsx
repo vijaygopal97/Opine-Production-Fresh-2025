@@ -4718,32 +4718,32 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
 
             {/* Group Selection - Only show if round number is selected */}
             {selectedPollingStation.roundNumber && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Select Group <span className="text-red-500">*</span>
-                </label>
-                {loadingGroups ? (
-                  <div className="p-4 text-center text-gray-500">Loading groups...</div>
-                ) : availableGroups.length === 0 ? (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Select Group <span className="text-red-500">*</span>
+              </label>
+              {loadingGroups ? (
+                <div className="p-4 text-center text-gray-500">Loading groups...</div>
+              ) : availableGroups.length === 0 ? (
                   <div className="p-4 text-center text-gray-500">No groups available for this round. Please select a different round.</div>
-                ) : (
-                  <select
-                    value={selectedPollingStation.groupName || ''}
-                    onChange={(e) => {
-                      handleResponseChange('polling-station-group', e.target.value);
-                    }}
-                    className="w-full p-4 text-lg border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200"
-                    required={required}
-                  >
-                    <option value="">Select a group...</option>
-                    {availableGroups.map((group, index) => (
-                      <option key={index} value={group.name}>
-                        {group.name} ({group.polling_station_count} stations)
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
+              ) : (
+                <select
+                  value={selectedPollingStation.groupName || ''}
+                  onChange={(e) => {
+                    handleResponseChange('polling-station-group', e.target.value);
+                  }}
+                  className="w-full p-4 text-lg border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200"
+                  required={required}
+                >
+                  <option value="">Select a group...</option>
+                  {availableGroups.map((group, index) => (
+                    <option key={index} value={group.name}>
+                      {group.name} ({group.polling_station_count} stations)
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
             )}
 
             {/* Polling Station Selection - Only show if group is selected */}
