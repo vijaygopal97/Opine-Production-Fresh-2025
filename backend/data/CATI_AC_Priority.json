@@ -11,6 +11,11 @@
   },
   {
     "Type": "CATI",
+    "AC_Name": "Barabani",
+    "Priority": "0"
+  },
+  {
+    "Type": "CATI",
     "AC_Name": "Bidhannagar",
     "Priority": 1
   },

@@ -449,6 +449,12 @@ const SurveyReportsPage = () => {
   const [showACModal, setShowACModal] = useState(false);
   const [showInterviewerModal, setShowInterviewerModal] = useState(false);
   const [showDailyTrendsModal, setShowDailyTrendsModal] = useState(false);
+  
+  // Pagination states for modals
+  const [acModalPage, setAcModalPage] = useState(1);
+  const [acModalPageSize] = useState(25); // Show 25 ACs per page
+  const [interviewerModalPage, setInterviewerModalPage] = useState(1);
+  const [interviewerModalPageSize] = useState(25); // Show 25 interviewers per page
   const [acPerformanceStats, setAcPerformanceStats] = useState(null);
   const [interviewerPerformanceStats, setInterviewerPerformanceStats] = useState(null);
   const [acPCMappingCache, setAcPCMappingCache] = useState(new Map()); // Cache for AC -> PC data
@@ -3687,7 +3693,10 @@ const SurveyReportsPage = () => {
             </div>
             <div className="mt-4 pt-4 border-t border-gray-200">
               <button
-                onClick={() => setShowACModal(true)}
+                onClick={() => {
+                  setAcModalPage(1); // Reset to first page when opening modal
+                  setShowACModal(true);
+                }}
                 className="w-full text-sm text-[#373177] hover:text-blue-800 font-medium text-center"
               >
                 View All ({analytics.acStats.length} ACs)
@@ -3761,7 +3770,10 @@ const SurveyReportsPage = () => {
             </div>
             <div className="mt-4 pt-4 border-t border-gray-200">
               <button
-                onClick={() => setShowInterviewerModal(true)}
+                onClick={() => {
+                  setInterviewerModalPage(1); // Reset to first page when opening modal
+                  setShowInterviewerModal(true);
+                }}
                 className="w-full text-sm text-[#373177] hover:text-blue-800 font-medium text-center"
               >
                 View All ({(analytics?.interviewerStats || []).length} Interviewers)
@@ -4071,6 +4083,12 @@ const SurveyReportsPage = () => {
           console.log('🔍 Modal - ACs with responses:', allACStatsForModal.filter(s => (s.count || s.totalResponses || 0) > 0).length);
           console.log('🔍 Modal - ACs with zero responses:', allACStatsForModal.filter(s => (s.count || s.totalResponses || 0) === 0).length);
 
+          // Pagination for AC Modal
+          const totalACPages = Math.ceil(allACStatsForModal.length / acModalPageSize);
+          const startACIndex = (acModalPage - 1) * acModalPageSize;
+          const endACIndex = startACIndex + acModalPageSize;
+          const paginatedACStats = allACStatsForModal.slice(startACIndex, endACIndex);
+
           return (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl p-6 w-full max-w-[95vw] max-h-[90vh] overflow-y-auto">
@@ -4279,7 +4297,7 @@ const SurveyReportsPage = () => {
                         </tr>
                       );
                     })()}
-                    {allACStatsForModal.map((stat, index) => {
+                    {paginatedACStats.map((stat, index) => {
                       // Get AC/PC data
                       const acPCData = getACPCDataForModal(stat.ac);
                       
@@ -4306,11 +4324,14 @@ const SurveyReportsPage = () => {
                         age50PlusPercentage: stat.age50PlusPercentage || 0
                       };
                       
+                      // Calculate actual rank (global index, not page index)
+                      const actualRank = startACIndex + index + 1;
+                      
                       return (
                         <tr key={stat.ac} className="border-b border-gray-100">
                           <td className="py-3 px-4">
                             <span className="w-6 h-6 bg-[#E6F0F8] text-[#373177] text-xs font-semibold rounded-full flex items-center justify-center">
-                              {index + 1}
+                              {actualRank}
                             </span>
                           </td>
                           <td className="py-3 px-4 font-medium text-gray-900">{stat.ac}</td>
@@ -4343,13 +4364,84 @@ const SurveyReportsPage = () => {
                   </tbody>
                 </table>
               </div>
+              
+              {/* Pagination Controls for AC Modal */}
+              {totalACPages > 1 && (
+                <div className="mt-6 flex items-center justify-between border-t border-gray-200 pt-4">
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => setAcModalPage(prev => Math.max(1, prev - 1))}
+                      disabled={acModalPage === 1}
+                      className={`px-3 py-2 rounded-lg transition-colors ${
+                        acModalPage === 1
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          : 'bg-[#001D48] text-white hover:bg-[#003366]'
+                      }`}
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <span className="text-sm text-gray-600">
+                      Page {acModalPage} of {totalACPages}
+                    </span>
+                    <button
+                      onClick={() => setAcModalPage(prev => Math.min(totalACPages, prev + 1))}
+                      disabled={acModalPage === totalACPages}
+                      className={`px-3 py-2 rounded-lg transition-colors ${
+                        acModalPage === totalACPages
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          : 'bg-[#001D48] text-white hover:bg-[#003366]'
+                      }`}
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    Showing {startACIndex + 1} - {Math.min(endACIndex, allACStatsForModal.length)} of {allACStatsForModal.length} Assembly Constituencies
+                  </div>
+                  <div className="flex items-center space-x-1">
+                    {Array.from({ length: Math.min(5, totalACPages) }, (_, i) => {
+                      let pageNum;
+                      if (totalACPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (acModalPage <= 3) {
+                        pageNum = i + 1;
+                      } else if (acModalPage >= totalACPages - 2) {
+                        pageNum = totalACPages - 4 + i;
+                      } else {
+                        pageNum = acModalPage - 2 + i;
+                      }
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => setAcModalPage(pageNum)}
+                          className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                            acModalPage === pageNum
+                              ? 'bg-[#373177] text-white'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
           );
         })()}
 
         {/* Interviewer Performance Modal */}
-        {showInterviewerModal && (
+        {showInterviewerModal && (() => {
+          // Pagination for Interviewer Modal
+          const interviewerStats = analytics?.interviewerStats || [];
+          const totalInterviewerPages = Math.ceil(interviewerStats.length / interviewerModalPageSize);
+          const startInterviewerIndex = (interviewerModalPage - 1) * interviewerModalPageSize;
+          const endInterviewerIndex = startInterviewerIndex + interviewerModalPageSize;
+          const paginatedInterviewerStats = interviewerStats.slice(startInterviewerIndex, endInterviewerIndex);
+
+          return (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl p-6 w-full max-w-[95vw] max-h-[90vh] overflow-y-auto">
               <div className="flex items-start justify-between mb-4">
@@ -4538,7 +4630,7 @@ const SurveyReportsPage = () => {
                       );
                     })()}
                     {/* Always use filtered frontend stats (analytics.interviewerStats) which respect all filters */}
-                    {(analytics?.interviewerStats || []).map((stat, index) => {
+                    {paginatedInterviewerStats.map((stat, index) => {
                       // Use frontend calculated data (filtered) - it respects current filters and has all stats
                       const displayStat = {
                         ...stat,
@@ -4562,11 +4654,14 @@ const SurveyReportsPage = () => {
                         age50PlusPercentage: stat.age50PlusPercentage || 0
                       };
                       
+                      // Calculate actual rank (global index, not page index)
+                      const actualRank = startInterviewerIndex + index + 1;
+                      
                       return (
                         <tr key={stat.interviewer} className="border-b border-gray-100">
                           <td className="py-3 px-4">
                             <span className="w-6 h-6 bg-green-100 text-green-600 text-xs font-semibold rounded-full flex items-center justify-center">
-                              {index + 1}
+                              {actualRank}
                             </span>
                           </td>
                           <td className="py-3 px-4 font-medium text-gray-900">{stat.memberId || 'N/A'}</td>
@@ -4596,9 +4691,73 @@ const SurveyReportsPage = () => {
                   </tbody>
                 </table>
               </div>
+              
+              {/* Pagination Controls for Interviewer Modal */}
+              {totalInterviewerPages > 1 && (
+                <div className="mt-6 flex items-center justify-between border-t border-gray-200 pt-4">
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => setInterviewerModalPage(prev => Math.max(1, prev - 1))}
+                      disabled={interviewerModalPage === 1}
+                      className={`px-3 py-2 rounded-lg transition-colors ${
+                        interviewerModalPage === 1
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          : 'bg-[#001D48] text-white hover:bg-[#003366]'
+                      }`}
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <span className="text-sm text-gray-600">
+                      Page {interviewerModalPage} of {totalInterviewerPages}
+                    </span>
+                    <button
+                      onClick={() => setInterviewerModalPage(prev => Math.min(totalInterviewerPages, prev + 1))}
+                      disabled={interviewerModalPage === totalInterviewerPages}
+                      className={`px-3 py-2 rounded-lg transition-colors ${
+                        interviewerModalPage === totalInterviewerPages
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          : 'bg-[#001D48] text-white hover:bg-[#003366]'
+                      }`}
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    Showing {startInterviewerIndex + 1} - {Math.min(endInterviewerIndex, interviewerStats.length)} of {interviewerStats.length} Interviewers
+                  </div>
+                  <div className="flex items-center space-x-1">
+                    {Array.from({ length: Math.min(5, totalInterviewerPages) }, (_, i) => {
+                      let pageNum;
+                      if (totalInterviewerPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (interviewerModalPage <= 3) {
+                        pageNum = i + 1;
+                      } else if (interviewerModalPage >= totalInterviewerPages - 2) {
+                        pageNum = totalInterviewerPages - 4 + i;
+                      } else {
+                        pageNum = interviewerModalPage - 2 + i;
+                      }
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => setInterviewerModalPage(pageNum)}
+                          className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                            interviewerModalPage === pageNum
+                              ? 'bg-[#373177] text-white'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* Daily Trends Modal */}
         {showDailyTrendsModal && (
