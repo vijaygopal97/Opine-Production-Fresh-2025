@@ -234,7 +234,7 @@ const ProjectManagerSurveyReports = () => {
                           </button>
                           <button
                             onClick={() => handleViewCallerPerformance(survey)}
-                            className="inline-flex items-center px-3 py-1.5 bg-teal-100 text-teal-700 text-sm font-medium rounded-lg hover:bg-teal-200 transition-colors"
+                            className="inline-flex items-center px-3 py-1.5 bg-teal-600 text-white text-sm font-medium rounded-lg hover:bg-teal-700 transition-colors shadow-sm"
                             title="View Caller Performance"
                           >
                             <Phone className="w-4 h-4 mr-1.5" />
