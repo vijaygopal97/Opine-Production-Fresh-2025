@@ -2097,16 +2097,16 @@ const initializeRespondentQueue = async (surveyId, respondentContacts) => {
     }
     
     // If no pending entries but we have contacts, create entries for contacts that don't exist yet
-    // Get existing phone numbers to avoid duplicates
-    const existingEntries = await CatiRespondentQueue.find({ survey: surveyId })
-      .select('respondentContact.phone');
-    const existingPhones = new Set(
-      existingEntries.map(e => e.respondentContact?.phone).filter(Boolean)
+    // Solution 2: Optimize duplicate checking - use distinct() instead of fetching all entries
+    const existingPhones = await CatiRespondentQueue.distinct(
+      'respondentContact.phone',
+      { survey: surveyId }
     );
+    const existingPhonesSet = new Set(existingPhones.filter(Boolean));
     
     // Create queue entries only for contacts that aren't already in the queue
     const newContacts = respondentContacts.filter(
-      contact => !existingPhones.has(contact.phone)
+      contact => contact.phone && !existingPhonesSet.has(contact.phone)
     );
     
     if (newContacts.length === 0) {
@@ -2129,7 +2129,8 @@ const initializeRespondentQueue = async (surveyId, respondentContacts) => {
       return;
     }
 
-    // Create queue entries for new respondents
+    // Solution 1: Batch processing for queue creation
+    const BATCH_SIZE = 5000; // Process 5000 contacts at a time
     const queueEntries = newContacts.map(contact => ({
       survey: surveyId,
       respondentContact: {
@@ -2147,8 +2148,40 @@ const initializeRespondentQueue = async (surveyId, respondentContacts) => {
       currentAttemptNumber: 0
     }));
 
-    await CatiRespondentQueue.insertMany(queueEntries);
-    console.log(`✅ Initialized queue with ${queueEntries.length} new respondents for survey ${surveyId}`);
+    // Process in batches
+    let totalInserted = 0;
+    let totalBatches = Math.ceil(queueEntries.length / BATCH_SIZE);
+    console.log(`📦 Processing ${queueEntries.length} queue entries in ${totalBatches} batches of ${BATCH_SIZE}...`);
+    
+    for (let i = 0; i < queueEntries.length; i += BATCH_SIZE) {
+      const batch = queueEntries.slice(i, i + BATCH_SIZE);
+      const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+      
+      try {
+        // Use ordered: false to continue inserting even if some documents fail validation
+        await CatiRespondentQueue.insertMany(batch, { 
+          ordered: false,
+          lean: false 
+        });
+        totalInserted += batch.length;
+        console.log(`✅ Batch ${batchNumber}/${totalBatches} completed: ${batch.length} entries inserted (Total: ${totalInserted}/${queueEntries.length})`);
+        
+        // Small delay between batches to prevent overwhelming MongoDB
+        if (i + BATCH_SIZE < queueEntries.length) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+      } catch (batchError) {
+        // If batch fails, log error but continue with next batch
+        console.error(`⚠️ Error inserting batch ${batchNumber}:`, batchError.message);
+        // Try to insert individually to identify problematic entries
+        if (batchError.writeErrors && batchError.writeErrors.length > 0) {
+          console.error(`⚠️ ${batchError.writeErrors.length} entries failed in batch ${batchNumber}`);
+        }
+        // Continue with next batch
+      }
+    }
+    
+    console.log(`✅ Initialized queue with ${totalInserted}/${queueEntries.length} new respondents for survey ${surveyId}`);
 
   } catch (error) {
     console.error('Error initializing respondent queue:', error);

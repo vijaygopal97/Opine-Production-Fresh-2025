@@ -48,6 +48,11 @@
     "Type": "CATI",
     "AC_Name": "Manteswar",
     "Priority": 1
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Madarihat",
+    "Priority": 1
   }
 ]
 

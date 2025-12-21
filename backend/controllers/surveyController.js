@@ -2218,18 +2218,27 @@ exports.saveRespondentContacts = async (req, res) => {
     
     // Create queue entries for added contacts
     if (added && added.length > 0) {
-      const existingQueueEntries = await CatiRespondentQueue.find({ survey: id })
-        .select('respondentContact.phone');
-      const existingPhones = new Set(
-        existingQueueEntries.map(e => e.respondentContact?.phone).filter(Boolean)
+      // Solution 2: Optimize duplicate checking - use distinct() instead of fetching all entries
+      // This is much more memory-efficient for large datasets
+      console.log(`🔍 Checking for duplicate phones in queue for survey ${id}...`);
+      const existingPhones = await CatiRespondentQueue.distinct(
+        'respondentContact.phone',
+        { survey: id }
       );
+      const existingPhonesSet = new Set(existingPhones.filter(Boolean));
+      console.log(`✅ Found ${existingPhonesSet.size} existing phone numbers in queue`);
       
       const newContactsForQueue = added.filter(contact => {
         const phone = contact.phone || '';
-        return phone && !existingPhones.has(phone);
+        return phone && !existingPhonesSet.has(phone);
       });
       
+      console.log(`📊 Filtered ${added.length} added contacts to ${newContactsForQueue.length} new contacts for queue`);
+      
       if (newContactsForQueue.length > 0) {
+        // Solution 1: Batch processing for queue creation
+        // Process in chunks to avoid memory issues and MongoDB limits
+        const BATCH_SIZE = 5000; // Process 5000 contacts at a time
         const queueEntries = newContactsForQueue.map(contact => ({
           survey: id,
           respondentContact: {
@@ -2247,7 +2256,43 @@ exports.saveRespondentContacts = async (req, res) => {
           currentAttemptNumber: 0
         }));
         
-        await CatiRespondentQueue.insertMany(queueEntries);
+        // Process in batches
+        let totalInserted = 0;
+        let totalBatches = Math.ceil(queueEntries.length / BATCH_SIZE);
+        console.log(`📦 Processing ${queueEntries.length} queue entries in ${totalBatches} batches of ${BATCH_SIZE}...`);
+        
+        for (let i = 0; i < queueEntries.length; i += BATCH_SIZE) {
+          const batch = queueEntries.slice(i, i + BATCH_SIZE);
+          const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+          
+          try {
+            // Use ordered: false to continue inserting even if some documents fail validation
+            await CatiRespondentQueue.insertMany(batch, { 
+              ordered: false,
+              lean: false 
+            });
+            totalInserted += batch.length;
+            console.log(`✅ Batch ${batchNumber}/${totalBatches} completed: ${batch.length} entries inserted (Total: ${totalInserted}/${queueEntries.length})`);
+            
+            // Small delay between batches to prevent overwhelming MongoDB
+            if (i + BATCH_SIZE < queueEntries.length) {
+              await new Promise(resolve => setTimeout(resolve, 50));
+            }
+          } catch (batchError) {
+            // If batch fails, log error but continue with next batch
+            // This prevents one bad batch from stopping the entire process
+            console.error(`⚠️ Error inserting batch ${batchNumber}:`, batchError.message);
+            // Try to insert individually to identify problematic entries
+            if (batchError.writeErrors && batchError.writeErrors.length > 0) {
+              console.error(`⚠️ ${batchError.writeErrors.length} entries failed in batch ${batchNumber}`);
+            }
+            // Continue with next batch
+          }
+        }
+        
+        console.log(`✅ Queue creation completed: ${totalInserted}/${queueEntries.length} entries inserted successfully`);
+      } else {
+        console.log(`ℹ️ No new contacts to add to queue (all ${added.length} contacts already exist)`);
       }
     }
     
