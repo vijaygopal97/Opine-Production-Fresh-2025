@@ -3041,10 +3041,38 @@ const ViewResponsesPage = () => {
     // This will properly handle format "59 - Kandaya Prathamik Bidyalay"
 
     // Helper function to check if a value matches an option
+    // Handles translation formats like "yes_{হ্যাঁ।{हाँ}}" by comparing main text
     const optionMatches = (option, value) => {
       if (!option || value === null || value === undefined) return false;
       const optValue = typeof option === 'object' ? (option.value || option.text) : option;
-      return optValue === value || String(optValue) === String(value);
+      
+      // Direct match first (fastest)
+      if (optValue === value || String(optValue) === String(value)) {
+        return true;
+      }
+      
+      // If direct match fails, try matching main text (handles translation formats)
+      // Extract main text from both values to handle cases like:
+      // - responseValue: "yes_{হ্যাঁ।{हाँ}}" vs option.value: "yes"
+      // - responseValue: "yes" vs option.value: "yes_{হ্যাঁ।{हाँ}}"
+      const optMainText = getMainText(String(optValue));
+      const valueMainText = getMainText(String(value));
+      
+      // Match if main texts are equal
+      if (optMainText && valueMainText && optMainText === valueMainText) {
+        return true;
+      }
+      
+      // Also check if option.code matches the value (for numeric codes)
+      if (typeof option === 'object' && option.code !== null && option.code !== undefined) {
+        const optCode = String(option.code);
+        const valueStr = String(value);
+        if (optCode === valueStr || optCode === valueMainText) {
+          return true;
+        }
+      }
+      
+      return false;
     };
 
     // Pre-fetch all polling station data for unique AC codes to avoid multiple API calls
@@ -3249,11 +3277,48 @@ const ViewResponsesPage = () => {
                 if (isOthers) {
                   return '44'; // Code for "Others"
                 }
-                const option = surveyQuestion.options.find(opt => optionMatches(opt, val));
-                if (option) {
-                  return typeof option === 'object' ? (option.code || option.value || val) : val;
+                // Try to find matching option using improved matching (handles translation formats)
+                let option = surveyQuestion.options.find(opt => optionMatches(opt, val));
+                
+                // If not found with direct matching, try matching by main text
+                if (!option) {
+                  const valMainText = getMainText(String(val));
+                  option = surveyQuestion.options.find(opt => {
+                    const optValue = typeof opt === 'object' ? (opt.value || opt.text) : opt;
+                    const optMainText = getMainText(String(optValue));
+                    return optMainText === valMainText && valMainText !== '';
+                  });
                 }
-                return val;
+                
+                if (option) {
+                  // Priority: 1. option.code (numeric code), 2. getMainText(option.value) to remove translations, 3. getMainText(val)
+                  if (option.code !== null && option.code !== undefined && option.code !== '') {
+                    return String(option.code);
+                  } else if (option.value) {
+                    const mainValue = getMainText(String(option.value));
+                    // If mainValue is just text like "yes", try to find option by main text to get code
+                    if (!/^\d+$/.test(mainValue)) {
+                      // Not a numeric code, try to find option by main text to get its code
+                      const matchingOpt = surveyQuestion.options.find(opt => {
+                        const optMainText = getMainText(String(opt.value || opt.text || ''));
+                        return optMainText === mainValue;
+                      });
+                      if (matchingOpt && matchingOpt.code) {
+                        return String(matchingOpt.code);
+                      } else {
+                        return mainValue;
+                      }
+                    } else {
+                      return mainValue;
+                    }
+                  } else {
+                    const mainValue = getMainText(String(val));
+                    return mainValue || String(val);
+                  }
+                }
+                // Option not found even after main text matching, extract main text from val to remove translations
+                const mainValue = getMainText(String(val));
+                return mainValue || String(val);
               }).join(', ');
             } else {
               // In text mode: show "Others" if selected, exclude Others text from main
@@ -3274,7 +3339,8 @@ const ViewResponsesPage = () => {
               }
             }
           } else if (matchingAnswer && matchingAnswer.isSkipped) {
-            mainResponse = 'Skipped';
+            // Return empty string for skipped responses instead of "Skipped"
+            mainResponse = '';
           } else {
             mainResponse = '';
           }
@@ -3323,7 +3389,8 @@ const ViewResponsesPage = () => {
           
           if (matchingAnswer) {
             if (matchingAnswer.isSkipped) {
-              questionResponse = 'Skipped';
+              // Return empty string for skipped responses instead of "Skipped"
+              questionResponse = '';
             } else {
               const responseValue = matchingAnswer.response;
               const hasResponseContent = (val) => {
@@ -3364,8 +3431,53 @@ const ViewResponsesPage = () => {
                 } else {
                   // Not "Others" - show normal response
                   if (downloadMode === 'codes' && surveyQuestion.options) {
-                    const option = surveyQuestion.options.find(opt => optionMatches(opt, responseValue));
-                    questionResponse = typeof option === 'object' ? (option.code || option.value || responseValue) : responseValue;
+                    // Try to find matching option using improved matching (handles translation formats)
+                    let option = surveyQuestion.options.find(opt => optionMatches(opt, responseValue));
+                    
+                    // If not found with direct matching, try matching by main text
+                    if (!option) {
+                      const responseMainText = getMainText(String(responseValue));
+                      option = surveyQuestion.options.find(opt => {
+                        const optValue = typeof opt === 'object' ? (opt.value || opt.text) : opt;
+                        const optMainText = getMainText(String(optValue));
+                        return optMainText === responseMainText && responseMainText !== '';
+                      });
+                    }
+                    
+                    if (option) {
+                      // Priority: 1. option.code (numeric code), 2. getMainText(option.value) to remove translations, 3. getMainText(responseValue)
+                      if (option.code !== null && option.code !== undefined && option.code !== '') {
+                        // Use the code directly (should be numeric)
+                        questionResponse = String(option.code);
+                      } else if (option.value) {
+                        // Extract main text from option.value to remove translation format like "yes_{হ্যাঁ।{हाँ}}"
+                        const mainValue = getMainText(String(option.value));
+                        // If mainValue is just text like "yes", try to find option by main text to get code
+                        if (!/^\d+$/.test(mainValue)) {
+                          // Not a numeric code, try to find option by main text to get its code
+                          const matchingOpt = surveyQuestion.options.find(opt => {
+                            const optMainText = getMainText(String(opt.value || opt.text || ''));
+                            return optMainText === mainValue;
+                          });
+                          if (matchingOpt && matchingOpt.code) {
+                            questionResponse = String(matchingOpt.code);
+                          } else {
+                            questionResponse = mainValue;
+                          }
+                        } else {
+                          questionResponse = mainValue;
+                        }
+                      } else {
+                        // Fallback: extract main text from responseValue
+                        const mainValue = getMainText(String(responseValue));
+                        questionResponse = mainValue || String(responseValue);
+                      }
+                    } else {
+                      // Option not found even after main text matching
+                      // Extract main text from responseValue to remove translations
+                      const mainValue = getMainText(String(responseValue));
+                      questionResponse = mainValue || String(responseValue);
+                    }
                   } else {
                     if (surveyQuestion.options) {
                       questionResponse = formatResponseDisplay(responseValue, surveyQuestion);
