@@ -2247,10 +2247,8 @@ exports.addInterviewerByProjectManager = async (req, res) => {
       interviewModes: interviewerType === 'CAPI' ? 'CAPI (Face To Face)' : 'CATI (Telephonic interview)'
     }).limit(1);
 
-    // Hash password
-    const bcrypt = require('bcryptjs');
-    const salt = await bcrypt.genSalt(12);
-    const hashedPassword = await bcrypt.hash(finalPassword, salt);
+    // Password will be hashed by User model's pre-save hook
+    // Don't pre-hash it, let the model handle it
 
     // Create user data
     const userData = {
@@ -2258,7 +2256,7 @@ exports.addInterviewerByProjectManager = async (req, res) => {
       lastName: lastName.trim(),
       email: emailToCheck.toLowerCase(),
       phone: normalizedPhone,
-      password: hashedPassword,
+      password: finalPassword, // Plain password - will be hashed by pre-save hook
       userType: 'interviewer',
       interviewModes: interviewerType === 'CAPI' ? 'CAPI (Face To Face)' : 'CATI (Telephonic interview)',
       canSelectMode: false,
@@ -2365,6 +2363,34 @@ exports.addInterviewerByProjectManager = async (req, res) => {
 
     // Create the interviewer
     const newInterviewer = await User.create(userData);
+
+    // Verify password was hashed correctly (like addCAPIInterviewers.js does)
+    const bcrypt = require('bcryptjs');
+    const savedUser = await User.findById(newInterviewer._id).select('+password');
+    const passwordValid = await savedUser.comparePassword(finalPassword);
+    
+    if (!passwordValid) {
+      console.log(`⚠️  Password verification failed, retrying...`);
+      // Re-hash and update directly (bypassing pre-save hook)
+      const retrySalt = await bcrypt.genSalt(12);
+      const retryHashedPassword = await bcrypt.hash(finalPassword, retrySalt);
+      await User.updateOne(
+        { _id: savedUser._id },
+        { $set: { password: retryHashedPassword } }
+      );
+      
+      // Verify again
+      const retryUser = await User.findById(savedUser._id).select('+password');
+      const retryValid = await retryUser.comparePassword(finalPassword);
+      if (!retryValid) {
+        // If still fails, delete the user and return error
+        await User.deleteOne({ _id: newInterviewer._id });
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to set password correctly. Please try again.'
+        });
+      }
+    }
 
     // Assign interviewer to project manager
     if (!projectManager.assignedTeamMembers) {
@@ -2813,13 +2839,52 @@ exports.updateInterviewerByPM = async (req, res) => {
     }
 
     // Handle password reset
+    const bcrypt = require('bcryptjs');
     if (resetPasswordToPhone) {
       const phoneForPassword = interviewer.phone || phone;
       if (phoneForPassword) {
-        interviewer.password = phoneForPassword; // Will be hashed by pre-save hook
+        // Hash password manually to ensure it works (like addCAPIInterviewers.js)
+        const salt = await bcrypt.genSalt(12);
+        const hashedPassword = await bcrypt.hash(phoneForPassword, salt);
+        // Use updateOne to bypass pre-save hook and set hashed password directly
+        await User.updateOne(
+          { _id: interviewer._id },
+          { $set: { password: hashedPassword } }
+        );
+        // Verify password
+        const updatedUser = await User.findById(interviewer._id).select('+password');
+        const passwordValid = await updatedUser.comparePassword(phoneForPassword);
+        if (!passwordValid) {
+          // Retry if verification fails
+          const retrySalt = await bcrypt.genSalt(12);
+          const retryHashedPassword = await bcrypt.hash(phoneForPassword, retrySalt);
+          await User.updateOne(
+            { _id: interviewer._id },
+            { $set: { password: retryHashedPassword } }
+          );
+        }
       }
     } else if (password) {
-      interviewer.password = password; // Will be hashed by pre-save hook
+      // Hash password manually to ensure it works
+      const salt = await bcrypt.genSalt(12);
+      const hashedPassword = await bcrypt.hash(password, salt);
+      // Use updateOne to bypass pre-save hook and set hashed password directly
+      await User.updateOne(
+        { _id: interviewer._id },
+        { $set: { password: hashedPassword } }
+      );
+      // Verify password
+      const updatedUser = await User.findById(interviewer._id).select('+password');
+      const passwordValid = await updatedUser.comparePassword(password);
+      if (!passwordValid) {
+        // Retry if verification fails
+        const retrySalt = await bcrypt.genSalt(12);
+        const retryHashedPassword = await bcrypt.hash(password, retrySalt);
+        await User.updateOne(
+          { _id: interviewer._id },
+          { $set: { password: retryHashedPassword } }
+        );
+      }
     }
 
     await interviewer.save();

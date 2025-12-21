@@ -204,21 +204,12 @@ const ProjectManagerTeamManagement = () => {
   };
 
 
-  const handleUpdateInterviewer = async (updatedData) => {
-    try {
-      const response = await authAPI.updateCompanyUser(selectedInterviewer._id, updatedData);
-      if (response.success) {
-        showSuccess('Interviewer updated successfully');
-        loadInterviewers();
-        setShowEditInterviewer(false);
-        setSelectedInterviewer(null);
-      } else {
-        showError('Failed to update interviewer');
-      }
-    } catch (error) {
-      console.error('Error updating interviewer:', error);
-      showError('Failed to update interviewer');
-    }
+  const handleUpdateInterviewer = async () => {
+    // This function is called by EditProjectManagerInterviewer component
+    // The actual update is handled inside EditProjectManagerInterviewer
+    // using updateInterviewerByPM and updateInterviewerPreferencesByPM
+    // Just reload the interviewers list
+    await loadInterviewers();
   };
 
   const handleToggleLocationBooster = async (interviewer) => {
