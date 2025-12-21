@@ -463,7 +463,7 @@ exports.getMe = async (req, res) => {
     const user = await User.findById(req.user.id)
       .populate('company', 'companyName companyCode status industry')
       .populate('referredBy', 'firstName lastName email')
-      .populate('assignedTeamMembers.user', 'firstName lastName email memberId userType')
+      .populate('assignedTeamMembers.user', 'firstName lastName email phone memberId userType interviewModes status preferences createdAt')
       .select('-password -emailVerificationToken -phoneVerificationOTP');
 
     if (!user) {
@@ -2036,6 +2036,813 @@ exports.resetPassword = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Internal server error. Please try again later.'
+    });
+  }
+};
+
+// @desc    Check if member ID is available
+// @route   GET /api/auth/check-member-id/:memberId
+// @access  Private (Project Manager, Company Admin)
+exports.checkMemberIdAvailability = async (req, res) => {
+  try {
+    const { memberId } = req.params;
+
+    if (!memberId || memberId.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        available: false,
+        message: 'Member ID is required'
+      });
+    }
+
+    // Check if member ID already exists (case-insensitive)
+    const existingUser = await User.findOne({
+      memberId: { $regex: new RegExp(`^${memberId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+    });
+
+    if (existingUser) {
+      return res.status(200).json({
+        success: true,
+        available: false,
+        message: 'Member ID already exists',
+        existingUser: {
+          name: `${existingUser.firstName} ${existingUser.lastName}`,
+          email: existingUser.email,
+          userType: existingUser.userType
+        }
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      available: true,
+      message: 'Member ID is available'
+    });
+  } catch (error) {
+    console.error('Check member ID availability error:', error);
+    res.status(500).json({
+      success: false,
+      available: false,
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
+// @desc    Add interviewer by project manager
+// @route   POST /api/auth/project-manager/add-interviewer
+// @access  Private (Project Manager)
+exports.addInterviewerByProjectManager = async (req, res) => {
+  try {
+    const {
+      interviewerType, // 'CAPI' or 'CATI'
+      interviewerId, // Member ID (optional - will be auto-generated if not provided)
+      firstName,
+      lastName,
+      phone,
+      password,
+      usePhoneAsPassword,
+      surveyIds, // Array of survey IDs to assign interviewer to
+      capiSurveyIds, // For CAPI interviewers
+      catiSurveyIds // For CATI interviewers
+    } = req.body;
+
+    // Validate required fields
+    if (!interviewerType || !firstName || !lastName || !phone) {
+      return res.status(400).json({
+        success: false,
+        message: 'Interviewer type, first name, last name, and phone are required'
+      });
+    }
+
+    if (!['CAPI', 'CATI'].includes(interviewerType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Interviewer type must be either CAPI or CATI'
+      });
+    }
+
+    // Get current user (project manager)
+    const projectManager = await User.findById(req.user.id).populate('company');
+    if (!projectManager || projectManager.userType !== 'project_manager') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only project managers can add interviewers'
+      });
+    }
+
+    if (!projectManager.company) {
+      return res.status(400).json({
+        success: false,
+        message: 'Project manager not associated with any company'
+      });
+    }
+
+    // Normalize phone number (remove country code)
+    let normalizedPhone = phone.replace(/^\+91/, '').replace(/^91/, '').trim();
+    if (normalizedPhone.length !== 10) {
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number must be 10 digits'
+      });
+    }
+
+    // Determine password
+    const finalPassword = usePhoneAsPassword ? normalizedPhone : password;
+    if (!finalPassword || finalPassword.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 8 characters long'
+      });
+    }
+
+    // Handle member ID
+    let finalMemberId = interviewerId;
+    if (!finalMemberId || finalMemberId.trim() === '') {
+      // Auto-generate member ID
+      if (interviewerType === 'CAPI') {
+        // For CAPI, generate like CAPI12345 (up to 5 digits)
+        let attempts = 0;
+        let isUnique = false;
+        while (!isUnique && attempts < 100) {
+          const randomNum = Math.floor(10000 + Math.random() * 90000); // 5 digits
+          finalMemberId = `CAPI${randomNum}`;
+          const existing = await User.findOne({ memberId: finalMemberId });
+          if (!existing) {
+            isUnique = true;
+          }
+          attempts++;
+        }
+        if (!isUnique) {
+          return res.status(500).json({
+            success: false,
+            message: 'Failed to generate unique CAPI member ID'
+          });
+        }
+      } else {
+        // For CATI, generate numeric ID (up to 5 digits)
+        finalMemberId = await generateMemberId();
+      }
+    } else {
+      // Validate provided member ID
+      if (interviewerType === 'CAPI') {
+        // CAPI must start with "CAPI" prefix
+        if (!finalMemberId.toUpperCase().startsWith('CAPI')) {
+          finalMemberId = `CAPI${finalMemberId.replace(/^CAPI/i, '')}`;
+        }
+        // Extract numeric part and ensure it's max 5 digits
+        const numericPart = finalMemberId.replace(/^CAPI/i, '');
+        if (numericPart.length > 5) {
+          return res.status(400).json({
+            success: false,
+            message: 'CAPI Interviewer ID can only have up to 5 digits after "CAPI" prefix'
+          });
+        }
+        finalMemberId = `CAPI${numericPart.padStart(1, '0')}`;
+      } else {
+        // CATI must be numeric, max 5 digits
+        if (!/^\d+$/.test(finalMemberId)) {
+          return res.status(400).json({
+            success: false,
+            message: 'CATI Interviewer ID must be numeric (up to 5 digits)'
+          });
+        }
+        if (finalMemberId.length > 5) {
+          return res.status(400).json({
+            success: false,
+            message: 'CATI Interviewer ID can only have up to 5 digits'
+          });
+        }
+      }
+
+      // Check if member ID is available
+      const existingUser = await User.findOne({
+        memberId: { $regex: new RegExp(`^${finalMemberId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+      });
+
+      if (existingUser) {
+        return res.status(400).json({
+          success: false,
+          message: `Interviewer ID "${finalMemberId}" is already taken`
+        });
+      }
+    }
+
+    // Check if email/phone already exists
+    const emailToCheck = `${interviewerType.toLowerCase()}${finalMemberId}@gmail.com`;
+    const existingEmail = await User.findOne({ email: emailToCheck.toLowerCase() });
+    const existingPhoneUser = await User.findOne({ phone: normalizedPhone });
+
+    if (existingEmail || existingPhoneUser) {
+      return res.status(400).json({
+        success: false,
+        message: 'User with this email or phone already exists'
+      });
+    }
+
+    // Get reference user for default values
+    const referenceUser = await User.findOne({
+      userType: 'interviewer',
+      company: projectManager.company._id,
+      interviewModes: interviewerType === 'CAPI' ? 'CAPI (Face To Face)' : 'CATI (Telephonic interview)'
+    }).limit(1);
+
+    // Hash password
+    const bcrypt = require('bcryptjs');
+    const salt = await bcrypt.genSalt(12);
+    const hashedPassword = await bcrypt.hash(finalPassword, salt);
+
+    // Create user data
+    const userData = {
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      email: emailToCheck.toLowerCase(),
+      phone: normalizedPhone,
+      password: hashedPassword,
+      userType: 'interviewer',
+      interviewModes: interviewerType === 'CAPI' ? 'CAPI (Face To Face)' : 'CATI (Telephonic interview)',
+      canSelectMode: false,
+      company: projectManager.company._id,
+      companyCode: projectManager.companyCode,
+      memberId: finalMemberId,
+      status: 'active',
+      isActive: true,
+      isEmailVerified: false,
+      isPhoneVerified: false,
+      gig_enabled: false,
+      gig_availability: false,
+      registrationSource: 'company_admin',
+      profile: referenceUser?.profile || { languages: [], education: [], experience: [] },
+      documents: referenceUser?.documents || {
+        aadhaar: { isVerified: false },
+        pan: { isVerified: false },
+        drivingLicense: { isVerified: false },
+        bankDetails: { isVerified: false }
+      },
+      performance: referenceUser?.performance || {
+        trustScore: 100,
+        totalInterviews: 0,
+        approvedInterviews: 0,
+        rejectedInterviews: 0,
+        averageRating: 0,
+        totalEarnings: 0,
+        qualityMetrics: {
+          audioQuality: 0,
+          responseAccuracy: 0,
+          timeliness: 0,
+          professionalism: 0
+        }
+      },
+      preferences: {
+        notifications: {
+          email: true,
+          sms: true,
+          push: true,
+          surveyAssignments: true,
+          paymentUpdates: true,
+          qualityFeedback: true
+        },
+        workingHours: {
+          startTime: '09:00',
+          endTime: '18:00',
+          workingDays: [],
+          timezone: 'Asia/Kolkata'
+        },
+        surveyPreferences: {
+          maxDistance: 50,
+          preferredLocations: [],
+          minPayment: 0,
+          maxInterviewsPerDay: 10
+        },
+        locationControlBooster: false // Default to false
+      },
+      training: {
+        completedModules: [],
+        certificationStatus: 'not_started'
+      },
+      interviewerProfile: {
+        age: referenceUser?.interviewerProfile?.age || 28,
+        gender: referenceUser?.interviewerProfile?.gender || 'male',
+        languagesSpoken: referenceUser?.interviewerProfile?.languagesSpoken || ['Hindi', 'English'],
+        highestDegree: referenceUser?.interviewerProfile?.highestDegree || {
+          name: 'B.Tech',
+          institution: 'NIT',
+          year: 2019
+        },
+        hasSurveyExperience: true,
+        surveyExperienceYears: 3,
+        surveyExperienceDescription: `Experienced in ${interviewerType === 'CAPI' ? 'face-to-face' : 'telephonic'} surveys`,
+        cvUpload: referenceUser?.interviewerProfile?.cvUpload || 'cvUpload-1764630127133-571761495.docx',
+        ownsSmartphone: true,
+        smartphoneType: 'Both',
+        androidVersion: '13',
+        iosVersion: '',
+        willingToTravel: true,
+        hasVehicle: true,
+        willingToRecordAudio: true,
+        agreesToRemuneration: true,
+        bankAccountNumber: referenceUser?.interviewerProfile?.bankAccountNumber || '786897980',
+        bankAccountHolderName: `${firstName.toUpperCase()} ${lastName.toUpperCase()}`,
+        bankName: referenceUser?.interviewerProfile?.bankName || 'HDFC',
+        bankIfscCode: referenceUser?.interviewerProfile?.bankIfscCode || 'HDFC0001234',
+        bankDocumentUpload: referenceUser?.interviewerProfile?.bankDocumentUpload || 'bankDocumentUpload-1764630178675-881719772.png',
+        aadhaarNumber: referenceUser?.interviewerProfile?.aadhaarNumber || '876897697890',
+        aadhaarDocument: referenceUser?.interviewerProfile?.aadhaarDocument || 'aadhaarDocument-1764630188489-204099240.png',
+        panNumber: referenceUser?.interviewerProfile?.panNumber || '7868979879',
+        panDocument: referenceUser?.interviewerProfile?.panDocument || 'panDocument-1764630192433-387051607.png',
+        passportPhoto: referenceUser?.interviewerProfile?.passportPhoto || 'passportPhoto-1764630195659-468808359.png',
+        agreesToShareInfo: true,
+        agreesToParticipateInSurvey: true,
+        approvalStatus: 'approved',
+        approvalFeedback: `Approved for ${interviewerType}`,
+        approvedBy: projectManager._id,
+        approvedAt: new Date(),
+        lastSubmittedAt: new Date()
+      },
+      loginAttempts: 0,
+      assignedTeamMembers: []
+    };
+
+    // Create the interviewer
+    const newInterviewer = await User.create(userData);
+
+    // Assign interviewer to project manager
+    if (!projectManager.assignedTeamMembers) {
+      projectManager.assignedTeamMembers = [];
+    }
+
+    // Check if already assigned
+    const alreadyAssigned = projectManager.assignedTeamMembers.some(
+      member => member.user && member.user.toString() === newInterviewer._id.toString()
+    );
+
+    if (!alreadyAssigned) {
+      projectManager.assignedTeamMembers.push({
+        user: newInterviewer._id,
+        userType: 'interviewer',
+        assignedAt: new Date(),
+        assignedBy: projectManager._id
+      });
+      await projectManager.save();
+    }
+
+    // Assign to surveys if provided
+    const Survey = require('../models/Survey');
+    if (surveyIds && Array.isArray(surveyIds) && surveyIds.length > 0) {
+      for (const surveyId of surveyIds) {
+        try {
+          const survey = await Survey.findById(surveyId);
+          if (!survey) continue;
+
+          // Check if survey belongs to same company
+          if (survey.company.toString() !== projectManager.company._id.toString()) {
+            continue;
+          }
+
+          if (interviewerType === 'CAPI') {
+            // Assign to CAPI interviewers
+            if (!survey.capiInterviewers) {
+              survey.capiInterviewers = [];
+            }
+            const existingCAPI = survey.capiInterviewers.find(
+              assignment => assignment.interviewer.toString() === newInterviewer._id.toString()
+            );
+            if (!existingCAPI) {
+              survey.capiInterviewers.push({
+                interviewer: newInterviewer._id,
+                assignedBy: projectManager._id,
+                assignedAt: new Date(),
+                status: 'assigned',
+                maxInterviews: 0,
+                completedInterviews: 0
+              });
+            }
+          } else {
+            // Assign to CATI interviewers
+            if (!survey.catiInterviewers) {
+              survey.catiInterviewers = [];
+            }
+            const existingCATI = survey.catiInterviewers.find(
+              assignment => assignment.interviewer.toString() === newInterviewer._id.toString()
+            );
+            if (!existingCATI) {
+              survey.catiInterviewers.push({
+                interviewer: newInterviewer._id,
+                assignedBy: projectManager._id,
+                assignedAt: new Date(),
+                status: 'assigned',
+                maxInterviews: 0,
+                completedInterviews: 0
+              });
+            }
+          }
+          await survey.save();
+        } catch (error) {
+          console.error(`Error assigning interviewer to survey ${surveyId}:`, error);
+          // Continue with other surveys
+        }
+      }
+    }
+
+    // Also handle separate CAPI/CATI survey assignments if provided
+    if (capiSurveyIds && Array.isArray(capiSurveyIds) && capiSurveyIds.length > 0 && interviewerType === 'CAPI') {
+      for (const surveyId of capiSurveyIds) {
+        try {
+          const survey = await Survey.findById(surveyId);
+          if (!survey || survey.company.toString() !== projectManager.company._id.toString()) continue;
+
+          if (!survey.capiInterviewers) {
+            survey.capiInterviewers = [];
+          }
+          const existing = survey.capiInterviewers.find(
+            assignment => assignment.interviewer.toString() === newInterviewer._id.toString()
+          );
+          if (!existing) {
+            survey.capiInterviewers.push({
+              interviewer: newInterviewer._id,
+              assignedBy: projectManager._id,
+              assignedAt: new Date(),
+              status: 'assigned',
+              maxInterviews: 0,
+              completedInterviews: 0
+            });
+            await survey.save();
+          }
+        } catch (error) {
+          console.error(`Error assigning CAPI interviewer to survey ${surveyId}:`, error);
+        }
+      }
+    }
+
+    if (catiSurveyIds && Array.isArray(catiSurveyIds) && catiSurveyIds.length > 0 && interviewerType === 'CATI') {
+      for (const surveyId of catiSurveyIds) {
+        try {
+          const survey = await Survey.findById(surveyId);
+          if (!survey || survey.company.toString() !== projectManager.company._id.toString()) continue;
+
+          if (!survey.catiInterviewers) {
+            survey.catiInterviewers = [];
+          }
+          const existing = survey.catiInterviewers.find(
+            assignment => assignment.interviewer.toString() === newInterviewer._id.toString()
+          );
+          if (!existing) {
+            survey.catiInterviewers.push({
+              interviewer: newInterviewer._id,
+              assignedBy: projectManager._id,
+              assignedAt: new Date(),
+              status: 'assigned',
+              maxInterviews: 0,
+              completedInterviews: 0
+            });
+            await survey.save();
+          }
+        } catch (error) {
+          console.error(`Error assigning CATI interviewer to survey ${surveyId}:`, error);
+        }
+      }
+    }
+
+    // Populate for response
+    await newInterviewer.populate('company', 'companyName companyCode');
+
+    res.status(201).json({
+      success: true,
+      message: 'Interviewer added successfully',
+      data: {
+        interviewer: {
+          _id: newInterviewer._id,
+          firstName: newInterviewer.firstName,
+          lastName: newInterviewer.lastName,
+          email: newInterviewer.email,
+          phone: newInterviewer.phone,
+          memberId: newInterviewer.memberId,
+          userType: newInterviewer.userType,
+          interviewModes: newInterviewer.interviewModes,
+          status: newInterviewer.status,
+          company: newInterviewer.company
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Add interviewer by project manager error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
+// @desc    Update interviewer preferences by project manager
+// @route   PUT /api/auth/project-manager/interviewer/:id/preferences
+// @access  Private (Project Manager)
+exports.updateInterviewerPreferencesByPM = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { preferences } = req.body;
+
+    // Get current user (project manager)
+    const projectManager = await User.findById(req.user.id).populate('company');
+    if (!projectManager || projectManager.userType !== 'project_manager') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only project managers can update interviewer preferences'
+      });
+    }
+
+    if (!projectManager.company) {
+      return res.status(400).json({
+        success: false,
+        message: 'Project manager not associated with any company'
+      });
+    }
+
+    // Find the interviewer to update
+    const interviewer = await User.findById(id).populate('company');
+    if (!interviewer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Interviewer not found'
+      });
+    }
+
+    // Check if interviewer belongs to the same company
+    if (interviewer.company._id.toString() !== projectManager.company._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Interviewer does not belong to your company'
+      });
+    }
+
+    // Check if interviewer is assigned to this project manager
+    if (!projectManager.assignedTeamMembers || !Array.isArray(projectManager.assignedTeamMembers)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Interviewer is not assigned to you'
+      });
+    }
+
+    const isAssigned = projectManager.assignedTeamMembers.some(
+      member => member.user && member.user.toString() === interviewer._id.toString()
+    );
+
+    if (!isAssigned) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only update preferences for interviewers assigned to you'
+      });
+    }
+
+    // Update preferences
+    if (preferences) {
+      interviewer.preferences = {
+        ...interviewer.preferences,
+        ...preferences
+      };
+    }
+
+    await interviewer.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Interviewer preferences updated successfully',
+      data: {
+        interviewer: {
+          _id: interviewer._id,
+          firstName: interviewer.firstName,
+          lastName: interviewer.lastName,
+          preferences: interviewer.preferences
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Update interviewer preferences by PM error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
+// @desc    Get surveys assigned to an interviewer
+// @route   GET /api/auth/project-manager/interviewer/:id/surveys
+// @access  Private (Project Manager)
+exports.getInterviewerSurveys = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const projectManager = await User.findById(req.user.id).populate('company');
+    
+    if (!projectManager || projectManager.userType !== 'project_manager') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only project managers can view interviewer surveys'
+      });
+    }
+
+    if (!projectManager.company) {
+      return res.status(400).json({
+        success: false,
+        message: 'Project manager not associated with any company'
+      });
+    }
+
+    // Find the interviewer
+    const interviewer = await User.findById(id).populate('company');
+    if (!interviewer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Interviewer not found'
+      });
+    }
+
+    // Check if interviewer belongs to the same company
+    if (interviewer.company._id.toString() !== projectManager.company._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Interviewer does not belong to your company'
+      });
+    }
+
+    // Check if interviewer is assigned to this project manager
+    if (!projectManager.assignedTeamMembers || !Array.isArray(projectManager.assignedTeamMembers)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Interviewer is not assigned to you'
+      });
+    }
+
+    const isAssigned = projectManager.assignedTeamMembers.some(
+      member => member.user && member.user.toString() === interviewer._id.toString()
+    );
+
+    if (!isAssigned) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only view surveys for interviewers assigned to you'
+      });
+    }
+
+    const Survey = require('../models/Survey');
+    const mongoose = require('mongoose');
+    const interviewerId = new mongoose.Types.ObjectId(id);
+
+    // Find all surveys where this interviewer is assigned
+    const surveys = await Survey.find({
+      company: projectManager.company._id,
+      $or: [
+        { 'capiInterviewers.interviewer': interviewerId },
+        { 'catiInterviewers.interviewer': interviewerId }
+      ]
+    })
+    .select('surveyName description status mode capiInterviewers catiInterviewers createdAt')
+    .lean();
+
+    // Map surveys with assignment mode
+    const surveysWithMode = surveys.map(survey => {
+      const isCAPI = survey.capiInterviewers?.some(
+        assignment => assignment.interviewer.toString() === id
+      );
+      const isCATI = survey.catiInterviewers?.some(
+        assignment => assignment.interviewer.toString() === id
+      );
+      
+      let assignedMode = null;
+      if (isCAPI && isCATI) {
+        assignedMode = 'Both';
+      } else if (isCAPI) {
+        assignedMode = 'CAPI';
+      } else if (isCATI) {
+        assignedMode = 'CATI';
+      }
+
+      return {
+        _id: survey._id,
+        surveyName: survey.surveyName,
+        description: survey.description,
+        status: survey.status,
+        mode: survey.mode,
+        assignedMode,
+        createdAt: survey.createdAt
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        surveys: surveysWithMode
+      }
+    });
+  } catch (error) {
+    console.error('Get interviewer surveys error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
+// @desc    Update interviewer (basic info and password)
+// @route   PUT /api/auth/project-manager/interviewer/:id
+// @access  Private (Project Manager)
+exports.updateInterviewerByPM = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { firstName, lastName, phone, password, resetPasswordToPhone } = req.body;
+    const projectManager = await User.findById(req.user.id).populate('company');
+    
+    if (!projectManager || projectManager.userType !== 'project_manager') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only project managers can update interviewers'
+      });
+    }
+
+    if (!projectManager.company) {
+      return res.status(400).json({
+        success: false,
+        message: 'Project manager not associated with any company'
+      });
+    }
+
+    // Find the interviewer
+    const interviewer = await User.findById(id).populate('company');
+    if (!interviewer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Interviewer not found'
+      });
+    }
+
+    // Check if interviewer belongs to the same company
+    if (interviewer.company._id.toString() !== projectManager.company._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Interviewer does not belong to your company'
+      });
+    }
+
+    // Check if interviewer is assigned to this project manager
+    if (!projectManager.assignedTeamMembers || !Array.isArray(projectManager.assignedTeamMembers)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Interviewer is not assigned to you'
+      });
+    }
+
+    const isAssigned = projectManager.assignedTeamMembers.some(
+      member => member.user && member.user.toString() === interviewer._id.toString()
+    );
+
+    if (!isAssigned) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only update interviewers assigned to you'
+      });
+    }
+
+    // Update basic info
+    if (firstName) interviewer.firstName = firstName.trim();
+    if (lastName) interviewer.lastName = lastName.trim();
+    if (phone) {
+      // Normalize phone number
+      let normalizedPhone = phone.replace(/^\+91/, '').replace(/^91/, '').trim();
+      interviewer.phone = normalizedPhone;
+    }
+
+    // Handle password reset
+    if (resetPasswordToPhone) {
+      const phoneForPassword = interviewer.phone || phone;
+      if (phoneForPassword) {
+        interviewer.password = phoneForPassword; // Will be hashed by pre-save hook
+      }
+    } else if (password) {
+      interviewer.password = password; // Will be hashed by pre-save hook
+    }
+
+    await interviewer.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Interviewer updated successfully',
+      data: {
+        interviewer: {
+          _id: interviewer._id,
+          firstName: interviewer.firstName,
+          lastName: interviewer.lastName,
+          phone: interviewer.phone,
+          email: interviewer.email
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Update interviewer by PM error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 };

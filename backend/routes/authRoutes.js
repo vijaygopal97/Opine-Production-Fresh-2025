@@ -27,7 +27,12 @@ const {
   deleteCompanyUser,
   forgotPassword,
   verifyOTP,
-  resetPassword
+  resetPassword,
+  checkMemberIdAvailability,
+  addInterviewerByProjectManager,
+  updateInterviewerPreferencesByPM,
+  getInterviewerSurveys,
+  updateInterviewerByPM
 } = require('../controllers/authController');
 const { protect, authorize } = require('../middleware/auth');
 const {
@@ -80,5 +85,12 @@ router.get('/company/users', protect, authorize('company_admin'), getCompanyUser
 router.post('/company/register-user', protect, authorize('company_admin'), registerCompanyUser);
 router.put('/company/users/:id', protect, authorize('company_admin'), updateCompanyUser);
 router.delete('/company/users/:id', protect, authorize('company_admin'), deleteCompanyUser);
+
+// Project Manager routes - Team Management
+router.get('/check-member-id/:memberId', protect, authorize('project_manager', 'company_admin'), checkMemberIdAvailability);
+router.post('/project-manager/add-interviewer', protect, authorize('project_manager'), addInterviewerByProjectManager);
+router.put('/project-manager/interviewer/:id/preferences', protect, authorize('project_manager'), updateInterviewerPreferencesByPM);
+router.get('/project-manager/interviewer/:id/surveys', protect, authorize('project_manager'), getInterviewerSurveys);
+router.put('/project-manager/interviewer/:id', protect, authorize('project_manager'), updateInterviewerByPM);
 
 module.exports = router;

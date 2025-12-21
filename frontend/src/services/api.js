@@ -283,6 +283,57 @@ export const authAPI = {
           }
         },
 
+
+        // Check member ID availability
+        checkMemberIdAvailability: async (memberId) => {
+          try {
+            const response = await api.get(`/api/auth/check-member-id/${encodeURIComponent(memberId)}`);
+            return response.data;
+          } catch (error) {
+            throw error;
+          }
+        },
+
+        // Add interviewer by project manager
+        addInterviewerByProjectManager: async (interviewerData) => {
+          try {
+            const response = await api.post('/api/auth/project-manager/add-interviewer', interviewerData);
+            return response.data;
+          } catch (error) {
+            throw error;
+          }
+        },
+
+        // Update interviewer preferences by project manager
+        updateInterviewerPreferencesByPM: async (interviewerId, preferencesData) => {
+          try {
+            const response = await api.put(`/api/auth/project-manager/interviewer/${interviewerId}/preferences`, preferencesData);
+            return response.data;
+          } catch (error) {
+            throw error;
+          }
+        },
+
+        // Get surveys assigned to an interviewer
+        getInterviewerSurveys: async (interviewerId) => {
+          try {
+            const response = await api.get(`/api/auth/project-manager/interviewer/${interviewerId}/surveys`);
+            return response.data;
+          } catch (error) {
+            throw error;
+          }
+        },
+
+        // Update interviewer by project manager (basic info and password)
+        updateInterviewerByPM: async (interviewerId, updateData) => {
+          try {
+            const response = await api.put(`/api/auth/project-manager/interviewer/${interviewerId}`, updateData);
+            return response.data;
+          } catch (error) {
+            throw error;
+          }
+        },
+
   // Interviewer Profile API functions
   getInterviewerProfile: async () => {
     try {

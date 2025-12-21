@@ -7,6 +7,7 @@ import ProjectManagerDashboard from './ProjectManagerDashboard';
 import ProjectManagerSurveyReports from './ProjectManagerSurveyReports';
 import ProjectManagerSurveyReportsPage from './ProjectManagerSurveyReportsPage';
 import ProjectManagerQCPerformancePage from './ProjectManagerQCPerformancePage';
+import ProjectManagerTeamManagement from './ProjectManagerTeamManagement';
 import InterviewerDashboard from './InterviewerDashboard';
 import QualityAgentDashboard from './QualityAgentDashboard';
 import DataAnalystDashboard from './DataAnalystDashboard';
@@ -111,6 +112,9 @@ const AdminDashboard = () => {
     if (user?.userType === 'project_manager') {
       if (path === '/project-manager/survey-reports') {
         return <ProjectManagerSurveyReports />;
+      }
+      if (path === '/project-manager/team-management') {
+        return <ProjectManagerTeamManagement />;
       }
       if (path.startsWith('/project-manager/surveys/') && path.endsWith('/reports')) {
         return <ProjectManagerSurveyReportsPage />;
