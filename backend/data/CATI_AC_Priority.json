@@ -17,21 +17,36 @@
   {
     "Type": "CATI",
     "AC_Name": "Bidhannagar",
-    "Priority": 1
+    "Priority": "0"
   },
   {
     "Type": "CATI",
     "AC_Name": "Bhabanipur",
-    "Priority": 1
+    "Priority": "0"
   },
   {
     "Type": "CATI",
     "AC_Name": "Ballygunge",
-    "Priority": 1
+    "Priority": "0"
   },
   {
     "Type": "CATI",
     "AC_Name": "Barabani",
+    "Priority": "0"
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Maheshtala",
+    "Priority": 1
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Entally",
+    "Priority": 1
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Manteswar",
     "Priority": 1
   }
 ]

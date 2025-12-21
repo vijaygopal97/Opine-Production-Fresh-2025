@@ -194,3 +194,4 @@ const normalizeName = (name) => {
 };
 
 main();
+

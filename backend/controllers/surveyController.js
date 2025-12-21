@@ -706,12 +706,25 @@ exports.assignInterviewers = async (req, res) => {
     
     // Validate interviewer IDs based on survey mode
     if (isMultiMode) {
-      // For multi-mode surveys, we need either capiInterviewerIds or catiInterviewerIds
-      if ((!capiInterviewerIds || !Array.isArray(capiInterviewerIds) || capiInterviewerIds.length === 0) &&
-          (!catiInterviewerIds || !Array.isArray(catiInterviewerIds) || catiInterviewerIds.length === 0)) {
-        return res.status(400).json({
-          success: false,
-          message: 'CAPI or CATI interviewer IDs are required for multi-mode surveys'
+      // For multi-mode surveys, check if we have any interviewers to assign
+      const hasCapiInterviewers = capiInterviewerIds && Array.isArray(capiInterviewerIds) && capiInterviewerIds.length > 0;
+      const hasCatiInterviewers = catiInterviewerIds && Array.isArray(catiInterviewerIds) && catiInterviewerIds.length > 0;
+      
+      // If no interviewers are provided (both are undefined, null, or empty arrays), 
+      // this is valid - it means we're not updating interviewer assignments
+      // This can happen when uploading respondent contacts or updating other survey data
+      if (!hasCapiInterviewers && !hasCatiInterviewers) {
+        // No interviewers to assign - return success without updating interviewer assignments
+        const updatedSurvey = await Survey.findById(survey._id)
+          .populate('capiInterviewers.interviewer', 'firstName lastName email userType phone')
+          .populate('capiInterviewers.assignedBy', 'firstName lastName email')
+          .populate('catiInterviewers.interviewer', 'firstName lastName email userType phone')
+          .populate('catiInterviewers.assignedBy', 'firstName lastName email');
+        
+        return res.status(200).json({
+          success: true,
+          message: 'Survey updated successfully',
+          data: { survey: updatedSurvey }
         });
       }
     } else {
