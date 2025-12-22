@@ -584,10 +584,35 @@ const completeInterview = async (req, res) => {
 
   } catch (error) {
     console.error('Error completing interview:', error);
+    
+    // Check if this is a duplicate key error (E11000)
+    // This happens when trying to complete an interview that was already completed
+    const isDuplicateError = error.code === 11000 || 
+                            error.code === '11000' ||
+                            (error.message && error.message.includes('E11000')) ||
+                            (error.message && error.message.includes('duplicate key'));
+    
+    if (isDuplicateError) {
+      console.log('⚠️ Duplicate submission detected - interview already exists on server');
+      console.log('⚠️ Error code:', error.code);
+      console.log('⚠️ Key pattern:', error.keyPattern);
+      console.log('⚠️ Key value:', error.keyValue);
+      
+      // Return 409 Conflict for duplicate submissions (more appropriate than 500)
+      return res.status(409).json({
+        success: false,
+        message: 'Interview already completed - duplicate submission',
+        error: 'Duplicate key error: Interview with this sessionId already exists',
+        code: error.code,
+        isDuplicate: true
+      });
+    }
+    
     res.status(500).json({
       success: false,
       message: 'Failed to complete interview',
-      error: error.message
+      error: error.message,
+      code: error.code || 'UNKNOWN_ERROR'
     });
   }
 };

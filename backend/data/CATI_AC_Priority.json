@@ -12,7 +12,7 @@
   {
     "Type": "CATI",
     "AC_Name": "Barabani",
-    "Priority": "0"
+    "Priority": 1
   },
   {
     "Type": "CATI",
@@ -32,7 +32,7 @@
   {
     "Type": "CATI",
     "AC_Name": "Barabani",
-    "Priority": "0"
+    "Priority": 1
   },
   {
     "Type": "CATI",
@@ -42,16 +42,26 @@
   {
     "Type": "CATI",
     "AC_Name": "Entally",
-    "Priority": 1
+    "Priority": "0"
   },
   {
     "Type": "CATI",
     "AC_Name": "Manteswar",
-    "Priority": 1
+    "Priority": "0"
   },
   {
     "Type": "CATI",
     "AC_Name": "Madarihat",
+    "Priority": "0"
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Maniktala",
+    "Priority": 1
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Uttarpara",
     "Priority": 1
   }
 ]

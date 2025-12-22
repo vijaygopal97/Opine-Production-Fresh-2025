@@ -1663,7 +1663,7 @@ const completeCatiInterview = async (req, res) => {
           callRecordId: queueEntry.callRecord?._id,
           callStatus: finalCallStatus, // Store call status in metadata (legacy)
           abandoned: shouldMarkAsAbandoned, // Mark as abandoned if call not connected OR consent is "No"
-          abandonmentReason: consentResponse === 'no' ? 'consent_refused' : (!isCallConnected ? reason : null)
+          abandonmentReason: consentResponse === 'no' ? 'consent_refused' : (!isCallConnected && finalCallStatus && finalCallStatus !== 'call_connected' && finalCallStatus !== 'success' ? 'Call_Not_Connected' : null)
         }
       });
       

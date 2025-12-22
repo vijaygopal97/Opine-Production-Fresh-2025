@@ -2186,8 +2186,16 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
     }
     
     const maxLanguages = Math.max(...Array.from(languageCounts), 0) + 1;
+    
+    // For survey "68fd1915d41841da463f0d46", use specific language labels
+    const surveyId = survey?._id || survey?.id;
+    if (surveyId === '68fd1915d41841da463f0d46') {
+      const languageLabels = ['English', 'Bengali', 'Hindi'];
+      return Array.from({ length: maxLanguages }, (_, i) => languageLabels[i] || `Language ${i + 1}`);
+    }
+    
     return Array.from({ length: maxLanguages }, (_, i) => `Language ${i + 1}`);
-  }, [currentQuestion]);
+  }, [currentQuestion, survey]);
 
   // Also fetch MP/MLA names when reaching questions 16.a or 16.b if not already available
   useEffect(() => {
@@ -4375,25 +4383,25 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
                               });
                             }
                           } else if (isOthers) {
-                            // If "Others" is selected, clear all other selections (mutual exclusivity)
-                            currentAnswers = [optionValue];
-                            // Clear "None" if it exists
+                            // "Others" can now be combined with other options (if multi-select is allowed)
+                            // Only remove "None" if it exists (keep "None" exclusive)
                             if (noneOptionValue && currentAnswers.includes(noneOptionValue)) {
                               currentAnswers = currentAnswers.filter((a) => a !== noneOptionValue);
+                            }
+                            // Add "Others" to existing selections (allow combination)
+                            if (!currentAnswers.includes(optionValue)) {
+                              // Check if we've reached the maximum selections limit
+                              if (maxSelections && currentAnswers.length >= maxSelections) {
+                                showError(`Maximum ${maxSelections} selection${maxSelections > 1 ? 's' : ''} allowed`);
+                                return;
+                              }
+                              currentAnswers.push(optionValue);
                             }
                       } else {
-                            // If any other option is selected, remove "None" and "Others" if they exist
+                            // If any other option is selected, remove "None" if it exists (keep "None" exclusive)
+                            // But allow "Others" to remain (can be combined with other options)
                             if (noneOptionValue && currentAnswers.includes(noneOptionValue)) {
                               currentAnswers = currentAnswers.filter((a) => a !== noneOptionValue);
-                            }
-                            if (othersOptionValue && currentAnswers.includes(othersOptionValue)) {
-                              currentAnswers = currentAnswers.filter((a) => a !== othersOptionValue);
-                              // Clear "Others" text input
-                              setOthersTextInputs(prev => {
-                                const updated = { ...prev };
-                                delete updated[`${questionId}_${othersOptionValue}`];
-                                return updated;
-                              });
                             }
                             
                             // Check if we've reached the maximum selections limit
@@ -5000,31 +5008,78 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
         </div>
         
         <div className="flex items-center space-x-4">
-          {/* Language Selector Dropdown */}
-          {detectAvailableLanguages.length > 1 && (
-          <div className="flex items-center space-x-2 px-2 py-1 bg-gray-100 rounded-lg">
-            <span className="text-sm">🌐</span>
-              <select
-                value={selectedLanguageIndex}
-                onChange={(e) => setSelectedLanguageIndex(parseInt(e.target.value, 10))}
-                className="text-sm border-none bg-transparent text-gray-700 focus:outline-none focus:ring-0 cursor-pointer"
-                style={{ minWidth: '100px' }}
-              >
-                {detectAvailableLanguages.map((label, index) => (
-                  <option key={index} value={index}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-          </div>
+          {/* CATI: Language and Call Status in vertical layout */}
+          {isCatiMode ? (
+            <div className="flex flex-col items-start space-y-2">
+              {/* Language Selector Dropdown */}
+              {detectAvailableLanguages.length > 1 && (
+                <div className="flex items-center space-x-2 px-2 py-1 bg-gray-100 rounded-lg">
+                  <span className="text-sm">🌐</span>
+                  <select
+                    value={selectedLanguageIndex}
+                    onChange={(e) => setSelectedLanguageIndex(parseInt(e.target.value, 10))}
+                    className="text-sm border-none bg-transparent text-gray-700 focus:outline-none focus:ring-0 cursor-pointer"
+                    style={{ minWidth: '100px' }}
+                  >
+                    {detectAvailableLanguages.map((label, index) => (
+                      <option key={index} value={index}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              
+              {/* CATI Call Status - Below language dropdown */}
+              {(callStatus === 'idle' || callStatus === 'calling' || !callStatus) && (
+                <div className="flex items-center space-x-2 px-3 py-1 bg-blue-100 rounded-lg">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                  <span className="text-xs text-blue-800">Processing call...</span>
+                </div>
+              )}
+              {callStatus === 'connected' && (
+                <div className="flex items-center space-x-2 px-3 py-1 bg-green-100 rounded-lg">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <span className="text-xs text-green-800">Call Started</span>
+                </div>
+              )}
+              {callStatus === 'failed' && (
+                <div className="flex items-center space-x-2 px-3 py-1 bg-red-100 rounded-lg">
+                  <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                  <span className="text-xs text-red-800">Call Failed</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* CAPI: Language Selector only (horizontal) */
+            detectAvailableLanguages.length > 1 && (
+              <div className="flex items-center space-x-2 px-2 py-1 bg-gray-100 rounded-lg">
+                <span className="text-sm">🌐</span>
+                <select
+                  value={selectedLanguageIndex}
+                  onChange={(e) => setSelectedLanguageIndex(parseInt(e.target.value, 10))}
+                  className="text-sm border-none bg-transparent text-gray-700 focus:outline-none focus:ring-0 cursor-pointer"
+                  style={{ minWidth: '100px' }}
+                >
+                  {detectAvailableLanguages.map((label, index) => (
+                    <option key={index} value={index}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )
           )}
-          {/* CATI Respondent Info */}
+          
+          {/* CATI Respondent Info - Name and AC only (no phone) */}
           {isCatiMode && catiRespondent && (
             <div className="flex items-center space-x-2 px-3 py-1 bg-[#E6F0F8] rounded-lg border border-blue-200">
               <Phone className="w-4 h-4 text-[#373177]" />
               <div className="text-sm">
                 <div className="font-medium text-blue-900">{catiRespondent.name}</div>
-                <div className="text-xs text-blue-700">{catiRespondent.phone}</div>
+                <div className="text-xs text-blue-700">
+                  {selectedAC || acFromSessionData || catiRespondent.ac || catiRespondent.assemblyConstituency || catiRespondent.acName || catiRespondent.assemblyConstituencyName || 'N/A'}
+                </div>
               </div>
             </div>
           )}
@@ -5035,38 +5090,16 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
           </div>
           
           <div className="flex items-center space-x-2">
-            {/* CATI Call Management */}
-            {isCatiMode && catiQueueId && (
-              <>
-                {callStatus === 'idle' && (
-                  <button
-                    onClick={makeCallToRespondent}
-                    disabled={isLoading}
-                    className="px-3 py-1 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm flex items-center space-x-1 disabled:opacity-50"
-                  >
-                    <Phone className="w-4 h-4" />
-                    <span>Make Call</span>
-                  </button>
-                )}
-                {callStatus === 'calling' && (
-                  <div className="flex items-center space-x-2 px-3 py-1 bg-yellow-100 rounded-lg">
-                    <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
-                    <span className="text-xs text-yellow-800">Calling...</span>
-                  </div>
-                )}
-                {callStatus === 'connected' && (
-                  <div className="flex items-center space-x-2 px-3 py-1 bg-green-100 rounded-lg">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span className="text-xs text-green-800">Connected</span>
-                  </div>
-                )}
-                {callStatus === 'failed' && (
-                  <div className="flex items-center space-x-2 px-3 py-1 bg-red-100 rounded-lg">
-                    <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                    <span className="text-xs text-red-800">Call Failed</span>
-                  </div>
-                )}
-              </>
+            {/* CATI Call Management - Make Call button (only show when idle) */}
+            {isCatiMode && catiQueueId && callStatus === 'idle' && (
+              <button
+                onClick={makeCallToRespondent}
+                disabled={isLoading}
+                className="px-3 py-1 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm flex items-center space-x-1 disabled:opacity-50"
+              >
+                <Phone className="w-4 h-4" />
+                <span>Make Call</span>
+              </button>
             )}
             
             {/* Audio Recording Indicator - CAPI only */}
