@@ -1211,6 +1211,21 @@ const completeCatiInterview = async (req, res) => {
       console.log(`✅ Enhanced selectedPollingStation with AC details:`, finalSelectedPollingStation);
     }
 
+    // SAFETY: queueEntry.assignedTo can be null/undefined in some flows (e.g. after abandon/call-later)
+    // We must handle this gracefully instead of throwing TypeError on .toString()
+    if (!queueEntry.assignedTo) {
+      console.warn('⚠️  completeCatiInterview - queueEntry.assignedTo is null/undefined', {
+        queueId,
+        interviewerId: interviewerId?.toString(),
+        status: queueEntry.status,
+        abandonmentReason: queueEntry.abandonmentReason
+      });
+      return res.status(403).json({
+        success: false,
+        message: 'This respondent is not currently assigned to any interviewer. Please reassign and try again.'
+      });
+    }
+
     if (queueEntry.assignedTo.toString() !== interviewerId.toString()) {
       return res.status(403).json({
         success: false,
@@ -1385,133 +1400,145 @@ const completeCatiInterview = async (req, res) => {
     });
     
     if (surveyResponse) {
-      console.log('⚠️  SurveyResponse already exists for this session, updating instead of creating new');
-      // Update existing response
-      surveyResponse.responses = allResponses;
-      surveyResponse.selectedAC = finalSelectedAC || null;
-      surveyResponse.selectedPollingStation = finalSelectedPollingStation || null;
-      
-      // Also update location.state for CATI responses
-      if (!surveyResponse.location || Object.keys(surveyResponse.location).length === 0 || !surveyResponse.location.state) {
-        surveyResponse.location = {
-          ...(surveyResponse.location || {}),
-          state: 'West Bengal'
-        };
-      }
-      
-      surveyResponse.endTime = finalEndTime;
-      surveyResponse.totalTimeSpent = finalTotalTimeSpent;
-      surveyResponse.totalQuestions = totalQuestions;
-      surveyResponse.answeredQuestions = answeredQuestions;
-      surveyResponse.skippedQuestions = totalQuestions - answeredQuestions;
-      surveyResponse.completionPercentage = completionPercentage;
-      surveyResponse.OldinterviewerID = oldInterviewerID || null; // Update old interviewer ID
-      surveyResponse.supervisorID = finalSupervisorID || null; // Save supervisor ID
-      // Always update setNumber if provided (even if it's 1)
-      const finalSetNumber = (setNumber !== null && setNumber !== undefined && setNumber !== '') 
-        ? Number(setNumber) 
-        : null;
-      
-      if (finalSetNumber !== null) {
-        surveyResponse.setNumber = finalSetNumber; // Update set number (ensure it's a number)
-        console.log(`💾 Updating existing response with setNumber: ${surveyResponse.setNumber} (original: ${setNumber})`);
+      // Idempotent behavior for existing responses:
+      // If the existing response already looks complete/final, DO NOT overwrite it.
+      const hasResponses = Array.isArray(surveyResponse.responses) && surveyResponse.responses.length > 0;
+      const isFinalStatus = ['Approved', 'Pending_Approval', 'Rejected', 'Terminated', 'Completed'].includes(surveyResponse.status);
+
+      if (hasResponses || isFinalStatus) {
+        console.warn('⚠️  Duplicate completion attempt ignored - existing SurveyResponse appears complete/final. Preserving existing data.', {
+          responseId: surveyResponse._id?.toString(),
+          status: surveyResponse.status,
+          responsesLength: surveyResponse.responses?.length || 0
+        });
+        // We still reuse surveyResponse object for downstream logic (no changes made)
       } else {
-        console.log(`⚠️  setNumber not provided or invalid in request body for existing response (received: ${setNumber}, type: ${typeof setNumber})`);
-      }
-      if (callId) {
-        surveyResponse.call_id = callId;
-      }
-      
-      // Update knownCallStatus field - ALWAYS save it correctly
-      // IMPORTANT: If call was connected, knownCallStatus should be 'call_connected' 
-      // even if consent is "No" - this ensures accurate stats
-      if (isCallConnected) {
-        surveyResponse.knownCallStatus = 'call_connected'; // Force to 'call_connected' if call was connected
-        console.log(`✅ Setting knownCallStatus to 'call_connected' (call was connected, consent: ${consentResponse})`);
-      } else {
-        surveyResponse.knownCallStatus = knownCallStatus; // Save other statuses (busy, switched_off, etc.)
-      }
-      
-      // Update consentResponse field
-      surveyResponse.consentResponse = consentResponse;
-      
-      // IMPORTANT: Mark as "abandoned" if:
-      // 1. Call is NOT connected, OR
-      // 2. Consent form is "No" (even if call was connected)
-      const shouldMarkAsAbandoned = !isCallConnected || consentResponse === 'no';
-      
-      if (shouldMarkAsAbandoned) {
-        surveyResponse.status = 'abandoned';
-      surveyResponse.metadata = {
-        ...surveyResponse.metadata,
-          abandoned: true,
-          abandonmentReason: consentResponse === 'no' ? 'consent_refused' : reason,
-          callStatus: finalCallStatus,
-        respondentQueueId: queueEntry._id,
-        respondentName: queueEntry.respondentContact?.name || queueEntry.respondentContact?.name,
-        respondentPhone: queueEntry.respondentContact?.phone || queueEntry.respondentContact?.phone,
-        callRecordId: queueEntry.callRecord?._id
-      };
-        console.log(`🚫 Marking existing interview as abandoned - Call Connected: ${isCallConnected}, Consent: ${consentResponse}`);
-      } else {
-        // Call was connected AND consent is "Yes" - proceed normally
-        surveyResponse.metadata = {
-          ...surveyResponse.metadata,
-          respondentQueueId: queueEntry._id,
-          respondentName: queueEntry.respondentContact?.name || queueEntry.respondentContact?.name,
-          respondentPhone: queueEntry.respondentContact?.phone || queueEntry.respondentContact?.phone,
-          callRecordId: queueEntry.callRecord?._id,
-          callStatus: finalCallStatus // Store call status in metadata
-        };
-      }
-      // Log before saving
-      console.log(`💾 About to update EXISTING SurveyResponse - setNumber in object: ${surveyResponse.setNumber}, type: ${typeof surveyResponse.setNumber}`);
-      
-      // Use the finalSetNumber already calculated at the top level
-      
-      console.log(`💾 CATI Interview (EXISTING) - setNumber received: ${setNumber} (type: ${typeof setNumber}), converted to: ${finalSetNumber} (type: ${typeof finalSetNumber})`);
-      
-      // Update the existing response
-      surveyResponse.setNumber = finalSetNumber;
-      surveyResponse.markModified('setNumber');
-      
-      await surveyResponse.save();
-      
-      // CRITICAL: Use MongoDB's native collection.updateOne to FORCE save setNumber
-      const mongoose = require('mongoose');
-      // Get the actual collection name from the model
-      const collectionName = SurveyResponse.collection.name;
-      const collection = mongoose.connection.collection(collectionName);
-      console.log(`💾 Using collection name: ${collectionName}`);
-      const updateResult = await collection.updateOne(
-        { _id: new mongoose.Types.ObjectId(surveyResponse._id) },
-        { $set: { setNumber: finalSetNumber } }
-      );
-      
-      console.log(`💾 CATI Interview (EXISTING) - Direct MongoDB update - setNumber: ${finalSetNumber}, matched: ${updateResult.matchedCount}, modified: ${updateResult.modifiedCount}`);
-      
-      // Verify by querying the database directly using native MongoDB
-      const savedDoc = await collection.findOne(
-        { _id: new mongoose.Types.ObjectId(surveyResponse._id) },
-        { projection: { setNumber: 1, responseId: 1, interviewMode: 1 } }
-      );
-      
-      console.log(`✅ CATI SurveyResponse (EXISTING) updated - responseId: ${savedDoc?.responseId}, setNumber in DB: ${savedDoc?.setNumber}`);
-      
-      if (savedDoc?.setNumber !== finalSetNumber) {
-        console.error(`❌ CRITICAL: setNumber STILL NOT SAVED! Expected: ${finalSetNumber}, Got in DB: ${savedDoc?.setNumber}`);
-        // Last resort: try one more time with explicit type
-        await collection.updateOne(
+        console.log('⚠️  SurveyResponse exists but appears incomplete/abandoned, updating with latest data');
+        // Update existing response with latest data
+        surveyResponse.responses = allResponses;
+        surveyResponse.selectedAC = finalSelectedAC || null;
+        surveyResponse.selectedPollingStation = finalSelectedPollingStation || null;
+        
+        // Also update location.state for CATI responses
+        if (!surveyResponse.location || Object.keys(surveyResponse.location).length === 0 || !surveyResponse.location.state) {
+          surveyResponse.location = {
+            ...(surveyResponse.location || {}),
+            state: 'West Bengal'
+          };
+        }
+        
+        surveyResponse.endTime = finalEndTime;
+        surveyResponse.totalTimeSpent = finalTotalTimeSpent;
+        surveyResponse.totalQuestions = totalQuestions;
+        surveyResponse.answeredQuestions = answeredQuestions;
+        surveyResponse.skippedQuestions = totalQuestions - answeredQuestions;
+        surveyResponse.completionPercentage = completionPercentage;
+        surveyResponse.OldinterviewerID = oldInterviewerID || null; // Update old interviewer ID
+        surveyResponse.supervisorID = finalSupervisorID || null; // Save supervisor ID
+        // Always update setNumber if provided (even if it's 1)
+        const finalSetNumber = (setNumber !== null && setNumber !== undefined && setNumber !== '') 
+          ? Number(setNumber) 
+          : null;
+        
+        if (finalSetNumber !== null) {
+          surveyResponse.setNumber = finalSetNumber; // Update set number (ensure it's a number)
+          console.log(`💾 Updating existing response with setNumber: ${surveyResponse.setNumber} (original: ${setNumber})`);
+        } else {
+          console.log(`⚠️  setNumber not provided or invalid in request body for existing response (received: ${setNumber}, type: ${typeof setNumber})`);
+        }
+        if (callId) {
+          surveyResponse.call_id = callId;
+        }
+        
+        // Update knownCallStatus field - ALWAYS save it correctly
+        // IMPORTANT: If call was connected, knownCallStatus should be 'call_connected' 
+        // even if consent is "No" - this ensures accurate stats
+        if (isCallConnected) {
+          surveyResponse.knownCallStatus = 'call_connected'; // Force to 'call_connected' if call was connected
+          console.log(`✅ Setting knownCallStatus to 'call_connected' (call was connected, consent: ${consentResponse})`);
+        } else {
+          surveyResponse.knownCallStatus = knownCallStatus; // Save other statuses (busy, switched_off, etc.)
+        }
+        
+        // Update consentResponse field
+        surveyResponse.consentResponse = consentResponse;
+        
+        // IMPORTANT: Mark as "abandoned" if:
+        // 1. Call is NOT connected, OR
+        // 2. Consent form is "No" (even if call was connected)
+        const shouldMarkAsAbandoned = !isCallConnected || consentResponse === 'no';
+        
+        if (shouldMarkAsAbandoned) {
+          surveyResponse.status = 'abandoned';
+          surveyResponse.metadata = {
+            ...surveyResponse.metadata,
+            abandoned: true,
+            abandonmentReason: consentResponse === 'no' ? 'consent_refused' : reason,
+            callStatus: finalCallStatus,
+            respondentQueueId: queueEntry._id,
+            respondentName: queueEntry.respondentContact?.name || queueEntry.respondentContact?.name,
+            respondentPhone: queueEntry.respondentContact?.phone || queueEntry.respondentContact?.phone,
+            callRecordId: queueEntry.callRecord?._id
+          };
+          console.log(`🚫 Marking existing interview as abandoned - Call Connected: ${isCallConnected}, Consent: ${consentResponse}`);
+        } else {
+          // Call was connected AND consent is "Yes" - proceed normally
+          surveyResponse.metadata = {
+            ...surveyResponse.metadata,
+            respondentQueueId: queueEntry._id,
+            respondentName: queueEntry.respondentContact?.name || queueEntry.respondentContact?.name,
+            respondentPhone: queueEntry.respondentContact?.phone || queueEntry.respondentContact?.phone,
+            callRecordId: queueEntry.callRecord?._id,
+            callStatus: finalCallStatus // Store call status in metadata
+          };
+        }
+        // Log before saving
+        console.log(`💾 About to update EXISTING SurveyResponse - setNumber in object: ${surveyResponse.setNumber}, type: ${typeof surveyResponse.setNumber}`);
+        
+        console.log(`💾 CATI Interview (EXISTING) - setNumber received: ${setNumber} (type: ${typeof setNumber}), converted to: ${finalSetNumber} (type: ${typeof finalSetNumber})`);
+        
+        // Update the existing response
+        surveyResponse.setNumber = finalSetNumber;
+        surveyResponse.markModified('setNumber');
+        
+        await surveyResponse.save();
+        
+        // CRITICAL: Use MongoDB's native collection.updateOne to FORCE save setNumber
+        const mongoose = require('mongoose');
+        // Get the actual collection name from the model
+        const collectionName = SurveyResponse.collection.name;
+        const collection = mongoose.connection.collection(collectionName);
+        console.log(`💾 Using collection name: ${collectionName}`);
+        const updateResult = await collection.updateOne(
           { _id: new mongoose.Types.ObjectId(surveyResponse._id) },
-          { $set: { setNumber: finalSetNumber === null ? null : Number(finalSetNumber) } }
+          { $set: { setNumber: finalSetNumber } }
         );
-        const finalCheck = await collection.findOne(
+        
+        console.log(`💾 CATI Interview (EXISTING) - Direct MongoDB update - setNumber: ${finalSetNumber}, matched: ${updateResult.matchedCount}, modified: ${updateResult.modifiedCount}`);
+        
+        // Verify by querying the database directly using native MongoDB
+        const savedDoc = await collection.findOne(
           { _id: new mongoose.Types.ObjectId(surveyResponse._id) },
-          { projection: { setNumber: 1 } }
+          { projection: { setNumber: 1, responseId: 1, interviewMode: 1 } }
         );
-        console.log(`🔧 After final retry - setNumber in DB: ${finalCheck?.setNumber}`);
-      } else {
-        console.log(`✅ setNumber correctly saved: ${savedDoc.setNumber}`);
+        
+        console.log(`✅ CATI SurveyResponse (EXISTING) updated - responseId: ${savedDoc?.responseId}, setNumber in DB: ${savedDoc?.setNumber}`);
+        
+        if (savedDoc?.setNumber !== finalSetNumber) {
+          console.error(`❌ CRITICAL: setNumber STILL NOT SAVED! Expected: ${finalSetNumber}, Got in DB: ${savedDoc?.setNumber}`);
+          // Last resort: try one more time with explicit type
+          await collection.updateOne(
+            { _id: new mongoose.Types.ObjectId(surveyResponse._id) },
+            { $set: { setNumber: finalSetNumber === null ? null : Number(finalSetNumber) } }
+          );
+          const finalCheck = await collection.findOne(
+            { _id: new mongoose.Types.ObjectId(surveyResponse._id) },
+            { projection: { setNumber: 1 } }
+          );
+          console.log(`🔧 After final retry - setNumber in DB: ${finalCheck?.setNumber}`);
+        } else {
+          console.log(`✅ setNumber correctly saved: ${savedDoc.setNumber}`);
+        }
       }
       
       // Check for auto-rejection conditions ONLY if call was connected AND consent is "Yes"
@@ -1523,22 +1550,22 @@ const completeCatiInterview = async (req, res) => {
         // 2. Consent is "No" (even if call was connected)
         const shouldSkipAutoRejection = surveyResponse.status === 'abandoned' || consentResponse === 'no';
         if (!shouldSkipAutoRejection && isCallConnected) {
-        // IMPORTANT: Save setNumber before auto-rejection check to ensure it's preserved
-        const setNumberToPreserve = surveyResponse.setNumber;
-        console.log(`💾 Preserving setNumber before auto-rejection check: ${setNumberToPreserve}`);
-        
-        const rejectionInfo = await checkAutoRejection(surveyResponse, allResponses, queueEntry.survey._id);
-        if (rejectionInfo) {
-          await applyAutoRejection(surveyResponse, rejectionInfo);
-          // CRITICAL: Re-apply setNumber after auto-rejection (it might have been lost)
-          if (setNumberToPreserve !== null && setNumberToPreserve !== undefined) {
-            surveyResponse.setNumber = setNumberToPreserve;
-            surveyResponse.markModified('setNumber');
-            await surveyResponse.save();
-            console.log(`💾 Restored setNumber after auto-rejection: ${surveyResponse.setNumber}`);
-          }
-          // Refresh the response to get updated status
-          await surveyResponse.populate('survey');
+          // IMPORTANT: Save setNumber before auto-rejection check to ensure it's preserved
+          const setNumberToPreserve = surveyResponse.setNumber;
+          console.log(`💾 Preserving setNumber before auto-rejection check: ${setNumberToPreserve}`);
+          
+          const rejectionInfo = await checkAutoRejection(surveyResponse, allResponses, queueEntry.survey._id);
+          if (rejectionInfo) {
+            await applyAutoRejection(surveyResponse, rejectionInfo);
+            // CRITICAL: Re-apply setNumber after auto-rejection (it might have been lost)
+            if (setNumberToPreserve !== null && setNumberToPreserve !== undefined) {
+              surveyResponse.setNumber = setNumberToPreserve;
+              surveyResponse.markModified('setNumber');
+              await surveyResponse.save();
+              console.log(`💾 Restored setNumber after auto-rejection: ${surveyResponse.setNumber}`);
+            }
+            // Refresh the response to get updated status
+            await surveyResponse.populate('survey');
           }
         } else {
           console.log(`⏭️  Skipping auto-rejection for abandoned CATI response (existing): ${surveyResponse._id} (status: ${surveyResponse.status})`);
