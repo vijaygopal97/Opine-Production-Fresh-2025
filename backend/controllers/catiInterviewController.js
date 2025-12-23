@@ -1710,14 +1710,119 @@ const completeCatiInterview = async (req, res) => {
           }
         }
       } catch (saveError) {
-        console.error('❌ Error saving SurveyResponse:', saveError);
-        console.error('❌ Save error details:', {
-          message: saveError.message,
-          name: saveError.name,
-          errors: saveError.errors,
-          stack: saveError.stack
-        });
-        throw saveError; // Re-throw to be caught by outer catch
+        // Handle duplicate key error (E11000) - sessionId already exists
+        // This can happen if multiple requests come in simultaneously
+        if (saveError.code === 11000 && saveError.keyPattern && saveError.keyPattern.sessionId) {
+          const duplicateSessionId = saveError.keyValue?.sessionId || session.sessionId;
+          console.log('⚠️  Duplicate sessionId detected while saving NEW response, checking existing document...');
+          console.log(`⚠️  Duplicate sessionId: ${duplicateSessionId}`);
+
+          // Find the existing response that caused the duplicate
+          const existingResponse = await SurveyResponse.findOne({
+            sessionId: duplicateSessionId
+          });
+
+          if (existingResponse) {
+            // Decide if existing data is "complete" and should be preserved
+            const hasResponses = Array.isArray(existingResponse.responses) && existingResponse.responses.length > 0;
+            const isFinalStatus = ['Approved', 'Pending_Approval', 'Rejected', 'Terminated', 'Completed'].includes(existingResponse.status);
+
+            if (hasResponses || isFinalStatus) {
+              // Existing response looks complete/final – DO NOT overwrite
+              console.warn('⚠️  Duplicate completion attempt ignored - existing SurveyResponse appears complete/final. Preserving existing data.');
+              console.warn(`⚠️  Existing response status: ${existingResponse.status}, responses length: ${existingResponse.responses?.length || 0}`);
+              // Re-use existing response object for downstream logic
+              surveyResponse = existingResponse;
+            } else {
+              // Existing response looks incomplete/abandoned – safe to enrich it with latest data
+              console.log('ℹ️  Existing response appears incomplete/abandoned, updating it with latest data instead of creating new');
+
+              existingResponse.responses = allResponses;
+              existingResponse.selectedAC = finalSelectedAC || null;
+              existingResponse.selectedPollingStation = enhancedPollingStation || null;
+
+              // Update location.state for CATI responses if missing
+              if (!existingResponse.location || Object.keys(existingResponse.location).length === 0 || !existingResponse.location.state) {
+                existingResponse.location = {
+                  ...(existingResponse.location || {}),
+                  state: 'West Bengal'
+                };
+              }
+
+              existingResponse.endTime = finalEndTime;
+              existingResponse.totalTimeSpent = finalTotalTimeSpent;
+              existingResponse.totalQuestions = totalQuestions;
+              existingResponse.answeredQuestions = answeredQuestions;
+              existingResponse.skippedQuestions = totalQuestions - answeredQuestions;
+              existingResponse.completionPercentage = completionPercentage;
+              existingResponse.OldinterviewerID = oldInterviewerID || null;
+              existingResponse.supervisorID = finalSupervisorID || null;
+
+              // Update setNumber only if we have a valid numeric value
+              if (finalSetNumber !== null && finalSetNumber !== undefined && !isNaN(Number(finalSetNumber))) {
+                existingResponse.setNumber = Number(finalSetNumber);
+                existingResponse.markModified('setNumber');
+              }
+
+              if (callId) {
+                existingResponse.call_id = callId;
+              }
+
+              // Update knownCallStatus
+              if (isCallConnected) {
+                existingResponse.knownCallStatus = 'call_connected';
+              } else {
+                existingResponse.knownCallStatus = knownCallStatus;
+              }
+
+              existingResponse.consentResponse = consentResponse;
+
+              // Update status and metadata
+              const shouldMarkAsAbandoned = !isCallConnected || consentResponse === 'no';
+              if (shouldMarkAsAbandoned) {
+                existingResponse.status = 'abandoned';
+                existingResponse.metadata = {
+                  ...existingResponse.metadata,
+                  abandoned: true,
+                  abandonmentReason: consentResponse === 'no' ? 'consent_refused' : reason,
+                  callStatus: finalCallStatus,
+                  respondentQueueId: queueEntry._id,
+                  respondentName: queueEntry.respondentContact?.name || queueEntry.respondentContact?.name,
+                  respondentPhone: queueEntry.respondentContact?.phone || queueEntry.respondentContact?.phone,
+                  callRecordId: queueEntry.callRecord?._id
+                };
+              } else {
+                existingResponse.metadata = {
+                  ...existingResponse.metadata,
+                  respondentQueueId: queueEntry._id,
+                  respondentName: queueEntry.respondentContact?.name || queueEntry.respondentContact?.name,
+                  respondentPhone: queueEntry.respondentContact?.phone || queueEntry.respondentContact?.phone,
+                  callRecordId: queueEntry.callRecord?._id,
+                  callStatus: finalCallStatus
+                };
+              }
+
+              await existingResponse.save();
+              console.log('✅ Successfully updated existing (incomplete) response after duplicate key error');
+              surveyResponse = existingResponse;
+            }
+          } else {
+            // If we can't find the existing response, log and re-throw the original error
+            console.error('❌ Duplicate key error but could not find existing response for sessionId:', duplicateSessionId);
+            throw saveError;
+          }
+        } else {
+          // For other errors, log and re-throw
+          console.error('❌ Error saving SurveyResponse:', saveError);
+          console.error('❌ Save error details:', {
+            message: saveError.message,
+            name: saveError.name,
+            code: saveError.code,
+            errors: saveError.errors,
+            stack: saveError.stack
+          });
+          throw saveError; // Re-throw to be caught by outer catch
+        }
       }
     }
     
