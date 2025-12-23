@@ -132,33 +132,54 @@ if (!MONGODB_URI) {
   process.exit(1);
 }
 
-mongoose.connect(MONGODB_URI)
-.then(() => {
-  console.log('✅ Connected to MongoDB successfully!');
-  console.log(`📊 Database: ${MONGODB_URI.split('@')[1]?.split('/')[0] || 'Connected'}`);
-  
-  // Schedule QC batch processing to run daily at 12:00 AM (midnight) IST
-  // This will process batches from previous days and check in-progress batches
-  cron.schedule('0 0 * * *', async () => {
-    console.log('⏰ QC Batch Processing Job triggered by cron (12:00 AM IST)');
-    try {
-      await processQCBatches();
-      console.log('✅ QC Batch Processing Job completed successfully');
-    } catch (error) {
-      console.error('❌ QC Batch Processing Job failed:', error);
-    }
-  }, {
-    scheduled: true,
-    timezone: "Asia/Kolkata"
-  });
-  
-  console.log('⏰ QC Batch Processing Job scheduled to run daily at 12:00 AM IST');
-})
-.catch((error) => {
-  console.error('❌ MongoDB connection error:', error.message);
-  console.log(`🔧 Please whitelist IP: ${SERVER_IP} in MongoDB Atlas`);
-  console.log('💡 Check your MONGODB_URI in .env file');
-});
+// MongoDB Connection - Use async/await to ensure connection is ready before starting server
+(async () => {
+  try {
+    await mongoose.connect(MONGODB_URI, {
+      maxPoolSize: 50, // Maximum number of connections in the pool
+      minPoolSize: 5, // Minimum number of connections in the pool
+      serverSelectionTimeoutMS: 5000, // How long to try selecting a server before timing out
+      socketTimeoutMS: 45000, // How long a send or receive on a socket can take before timing out
+      connectTimeoutMS: 10000 // How long to wait for initial connection
+    });
+    
+    console.log('✅ Connected to MongoDB successfully!');
+    console.log(`📊 Database: ${MONGODB_URI.split('@')[1]?.split('/')[0] || 'Connected'}`);
+    
+    // Schedule QC batch processing to run daily at 12:00 AM (midnight) IST
+    // This will process batches from previous days and check in-progress batches
+    cron.schedule('0 0 * * *', async () => {
+      console.log('⏰ QC Batch Processing Job triggered by cron (12:00 AM IST)');
+      try {
+        await processQCBatches();
+        console.log('✅ QC Batch Processing Job completed successfully');
+      } catch (error) {
+        console.error('❌ QC Batch Processing Job failed:', error);
+      }
+    }, {
+      scheduled: true,
+      timezone: "Asia/Kolkata"
+    });
+    
+    console.log('⏰ QC Batch Processing Job scheduled to run daily at 12:00 AM IST');
+    
+    // Start server only after MongoDB connection is established
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`🚀 HTTP Server is running on port ${PORT}`);
+      console.log(`🌐 Access your API at: http://${SERVER_IP}:${PORT}`);
+      console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`📡 CORS Origin: ${CORS_ORIGIN}`);
+      console.log(`⚠️  Note: Audio recording requires HTTPS. Use localhost for development.`);
+      console.log(`⏱️  Server timeout set to 2 hours for very large file processing (up to 800MB)`);
+      console.log(`🛡️  Global error handlers installed to prevent crashes`);
+    });
+  } catch (error) {
+    console.error('❌ MongoDB connection error:', error.message);
+    console.log(`🔧 Please whitelist IP: ${SERVER_IP} in MongoDB Atlas`);
+    console.log('💡 Check your MONGODB_URI in .env file');
+    process.exit(1); // Exit if database connection fails
+  }
+})();
 
 // Note: Opine model removed - using Contact model instead
 
@@ -236,13 +257,5 @@ server.on('clientError', (error, socket) => {
   socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
 });
 
-// Start HTTP server (reverted for compatibility)
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 HTTP Server is running on port ${PORT}`);
-  console.log(`🌐 Access your API at: http://${SERVER_IP}:${PORT}`);
-  console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`📡 CORS Origin: ${CORS_ORIGIN}`);
-  console.log(`⚠️  Note: Audio recording requires HTTPS. Use localhost for development.`);
-  console.log(`⏱️  Server timeout set to 2 hours for very large file processing (up to 800MB)`);
-  console.log(`🛡️  Global error handlers installed to prevent crashes`);
-});
+// Note: Server is started inside the MongoDB connection async function above
+// to ensure database is connected before accepting requests

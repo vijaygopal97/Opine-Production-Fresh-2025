@@ -1118,7 +1118,7 @@ const abandonInterview = async (req, res) => {
 const completeCatiInterview = async (req, res) => {
   try {
     const { queueId } = req.params;
-    const { sessionId, responses, selectedAC, selectedPollingStation, totalTimeSpent, startTime, endTime, totalQuestions: frontendTotalQuestions, answeredQuestions: frontendAnsweredQuestions, completionPercentage: frontendCompletionPercentage, setNumber, OldinterviewerID, callStatus, supervisorID } = req.body;
+    const { sessionId, responses, selectedAC, selectedPollingStation, totalTimeSpent, startTime, endTime, totalQuestions: frontendTotalQuestions, answeredQuestions: frontendAnsweredQuestions, completionPercentage: frontendCompletionPercentage, setNumber, OldinterviewerID, callStatus, supervisorID, reason } = req.body;
     
     // CRITICAL: Convert setNumber to number immediately at the top level so it's available everywhere
     // Try to get setNumber from multiple possible locations (top level, nested, etc.)
