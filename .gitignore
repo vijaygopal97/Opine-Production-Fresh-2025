@@ -50,3 +50,9 @@ backend/updateDatabaseToS3.js
 backend/migrateToS3.js
 backend/delete_*.js
 backend/cleanup-*.js
+
+# Database backups (too large for GitHub)
+backend/database_backups/
+backend/temp_prod_dump/
+*.bson
+*.metadata.json
