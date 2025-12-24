@@ -89,6 +89,10 @@ const ProjectManagerSurveyReports = () => {
     navigate(`/project-manager/surveys/${survey._id || survey.id}/reports`);
   };
 
+  const handleViewReportsV2 = (survey) => {
+    navigate(`/project-manager/surveys/${survey._id || survey.id}/reports-2`);
+  };
+
   const handleViewQCPerformance = (survey) => {
     navigate(`/project-manager/surveys/${survey._id || survey.id}/qc-performance`);
   };
@@ -225,12 +229,21 @@ const ProjectManagerSurveyReports = () => {
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex flex-col items-end space-y-2">
-                          <button
+                          {/* Reports button hidden to encourage use of Reports V2 */}
+                          {/* <button
                             onClick={() => handleViewReports(survey)}
                             className="inline-flex items-center px-3 py-1.5 bg-[#001D48] text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
                           >
                             <BarChart3 className="w-4 h-4 mr-1.5" />
                             Reports
+                          </button> */}
+                          <button
+                            onClick={() => handleViewReportsV2(survey)}
+                            className="inline-flex items-center px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                            title="View Optimized Reports V2"
+                          >
+                            <TrendingUp className="w-4 h-4 mr-1.5" />
+                            Reports-V2
                           </button>
                           <button
                             onClick={() => handleViewCallerPerformance(survey)}

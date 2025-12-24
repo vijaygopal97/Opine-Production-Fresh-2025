@@ -14,6 +14,10 @@ const {
   getOverallStats,
   getCatiStats,
   getSurveyAnalytics,
+  getSurveyAnalyticsV2,
+  getACWiseStatsV2,
+  getInterviewerWiseStatsV2,
+  getChartDataV2,
   getAvailableSurveys,
   rejectInterview,
   debugSurveyResponses,
@@ -69,6 +73,22 @@ router.route('/:surveyId/debug-responses')
 // Analytics route (must come before /:id route)
 router.route('/:id/analytics')
   .get(protect, authorize('company_admin', 'project_manager'), getSurveyAnalytics);
+
+// Analytics V2 route (optimized for big data)
+router.route('/:id/analytics-v2')
+  .get(protect, authorize('company_admin', 'project_manager'), getSurveyAnalyticsV2);
+
+// AC-wise stats V2 route (optimized for big data)
+router.route('/:id/ac-wise-stats-v2')
+  .get(protect, authorize('company_admin', 'project_manager'), getACWiseStatsV2);
+
+// Interviewer-wise stats V2 route (optimized for big data)
+router.route('/:id/interviewer-wise-stats-v2')
+  .get(protect, authorize('company_admin', 'project_manager'), getInterviewerWiseStatsV2);
+
+// Chart data V2 route (optimized for big data)
+router.route('/:id/chart-data-v2')
+  .get(protect, authorize('company_admin', 'project_manager'), getChartDataV2);
 
 // CATI stats route (must come before /:id route)
 router.route('/:id/cati-stats')

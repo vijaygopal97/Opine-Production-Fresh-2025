@@ -144,6 +144,19 @@ export const authAPI = {
     }
   },
 
+  // Search interviewer by memberId (for Reports V2)
+  searchInterviewerByMemberId: async (memberId, surveyId) => {
+    try {
+      const params = new URLSearchParams();
+      params.append('memberId', memberId);
+      if (surveyId) params.append('surveyId', surveyId);
+      const response = await api.get(`/api/auth/search-interviewer?${params.toString()}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
   // Forgot password - send OTP
   forgotPassword: async (email) => {
     try {
@@ -490,6 +503,102 @@ export const surveyAPI = {
       if (filters.interviewerMode) params.append('interviewerMode', filters.interviewerMode);
 
       const response = await api.get(`/api/surveys/${surveyId}/analytics?${params.toString()}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get survey analytics V2 (optimized for big data, no limits)
+  getSurveyAnalyticsV2: async (surveyId, filters = {}) => {
+    try {
+      const params = new URLSearchParams();
+      if (filters.dateRange) params.append('dateRange', filters.dateRange);
+      if (filters.startDate) params.append('startDate', filters.startDate);
+      if (filters.endDate) params.append('endDate', filters.endDate);
+      if (filters.status) params.append('status', filters.status);
+      if (filters.interviewMode) params.append('interviewMode', filters.interviewMode);
+      if (filters.ac) params.append('ac', filters.ac);
+      if (filters.district) params.append('district', filters.district);
+      if (filters.lokSabha) params.append('lokSabha', filters.lokSabha);
+      if (filters.interviewerIds && Array.isArray(filters.interviewerIds) && filters.interviewerIds.length > 0) {
+        filters.interviewerIds.forEach(id => params.append('interviewerIds', id));
+      }
+      if (filters.interviewerMode) params.append('interviewerMode', filters.interviewerMode);
+
+      const response = await api.get(`/api/surveys/${surveyId}/analytics-v2?${params.toString()}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get AC-wise stats V2 (optimized for big data, no limits)
+  getACWiseStatsV2: async (surveyId, filters = {}) => {
+    try {
+      const params = new URLSearchParams();
+      if (filters.dateRange) params.append('dateRange', filters.dateRange);
+      if (filters.startDate) params.append('startDate', filters.startDate);
+      if (filters.endDate) params.append('endDate', filters.endDate);
+      if (filters.status) params.append('status', filters.status);
+      if (filters.interviewMode) params.append('interviewMode', filters.interviewMode);
+      if (filters.ac) params.append('ac', filters.ac);
+      if (filters.district) params.append('district', filters.district);
+      if (filters.lokSabha) params.append('lokSabha', filters.lokSabha);
+      if (filters.interviewerIds && Array.isArray(filters.interviewerIds) && filters.interviewerIds.length > 0) {
+        filters.interviewerIds.forEach(id => params.append('interviewerIds', id));
+      }
+      if (filters.interviewerMode) params.append('interviewerMode', filters.interviewerMode);
+
+      const response = await api.get(`/api/surveys/${surveyId}/ac-wise-stats-v2?${params.toString()}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get Interviewer-wise stats V2 (optimized for big data, no limits)
+  getInterviewerWiseStatsV2: async (surveyId, filters = {}) => {
+    try {
+      const params = new URLSearchParams();
+      if (filters.dateRange) params.append('dateRange', filters.dateRange);
+      if (filters.startDate) params.append('startDate', filters.startDate);
+      if (filters.endDate) params.append('endDate', filters.endDate);
+      if (filters.status) params.append('status', filters.status);
+      if (filters.interviewMode) params.append('interviewMode', filters.interviewMode);
+      if (filters.ac) params.append('ac', filters.ac);
+      if (filters.district) params.append('district', filters.district);
+      if (filters.lokSabha) params.append('lokSabha', filters.lokSabha);
+      if (filters.interviewerIds && Array.isArray(filters.interviewerIds) && filters.interviewerIds.length > 0) {
+        filters.interviewerIds.forEach(id => params.append('interviewerIds', id));
+      }
+      if (filters.interviewerMode) params.append('interviewerMode', filters.interviewerMode);
+
+      const response = await api.get(`/api/surveys/${surveyId}/interviewer-wise-stats-v2?${params.toString()}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get Chart Data V2 (optimized for big data, no limits)
+  getChartDataV2: async (surveyId, filters = {}) => {
+    try {
+      const params = new URLSearchParams();
+      if (filters.dateRange) params.append('dateRange', filters.dateRange);
+      if (filters.startDate) params.append('startDate', filters.startDate);
+      if (filters.endDate) params.append('endDate', filters.endDate);
+      if (filters.status) params.append('status', filters.status);
+      if (filters.interviewMode) params.append('interviewMode', filters.interviewMode);
+      if (filters.ac) params.append('ac', filters.ac);
+      if (filters.district) params.append('district', filters.district);
+      if (filters.lokSabha) params.append('lokSabha', filters.lokSabha);
+      if (filters.interviewerIds && Array.isArray(filters.interviewerIds) && filters.interviewerIds.length > 0) {
+        filters.interviewerIds.forEach(id => params.append('interviewerIds', id));
+      }
+      if (filters.interviewerMode) params.append('interviewerMode', filters.interviewerMode);
+
+      const response = await api.get(`/api/surveys/${surveyId}/chart-data-v2?${params.toString()}`);
       return response.data;
     } catch (error) {
       throw error;

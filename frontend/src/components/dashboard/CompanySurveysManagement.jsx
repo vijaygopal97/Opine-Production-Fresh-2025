@@ -191,6 +191,9 @@ const CompanySurveysManagement = () => {
     } else if (action === 'reports') {
       // Navigate to survey reports page
       navigate(`/company/surveys/${surveyId}/reports`);
+    } else if (action === 'reports-v2') {
+      // Navigate to survey reports V2 page (optimized)
+      navigate(`/company/surveys/${surveyId}/reports-2`);
     } else if (action === 'caller-performance') {
       // Navigate to caller performance page
       navigate(`/company/surveys/${surveyId}/caller-performance`);
@@ -620,13 +623,22 @@ const CompanySurveysManagement = () => {
                 
                 {/* Action Buttons Row 2 */}
                 <div className="flex flex-col space-y-2">
-                  <button
+                  {/* Reports button hidden to encourage use of Reports V2 */}
+                  {/* <button
                     onClick={() => handleSurveyAction(survey._id || survey.id, 'reports')}
                     className="flex items-center space-x-1 px-3 py-1.5 bg-[#E8E6F5] text-purple-700 rounded-lg hover:bg-purple-200 transition-colors text-sm font-medium"
                     title="View Reports"
                   >
                     <BarChart3 className="w-4 h-4" />
                     <span>Reports</span>
+                  </button> */}
+                  <button
+                    onClick={() => handleSurveyAction(survey._id || survey.id, 'reports-v2')}
+                    className="flex items-center space-x-1 px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm font-medium"
+                    title="View Reports V2 (Optimized for Big Data)"
+                  >
+                    <BarChart3 className="w-4 h-4" />
+                    <span>Reports-V2</span>
                   </button>
                   <button
                     onClick={() => handleSurveyAction(survey._id || survey.id, 'caller-performance')}

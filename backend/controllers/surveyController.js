@@ -9,6 +9,66 @@ const XLSX = require('xlsx');
 const multer = require('multer');
 const path = require('path');
 
+// Helper functions for IST (Indian Standard Time) timezone handling
+// IST is UTC+5:30
+
+// Get current IST time as a Date object
+const getISTNow = () => {
+  const now = new Date();
+  // Convert UTC to IST: add 5 hours and 30 minutes (5.5 hours)
+  const istOffset = 5.5 * 60 * 60 * 1000; // 5.5 hours in milliseconds
+  const utcTime = now.getTime();
+  const istTime = new Date(utcTime + istOffset);
+  return istTime;
+};
+
+// Get current IST date string (YYYY-MM-DD)
+const getISTDateString = () => {
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const utcTime = now.getTime();
+  const istTime = new Date(utcTime + istOffset);
+  
+  // Format as YYYY-MM-DD
+  const year = istTime.getUTCFullYear();
+  const month = String(istTime.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(istTime.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// Get IST date string from a Date object (adjusting for IST)
+const getISTDateStringFromDate = (date) => {
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const utcTime = date.getTime();
+  const istTime = new Date(utcTime + istOffset);
+  
+  const year = istTime.getUTCFullYear();
+  const month = String(istTime.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(istTime.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// Convert IST date (YYYY-MM-DD) start of day (00:00:00 IST) to UTC Date
+// IST midnight (00:00:00) = UTC previous day 18:30:00
+const getISTDateStartUTC = (istDateStr) => {
+  // Parse YYYY-MM-DD
+  const [year, month, day] = istDateStr.split('-').map(Number);
+  // IST midnight (00:00:00) = UTC previous day 18:30:00
+  // Create UTC date for the day at 18:30:00, then subtract 1 day
+  const startDateUTC = new Date(Date.UTC(year, month - 1, day, 18, 30, 0, 0));
+  startDateUTC.setUTCDate(startDateUTC.getUTCDate() - 1);
+  return startDateUTC;
+};
+
+// Convert IST date (YYYY-MM-DD) end of day (23:59:59.999 IST) to UTC Date
+// IST end of day (23:59:59.999) = UTC same day 18:29:59.999
+const getISTDateEndUTC = (istDateStr) => {
+  // Parse YYYY-MM-DD
+  const [year, month, day] = istDateStr.split('-').map(Number);
+  // IST end of day (23:59:59.999) = UTC same day 18:29:59.999
+  return new Date(Date.UTC(year, month - 1, day, 18, 29, 59, 999));
+};
+
 // @desc    Create a new survey
 // @route   POST /api/surveys
 // @access  Private (Company Admin, Project Manager)
@@ -3913,48 +3973,77 @@ exports.getSurveyAnalytics = async (req, res) => {
       matchFilter.interviewMode = interviewMode.toLowerCase();
     }
 
-    // Date range filter
-    if (dateRange && dateRange !== 'all') {
-      const now = new Date();
+    // Date range filter (using IST timezone)
+    // If dateRange is 'custom', ignore it and use startDate/endDate instead
+    if (dateRange && dateRange !== 'all' && dateRange !== 'custom') {
+      const istOffset = 5.5 * 60 * 60 * 1000; // IST offset: 5.5 hours
       let dateStart, dateEnd;
 
       switch (dateRange) {
         case 'today':
-          dateStart = new Date(now);
-          dateStart.setHours(0, 0, 0, 0);
-          dateEnd = new Date(now);
-          dateEnd.setHours(23, 59, 59, 999);
+          // Get today's date in IST, convert to UTC
+          const todayIST = getISTDateString();
+          dateStart = getISTDateStartUTC(todayIST);
+          dateEnd = getISTDateEndUTC(todayIST);
           break;
         case 'yesterday':
-          dateStart = new Date(now);
-          dateStart.setDate(dateStart.getDate() - 1);
-          dateStart.setHours(0, 0, 0, 0);
-          dateEnd = new Date(dateStart);
-          dateEnd.setHours(23, 59, 59, 999);
+          // Get yesterday's date in IST
+          const now = new Date();
+          const istTime = new Date(now.getTime() + istOffset);
+          istTime.setUTCDate(istTime.getUTCDate() - 1);
+          const yesterdayISTStr = getISTDateStringFromDate(new Date(istTime.getTime() - istOffset));
+          dateStart = getISTDateStartUTC(yesterdayISTStr);
+          dateEnd = getISTDateEndUTC(yesterdayISTStr);
           break;
         case 'week':
-          dateStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-          dateStart.setHours(0, 0, 0, 0);
-          dateEnd = new Date(now);
-          dateEnd.setHours(23, 59, 59, 999);
+          // Get date 7 days ago in IST
+          const nowWeek = new Date();
+          const istTimeWeek = new Date(nowWeek.getTime() + istOffset);
+          istTimeWeek.setUTCDate(istTimeWeek.getUTCDate() - 7);
+          const weekAgoISTStr = getISTDateStringFromDate(new Date(istTimeWeek.getTime() - istOffset));
+          const todayISTStr = getISTDateString();
+          dateStart = getISTDateStartUTC(weekAgoISTStr);
+          dateEnd = getISTDateEndUTC(todayISTStr);
           break;
         case 'month':
-          dateStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-          dateStart.setHours(0, 0, 0, 0);
-          dateEnd = new Date(now);
-          dateEnd.setHours(23, 59, 59, 999);
+          // Get date 30 days ago in IST
+          const nowMonth = new Date();
+          const istTimeMonth = new Date(nowMonth.getTime() + istOffset);
+          istTimeMonth.setUTCDate(istTimeMonth.getUTCDate() - 30);
+          const monthAgoISTStr = getISTDateStringFromDate(new Date(istTimeMonth.getTime() - istOffset));
+          const todayISTStr2 = getISTDateString();
+          dateStart = getISTDateStartUTC(monthAgoISTStr);
+          dateEnd = getISTDateEndUTC(todayISTStr2);
           break;
       }
 
       if (dateStart && dateEnd) {
         matchFilter.createdAt = { $gte: dateStart, $lte: dateEnd };
       }
-    } else if (startDate && endDate) {
-      const dateStart = new Date(startDate);
-      dateStart.setHours(0, 0, 0, 0);
-      const dateEnd = new Date(endDate);
-      dateEnd.setHours(23, 59, 59, 999);
-      matchFilter.createdAt = { $gte: dateStart, $lte: dateEnd };
+    }
+    
+    // Custom date range - parse as IST dates (check this separately to allow override)
+    if (startDate || endDate) {
+      let dateStart, dateEnd;
+      // Handle single day selection (startDate === endDate) or date range
+      if (startDate && endDate) {
+        // Both dates provided - date range
+        dateStart = getISTDateStartUTC(startDate);
+        dateEnd = getISTDateEndUTC(endDate);
+      } else if (startDate && !endDate) {
+        // Only start date provided - from start date to end of that day
+        dateStart = getISTDateStartUTC(startDate);
+        dateEnd = getISTDateEndUTC(startDate);
+      } else if (!startDate && endDate) {
+        // Only end date provided - from beginning of that day to end date
+        dateStart = getISTDateStartUTC(endDate);
+        dateEnd = getISTDateEndUTC(endDate);
+      }
+      
+      if (dateStart && dateEnd) {
+        // Override any dateRange filter with custom dates
+        matchFilter.createdAt = { $gte: dateStart, $lte: dateEnd };
+      }
     }
 
     // Interviewer filter
@@ -4856,6 +4945,1438 @@ exports.getSurveyAnalytics = async (req, res) => {
       message: 'Server error',
       error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
+  }
+};
+
+// @desc    Get optimized analytics for reports V2 (using MongoDB aggregation only, no limits)
+// @route   GET /api/surveys/:id/analytics-v2
+// @access  Private (Company Admin, Project Manager)
+exports.getSurveyAnalyticsV2 = async (req, res) => {
+  try {
+    const surveyId = req.params.id || req.params.surveyId;
+    const {
+      dateRange,
+      startDate,
+      endDate,
+      status,
+      interviewMode,
+      ac,
+      district,
+      lokSabha,
+      interviewerIds,
+      interviewerMode = 'include'
+    } = req.query;
+
+    // Debug: Log received query params
+    console.log('🔍 getSurveyAnalyticsV2 - Query params:', {
+      surveyId,
+      interviewerIds,
+      interviewerIdsType: typeof interviewerIds,
+      isArray: Array.isArray(interviewerIds),
+      interviewerMode
+    });
+
+    // Verify survey exists
+    const survey = await Survey.findById(surveyId);
+    if (!survey) {
+      return res.status(404).json({
+        success: false,
+        message: 'Survey not found'
+      });
+    }
+
+    // Build match filter for MongoDB aggregation (NO LIMITS - handles millions of records)
+    const matchFilter = { survey: mongoose.Types.ObjectId.isValid(surveyId) ? new mongoose.Types.ObjectId(surveyId) : surveyId };
+
+    // Status filter
+    if (status && status !== 'all') {
+      if (status === 'approved_rejected_pending') {
+        matchFilter.status = { $in: ['Approved', 'Rejected', 'Pending_Approval'] };
+      } else if (status === 'approved_pending') {
+        matchFilter.status = { $in: ['Approved', 'Pending_Approval'] };
+      } else if (status === 'pending') {
+        matchFilter.status = 'Pending_Approval';
+      } else {
+        matchFilter.status = status;
+      }
+    } else {
+      matchFilter.status = { $in: ['Approved', 'Rejected', 'Pending_Approval'] };
+    }
+
+    // Interview mode filter
+    if (interviewMode) {
+      matchFilter.interviewMode = interviewMode.toLowerCase();
+    }
+
+    // Date range filter (using IST timezone)
+    // If dateRange is 'custom', ignore it and use startDate/endDate instead
+    if (dateRange && dateRange !== 'all' && dateRange !== 'custom') {
+      const istOffset = 5.5 * 60 * 60 * 1000; // IST offset: 5.5 hours
+      let dateStart, dateEnd;
+
+      switch (dateRange) {
+        case 'today':
+          // Get today's date in IST, convert to UTC
+          const todayIST = getISTDateString();
+          dateStart = getISTDateStartUTC(todayIST);
+          dateEnd = getISTDateEndUTC(todayIST);
+          break;
+        case 'yesterday':
+          // Get yesterday's date in IST
+          const now = new Date();
+          const istTime = new Date(now.getTime() + istOffset);
+          istTime.setUTCDate(istTime.getUTCDate() - 1);
+          const yesterdayISTStr = getISTDateStringFromDate(new Date(istTime.getTime() - istOffset));
+          dateStart = getISTDateStartUTC(yesterdayISTStr);
+          dateEnd = getISTDateEndUTC(yesterdayISTStr);
+          break;
+        case 'week':
+          // Get date 7 days ago in IST
+          const nowWeek = new Date();
+          const istTimeWeek = new Date(nowWeek.getTime() + istOffset);
+          istTimeWeek.setUTCDate(istTimeWeek.getUTCDate() - 7);
+          const weekAgoISTStr = getISTDateStringFromDate(new Date(istTimeWeek.getTime() - istOffset));
+          const todayISTStr = getISTDateString();
+          dateStart = getISTDateStartUTC(weekAgoISTStr);
+          dateEnd = getISTDateEndUTC(todayISTStr);
+          break;
+        case 'month':
+          // Get date 30 days ago in IST
+          const nowMonth = new Date();
+          const istTimeMonth = new Date(nowMonth.getTime() + istOffset);
+          istTimeMonth.setUTCDate(istTimeMonth.getUTCDate() - 30);
+          const monthAgoISTStr = getISTDateStringFromDate(new Date(istTimeMonth.getTime() - istOffset));
+          const todayISTStr2 = getISTDateString();
+          dateStart = getISTDateStartUTC(monthAgoISTStr);
+          dateEnd = getISTDateEndUTC(todayISTStr2);
+          break;
+      }
+
+      if (dateStart && dateEnd) {
+        matchFilter.createdAt = { $gte: dateStart, $lte: dateEnd };
+      }
+    }
+    
+    // Custom date range - parse as IST dates (check this separately to allow override)
+    if (startDate || endDate) {
+      let dateStart, dateEnd;
+      // Handle single day selection (startDate === endDate) or date range
+      if (startDate && endDate) {
+        // Both dates provided - date range
+        dateStart = getISTDateStartUTC(startDate);
+        dateEnd = getISTDateEndUTC(endDate);
+      } else if (startDate && !endDate) {
+        // Only start date provided - from start date to end of that day
+        dateStart = getISTDateStartUTC(startDate);
+        dateEnd = getISTDateEndUTC(startDate);
+      } else if (!startDate && endDate) {
+        // Only end date provided - from beginning of that day to end date
+        dateStart = getISTDateStartUTC(endDate);
+        dateEnd = getISTDateEndUTC(endDate);
+      }
+      
+      if (dateStart && dateEnd) {
+        // Override any dateRange filter with custom dates
+        matchFilter.createdAt = { $gte: dateStart, $lte: dateEnd };
+      }
+    }
+
+    // Interviewer filter - Handle both array and single value from query params
+    let interviewerIdsArray = [];
+    if (interviewerIds) {
+      if (Array.isArray(interviewerIds)) {
+        interviewerIdsArray = interviewerIds;
+      } else if (typeof interviewerIds === 'string') {
+        // If it's a string, it might be comma-separated or a single ID
+        interviewerIdsArray = interviewerIds.split(',').map(id => id.trim()).filter(id => id);
+      }
+    }
+
+    if (interviewerIdsArray.length > 0) {
+      const interviewerObjectIds = interviewerIdsArray
+        .filter(id => id && id !== 'undefined' && id !== 'null')
+        .map(id => {
+          // Handle both string IDs and ObjectIds
+          if (mongoose.Types.ObjectId.isValid(id)) {
+            return new mongoose.Types.ObjectId(id);
+          }
+          return id;
+        })
+        .filter(id => id); // Remove any invalid IDs
+
+      if (interviewerObjectIds.length > 0) {
+        if (interviewerMode === 'exclude') {
+          matchFilter.interviewer = { $nin: interviewerObjectIds };
+        } else {
+          matchFilter.interviewer = { $in: interviewerObjectIds };
+        }
+        
+        console.log(`🔍 getSurveyAnalyticsV2 - Filtering by ${interviewerObjectIds.length} interviewer(s):`, interviewerObjectIds.map(id => id.toString()));
+      }
+    }
+
+    // For project managers: filter by assigned interviewers
+    if (req.user.userType === 'project_manager') {
+      const currentUser = await User.findById(req.user.id).populate('assignedTeamMembers.user', '_id userType');
+      if (currentUser && currentUser.assignedTeamMembers && currentUser.assignedTeamMembers.length > 0) {
+        // Extract interviewer IDs from assignedTeamMembers structure
+        // assignedTeamMembers is an array of objects: [{ userType: 'interviewer', user: ObjectId or User object }, ...]
+        const assignedIds = currentUser.assignedTeamMembers
+          .filter(tm => tm.userType === 'interviewer' && tm.user)
+          .map(tm => {
+            // Handle both ObjectId and populated user object
+            const userId = tm.user._id ? tm.user._id : tm.user;
+            return mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+          })
+          .filter(id => id && mongoose.Types.ObjectId.isValid(id));
+        
+        if (assignedIds.length > 0) {
+          if (!matchFilter.interviewer) {
+            // No interviewer filter yet, apply assigned interviewers filter
+            matchFilter.interviewer = { $in: assignedIds };
+            console.log(`🔍 getSurveyAnalyticsV2 - Project Manager: Filtering by ${assignedIds.length} assigned interviewer(s)`);
+          } else if (matchFilter.interviewer.$in) {
+            // Intersect with assigned interviewers (only show selected interviewers that are assigned)
+            const originalIds = matchFilter.interviewer.$in;
+            matchFilter.interviewer.$in = originalIds.filter(id => {
+              const idStr = id.toString();
+              return assignedIds.some(assignedId => assignedId.toString() === idStr);
+            });
+            console.log(`🔍 getSurveyAnalyticsV2 - Project Manager: Intersected ${originalIds.length} selected with ${assignedIds.length} assigned, result: ${matchFilter.interviewer.$in.length} interviewer(s)`);
+          } else if (matchFilter.interviewer.$nin) {
+            // For exclude mode, ensure we're only excluding from assigned interviewers
+            const excludedIds = matchFilter.interviewer.$nin;
+            const assignedIdsStr = assignedIds.map(id => id.toString());
+            matchFilter.interviewer.$nin = excludedIds.filter(id => assignedIdsStr.includes(id.toString()));
+            console.log(`🔍 getSurveyAnalyticsV2 - Project Manager: Excluding ${matchFilter.interviewer.$nin.length} interviewer(s) from assigned list`);
+          }
+        } else {
+          // No assigned interviewers found, return empty results
+          console.log(`⚠️ getSurveyAnalyticsV2 - Project Manager: No valid assigned interviewers found`);
+          matchFilter.interviewer = { $in: [] }; // Empty array will return no results
+        }
+      } else {
+        // No assigned team members, return empty results
+        console.log(`⚠️ getSurveyAnalyticsV2 - Project Manager: No assigned team members`);
+        matchFilter.interviewer = { $in: [] }; // Empty array will return no results
+      }
+    }
+
+    // Build aggregation pipeline - pure MongoDB aggregation (no JavaScript processing)
+    const pipeline = [];
+
+    // Debug: Log the match filter before applying
+    console.log('🔍 getSurveyAnalyticsV2 - Final matchFilter:', JSON.stringify(matchFilter, null, 2));
+
+    // Stage 1: Match filtered responses
+    pipeline.push({ $match: matchFilter });
+
+    // Stage 2: Filter by AC if provided (using indexed fields)
+    if (ac && ac.trim()) {
+      const acPattern = ac.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      pipeline.push({
+        $match: {
+          $or: [
+            { selectedAC: { $regex: acPattern, $options: 'i' } },
+            { 'selectedPollingStation.acName': { $regex: acPattern, $options: 'i' } }
+          ]
+        }
+      });
+    }
+
+    // Stage 3: For district/lokSabha, we need to extract from responses array
+    // This is less efficient but necessary since they're in nested responses
+    // We'll use aggregation to extract and filter
+    if ((district && district.trim()) || (lokSabha && lokSabha.trim())) {
+      // Add fields to extract district/lokSabha from responses
+      pipeline.push({
+        $addFields: {
+          // Extract district from responses array
+          extractedDistrict: {
+            $let: {
+              vars: {
+                districtResponse: {
+                  $arrayElemAt: [
+                    {
+                      $filter: {
+                        input: { $ifNull: ['$responses', []] },
+                        as: 'resp',
+                        cond: {
+                          $or: [
+                            { $regexMatch: { input: { $toLower: { $ifNull: ['$$resp.questionText', ''] } }, regex: 'district' } },
+                            { $regexMatch: { input: { $toLower: { $ifNull: ['$$resp.questionId', ''] } }, regex: 'district' } }
+                          ]
+                        }
+                      }
+                    },
+                    0
+                  ]
+                }
+              },
+              in: {
+                $ifNull: ['$$districtResponse.response', null]
+              }
+            }
+          },
+          // Extract lokSabha from responses array
+          extractedLokSabha: {
+            $let: {
+              vars: {
+                lokSabhaResponse: {
+                  $arrayElemAt: [
+                    {
+                      $filter: {
+                        input: { $ifNull: ['$responses', []] },
+                        as: 'resp',
+                        cond: {
+                          $or: [
+                            { $regexMatch: { input: { $toLower: { $ifNull: ['$$resp.questionText', ''] } }, regex: 'lok sabha|parliamentary' } },
+                            { $regexMatch: { input: { $toLower: { $ifNull: ['$$resp.questionId', ''] } }, regex: 'lok.*sabha|parliamentary' } }
+                          ]
+                        }
+                      }
+                    },
+                    0
+                  ]
+                }
+              },
+              in: {
+                $ifNull: ['$$lokSabhaResponse.response', null]
+              }
+            }
+          }
+        }
+      });
+
+      // Filter by district/lokSabha
+      const districtLokSabhaFilter = {};
+      if (district && district.trim()) {
+        const districtPattern = district.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        districtLokSabhaFilter.$or = [
+          { extractedDistrict: { $regex: districtPattern, $options: 'i' } },
+          { 'responses.response': { $regex: districtPattern, $options: 'i' } }
+        ];
+      }
+      if (lokSabha && lokSabha.trim()) {
+        const lokSabhaPattern = lokSabha.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        if (districtLokSabhaFilter.$or) {
+          districtLokSabhaFilter.$and = [
+            districtLokSabhaFilter,
+            {
+              $or: [
+                { extractedLokSabha: { $regex: lokSabhaPattern, $options: 'i' } },
+                { 'responses.response': { $regex: lokSabhaPattern, $options: 'i' } }
+              ]
+            }
+          ];
+          delete districtLokSabhaFilter.$or;
+        } else {
+          districtLokSabhaFilter.$or = [
+            { extractedLokSabha: { $regex: lokSabhaPattern, $options: 'i' } },
+            { 'responses.response': { $regex: lokSabhaPattern, $options: 'i' } }
+          ];
+        }
+      }
+      
+      if (Object.keys(districtLokSabhaFilter).length > 0) {
+        pipeline.push({ $match: districtLokSabhaFilter });
+      }
+    }
+
+    // Stage 4: Group and count (final aggregation stage)
+    pipeline.push({
+      $group: {
+        _id: null,
+        totalResponses: { $sum: 1 },
+        capiResponses: {
+          $sum: {
+            $cond: [{ $eq: [{ $toUpper: { $ifNull: ['$interviewMode', ''] } }, 'CAPI'] }, 1, 0]
+          }
+        },
+        catiResponses: {
+          $sum: {
+            $cond: [{ $eq: [{ $toUpper: { $ifNull: ['$interviewMode', ''] } }, 'CATI'] }, 1, 0]
+          }
+        }
+      }
+    });
+
+    // Execute aggregation (handles millions of records efficiently)
+    const result = await SurveyResponse.aggregate(pipeline);
+
+    // Get sample size from survey
+    const sampleSize = survey.sampleSize || 0;
+
+    // Extract counts from aggregation result
+    const stats = result[0] || {
+      totalResponses: 0,
+      capiResponses: 0,
+      catiResponses: 0
+    };
+
+    // Return only the 4 required stats
+    res.status(200).json({
+      success: true,
+      data: {
+        totalResponses: stats.totalResponses,
+        sampleSize: sampleSize,
+        capiResponses: stats.capiResponses,
+        catiResponses: stats.catiResponses
+      }
+    });
+
+  } catch (error) {
+    console.error('Get survey analytics V2 error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
+// @desc    Get AC-wise stats (optimized for big data)
+// @route   GET /api/surveys/:id/ac-wise-stats-v2
+// @access  Private (Company Admin, Project Manager)
+exports.getACWiseStatsV2 = async (req, res) => {
+  try {
+    const surveyId = req.params.id || req.params.surveyId;
+    const {
+      dateRange,
+      startDate,
+      endDate,
+      status,
+      interviewMode,
+      ac,
+      district,
+      lokSabha,
+      interviewerIds,
+      interviewerMode = 'include'
+    } = req.query;
+
+    // Verify survey exists
+    const survey = await Survey.findById(surveyId);
+    if (!survey) {
+      return res.status(404).json({
+        success: false,
+        message: 'Survey not found'
+      });
+    }
+
+    // Build match filter for MongoDB aggregation (NO LIMITS - handles millions of records)
+    const matchFilter = { survey: mongoose.Types.ObjectId.isValid(surveyId) ? new mongoose.Types.ObjectId(surveyId) : surveyId };
+
+    // Status filter
+    if (status && status !== 'all') {
+      if (status === 'approved_rejected_pending') {
+        matchFilter.status = { $in: ['Approved', 'Rejected', 'Pending_Approval'] };
+      } else if (status === 'approved_pending') {
+        matchFilter.status = { $in: ['Approved', 'Pending_Approval'] };
+      } else if (status === 'pending') {
+        matchFilter.status = 'Pending_Approval';
+      } else {
+        matchFilter.status = status;
+      }
+    } else {
+      matchFilter.status = { $in: ['Approved', 'Rejected', 'Pending_Approval'] };
+    }
+
+    // Interview mode filter
+    if (interviewMode) {
+      matchFilter.interviewMode = interviewMode.toLowerCase();
+    }
+
+    // Date range filter (using IST timezone)
+    // If dateRange is 'custom', ignore it and use startDate/endDate instead
+    if (dateRange && dateRange !== 'all' && dateRange !== 'custom') {
+      const istOffset = 5.5 * 60 * 60 * 1000; // IST offset: 5.5 hours
+      let dateStart, dateEnd;
+
+      switch (dateRange) {
+        case 'today':
+          // Get today's date in IST, convert to UTC
+          const todayIST = getISTDateString();
+          dateStart = getISTDateStartUTC(todayIST);
+          dateEnd = getISTDateEndUTC(todayIST);
+          break;
+        case 'yesterday':
+          // Get yesterday's date in IST
+          const now = new Date();
+          const istTime = new Date(now.getTime() + istOffset);
+          istTime.setUTCDate(istTime.getUTCDate() - 1);
+          const yesterdayISTStr = getISTDateStringFromDate(new Date(istTime.getTime() - istOffset));
+          dateStart = getISTDateStartUTC(yesterdayISTStr);
+          dateEnd = getISTDateEndUTC(yesterdayISTStr);
+          break;
+        case 'week':
+          // Get date 7 days ago in IST
+          const nowWeek = new Date();
+          const istTimeWeek = new Date(nowWeek.getTime() + istOffset);
+          istTimeWeek.setUTCDate(istTimeWeek.getUTCDate() - 7);
+          const weekAgoISTStr = getISTDateStringFromDate(new Date(istTimeWeek.getTime() - istOffset));
+          const todayISTStr = getISTDateString();
+          dateStart = getISTDateStartUTC(weekAgoISTStr);
+          dateEnd = getISTDateEndUTC(todayISTStr);
+          break;
+        case 'month':
+          // Get date 30 days ago in IST
+          const nowMonth = new Date();
+          const istTimeMonth = new Date(nowMonth.getTime() + istOffset);
+          istTimeMonth.setUTCDate(istTimeMonth.getUTCDate() - 30);
+          const monthAgoISTStr = getISTDateStringFromDate(new Date(istTimeMonth.getTime() - istOffset));
+          const todayISTStr2 = getISTDateString();
+          dateStart = getISTDateStartUTC(monthAgoISTStr);
+          dateEnd = getISTDateEndUTC(todayISTStr2);
+          break;
+      }
+
+      if (dateStart && dateEnd) {
+        matchFilter.createdAt = { $gte: dateStart, $lte: dateEnd };
+      }
+    }
+    
+    // Custom date range - parse as IST dates (check this separately to allow override)
+    if (startDate || endDate) {
+      let dateStart, dateEnd;
+      // Handle single day selection (startDate === endDate) or date range
+      if (startDate && endDate) {
+        // Both dates provided - date range
+        dateStart = getISTDateStartUTC(startDate);
+        dateEnd = getISTDateEndUTC(endDate);
+      } else if (startDate && !endDate) {
+        // Only start date provided - from start date to end of that day
+        dateStart = getISTDateStartUTC(startDate);
+        dateEnd = getISTDateEndUTC(startDate);
+      } else if (!startDate && endDate) {
+        // Only end date provided - from beginning of that day to end date
+        dateStart = getISTDateStartUTC(endDate);
+        dateEnd = getISTDateEndUTC(endDate);
+      }
+      
+      if (dateStart && dateEnd) {
+        // Override any dateRange filter with custom dates
+        matchFilter.createdAt = { $gte: dateStart, $lte: dateEnd };
+      }
+    }
+
+    // Interviewer filter - Handle both array and single value from query params
+    let interviewerIdsArray = [];
+    if (interviewerIds) {
+      if (Array.isArray(interviewerIds)) {
+        interviewerIdsArray = interviewerIds;
+      } else if (typeof interviewerIds === 'string') {
+        interviewerIdsArray = interviewerIds.split(',').map(id => id.trim()).filter(id => id);
+      }
+    }
+
+    if (interviewerIdsArray.length > 0) {
+      const interviewerObjectIds = interviewerIdsArray
+        .filter(id => id && id !== 'undefined' && id !== 'null')
+        .map(id => {
+          if (mongoose.Types.ObjectId.isValid(id)) {
+            return new mongoose.Types.ObjectId(id);
+          }
+          return id;
+        })
+        .filter(id => id);
+
+      if (interviewerObjectIds.length > 0) {
+        if (interviewerMode === 'exclude') {
+          matchFilter.interviewer = { $nin: interviewerObjectIds };
+        } else {
+          matchFilter.interviewer = { $in: interviewerObjectIds };
+        }
+      }
+    }
+
+    // For project managers: filter by assigned interviewers
+    if (req.user.userType === 'project_manager') {
+      const currentUser = await User.findById(req.user.id).populate('assignedTeamMembers.user', '_id userType');
+      if (currentUser && currentUser.assignedTeamMembers && currentUser.assignedTeamMembers.length > 0) {
+        // Extract interviewer IDs from assignedTeamMembers structure
+        // assignedTeamMembers is an array of objects: [{ userType: 'interviewer', user: ObjectId or User object }, ...]
+        const assignedIds = currentUser.assignedTeamMembers
+          .filter(tm => tm.userType === 'interviewer' && tm.user)
+          .map(tm => {
+            // Handle both ObjectId and populated user object
+            const userId = tm.user._id ? tm.user._id : tm.user;
+            return mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+          })
+          .filter(id => id && mongoose.Types.ObjectId.isValid(id));
+        
+        if (assignedIds.length > 0) {
+          if (!matchFilter.interviewer) {
+            matchFilter.interviewer = { $in: assignedIds };
+            console.log(`🔍 getACWiseStatsV2 - Project Manager: Filtering by ${assignedIds.length} assigned interviewer(s)`);
+          } else if (matchFilter.interviewer.$in) {
+            const originalIds = matchFilter.interviewer.$in;
+            matchFilter.interviewer.$in = originalIds.filter(id => {
+              const idStr = id.toString();
+              return assignedIds.some(assignedId => assignedId.toString() === idStr);
+            });
+            console.log(`🔍 getACWiseStatsV2 - Project Manager: Intersected ${originalIds.length} selected with ${assignedIds.length} assigned, result: ${matchFilter.interviewer.$in.length} interviewer(s)`);
+          } else if (matchFilter.interviewer.$nin) {
+            const excludedIds = matchFilter.interviewer.$nin;
+            const assignedIdsStr = assignedIds.map(id => id.toString());
+            matchFilter.interviewer.$nin = excludedIds.filter(id => assignedIdsStr.includes(id.toString()));
+            console.log(`🔍 getACWiseStatsV2 - Project Manager: Excluding ${matchFilter.interviewer.$nin.length} interviewer(s) from assigned list`);
+          }
+        } else {
+          // No assigned interviewers found, return empty results
+          console.log(`⚠️ getACWiseStatsV2 - Project Manager: No valid assigned interviewers found`);
+          matchFilter.interviewer = { $in: [] }; // Empty array will return no results
+        }
+      } else {
+        // No assigned team members, return empty results
+        console.log(`⚠️ getACWiseStatsV2 - Project Manager: No assigned team members`);
+        matchFilter.interviewer = { $in: [] }; // Empty array will return no results
+      }
+    }
+
+    // Build aggregation pipeline - pure MongoDB aggregation
+    const pipeline = [];
+
+    // Stage 1: Match filtered responses
+    pipeline.push({ $match: matchFilter });
+
+    // Stage 2: Add fields for AC extraction and polling station key
+    pipeline.push({
+      $addFields: {
+        // Extract AC from selectedAC or selectedPollingStation (simple and fast)
+        extractedAC: {
+          $ifNull: [
+            '$selectedAC',
+            '$selectedPollingStation.acName'
+          ]
+        },
+        // Create polling station key for PS Covered calculation
+        pollingStationKey: {
+          $concat: [
+            { $ifNull: ['$selectedPollingStation.stationName', ''] },
+            '-',
+            { $ifNull: ['$selectedPollingStation.groupName', ''] }
+          ]
+        },
+        // Extract AC code from selectedPollingStation
+        extractedACCode: {
+          $ifNull: [
+            '$selectedPollingStation.acNo',
+            null
+          ]
+        },
+        // Extract PC code and name from selectedPollingStation
+        extractedPCCode: {
+          $ifNull: [
+            '$selectedPollingStation.pcNo',
+            null
+          ]
+        },
+        extractedPCName: {
+          $ifNull: [
+            '$selectedPollingStation.pcName',
+            null
+          ]
+        }
+      }
+    });
+
+    // Stage 3: Filter by AC if provided
+    if (ac && ac.trim()) {
+      const acPattern = ac.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      pipeline.push({
+        $match: {
+          $or: [
+            { extractedAC: { $regex: acPattern, $options: 'i' } },
+            { 'selectedPollingStation.acName': { $regex: acPattern, $options: 'i' } }
+          ]
+        }
+      });
+    }
+
+    // Stage 4: Group by AC for AC stats
+    pipeline.push({
+      $group: {
+        _id: {
+          $ifNull: ['$extractedAC', 'N/A']
+        },
+        total: { $sum: 1 },
+        capi: {
+          $sum: {
+            $cond: [{ $eq: [{ $toUpper: { $ifNull: ['$interviewMode', ''] } }, 'CAPI'] }, 1, 0]
+          }
+        },
+        cati: {
+          $sum: {
+            $cond: [{ $eq: [{ $toUpper: { $ifNull: ['$interviewMode', ''] } }, 'CATI'] }, 1, 0]
+          }
+        },
+        approved: {
+          $sum: { $cond: [{ $eq: ['$status', 'Approved'] }, 1, 0] }
+        },
+        rejected: {
+          $sum: { $cond: [{ $eq: ['$status', 'Rejected'] }, 1, 0] }
+        },
+        autoRejected: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ['$status', 'Rejected'] },
+                  {
+                    $or: [
+                      { $eq: ['$verificationData.autoRejected', true] },
+                      { $gt: [{ $size: { $ifNull: ['$verificationData.autoRejectionReasons', []] } }, 0] },
+                      // Also check feedback field for auto-rejection patterns (matches current reports page logic)
+                      {
+                        $and: [
+                          { $ne: ['$verificationData.feedback', null] },
+                          {
+                            $or: [
+                              { $regexMatch: { input: { $ifNull: ['$verificationData.feedback', ''] }, regex: 'Interview Too Short', options: 'i' } },
+                              { $regexMatch: { input: { $ifNull: ['$verificationData.feedback', ''] }, regex: 'Not Voter', options: 'i' } },
+                              { $regexMatch: { input: { $ifNull: ['$verificationData.feedback', ''] }, regex: 'Not a Registered Voter', options: 'i' } },
+                              { $regexMatch: { input: { $ifNull: ['$verificationData.feedback', ''] }, regex: 'Duplicate Response', options: 'i' } }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              1,
+              0
+            ]
+          }
+        },
+        manualRejected: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ['$status', 'Rejected'] },
+                  {
+                    $and: [
+                      { $ne: ['$verificationData.autoRejected', true] },
+                      { $eq: [{ $size: { $ifNull: ['$verificationData.autoRejectionReasons', []] } }, 0] },
+                      // Not matching auto-rejection feedback patterns
+                      {
+                        $or: [
+                          { $eq: ['$verificationData.feedback', null] },
+                          {
+                            $and: [
+                              { $not: { $regexMatch: { input: { $ifNull: ['$verificationData.feedback', ''] }, regex: 'Interview Too Short', options: 'i' } } },
+                              { $not: { $regexMatch: { input: { $ifNull: ['$verificationData.feedback', ''] }, regex: 'Not Voter', options: 'i' } } },
+                              { $not: { $regexMatch: { input: { $ifNull: ['$verificationData.feedback', ''] }, regex: 'Not a Registered Voter', options: 'i' } } },
+                              { $not: { $regexMatch: { input: { $ifNull: ['$verificationData.feedback', ''] }, regex: 'Duplicate Response', options: 'i' } } }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              1,
+              0
+            ]
+          }
+        },
+        underQC: {
+          $sum: { $cond: [{ $eq: ['$status', 'Pending_Approval'] }, 1, 0] }
+        },
+        pollingStations: { $addToSet: '$pollingStationKey' },
+        interviewers: { $addToSet: '$interviewer' },
+        acCodes: { $addToSet: '$extractedACCode' },
+        pcCodes: { $addToSet: '$extractedPCCode' },
+        pcNames: { $addToSet: '$extractedPCName' }
+      }
+    });
+
+    // Stage 5: Project final fields
+    pipeline.push({
+      $project: {
+        _id: 0,
+        ac: '$_id',
+        completedInterviews: '$total',
+        capi: '$capi',
+        cati: '$cati',
+        approved: '$approved',
+        rejected: '$manualRejected',
+        autoRejected: '$autoRejected',
+        underQC: '$underQC',
+        interviewersCount: { $size: { $filter: { input: { $ifNull: ['$interviewers', []] }, cond: { $ne: ['$$this', null] } } } },
+        psCovered: { $size: { $filter: { input: { $ifNull: ['$pollingStations', []] }, cond: { $ne: ['$$this', null] } } } },
+        acCode: { $arrayElemAt: [{ $filter: { input: '$acCodes', cond: { $ne: ['$$this', null] } } }, 0] },
+        pcCode: { $arrayElemAt: [{ $filter: { input: '$pcCodes', cond: { $ne: ['$$this', null] } } }, 0] },
+        pcName: { $arrayElemAt: [{ $filter: { input: '$pcNames', cond: { $ne: ['$$this', null] } } }, 0] }
+      }
+    });
+
+    // Stage 6: Sort by completed interviews (descending)
+    pipeline.push({
+      $sort: { completedInterviews: -1 }
+    });
+
+    // Execute aggregation with performance optimizations
+    const acStats = await SurveyResponse.aggregate(pipeline, {
+      allowDiskUse: true,
+      maxTimeMS: 300000 // 5 minutes timeout
+    });
+
+    // Calculate countsAfterRejection for each AC
+    const acStatsWithCalculations = acStats.map(stat => ({
+      ...stat,
+      countsAfterRejection: Math.max(0, stat.completedInterviews - stat.autoRejected),
+      gpsPending: 0, // Not calculated yet
+      gpsFail: 0 // Not calculated yet
+    }));
+
+    res.status(200).json({
+      success: true,
+      data: acStatsWithCalculations
+    });
+  } catch (error) {
+    console.error('Get AC-wise stats V2 error:', error);
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
+  }
+};
+
+// @desc    Get Interviewer-wise stats (optimized for big data)
+// @route   GET /api/surveys/:id/interviewer-wise-stats-v2
+// @access  Private (Company Admin, Project Manager)
+exports.getInterviewerWiseStatsV2 = async (req, res) => {
+  try {
+    const surveyId = req.params.id || req.params.surveyId;
+    const {
+      dateRange,
+      startDate,
+      endDate,
+      status,
+      interviewMode,
+      ac,
+      district,
+      lokSabha,
+      interviewerIds,
+      interviewerMode = 'include'
+    } = req.query;
+
+    // Verify survey exists
+    const survey = await Survey.findById(surveyId);
+    if (!survey) {
+      return res.status(404).json({
+        success: false,
+        message: 'Survey not found'
+      });
+    }
+
+    // Build match filter for MongoDB aggregation (NO LIMITS - handles millions of records)
+    const matchFilter = { survey: mongoose.Types.ObjectId.isValid(surveyId) ? new mongoose.Types.ObjectId(surveyId) : surveyId };
+
+    // Status filter
+    if (status && status !== 'all') {
+      if (status === 'approved_rejected_pending') {
+        matchFilter.status = { $in: ['Approved', 'Rejected', 'Pending_Approval'] };
+      } else if (status === 'approved_pending') {
+        matchFilter.status = { $in: ['Approved', 'Pending_Approval'] };
+      } else if (status === 'pending') {
+        matchFilter.status = 'Pending_Approval';
+      } else {
+        matchFilter.status = status;
+      }
+    } else {
+      matchFilter.status = { $in: ['Approved', 'Rejected', 'Pending_Approval'] };
+    }
+
+    // Interview mode filter
+    if (interviewMode) {
+      matchFilter.interviewMode = interviewMode.toLowerCase();
+    }
+
+    // Date range filter (using IST timezone)
+    // If dateRange is 'custom', ignore it and use startDate/endDate instead
+    if (dateRange && dateRange !== 'all' && dateRange !== 'custom') {
+      const istOffset = 5.5 * 60 * 60 * 1000; // IST offset: 5.5 hours
+      let dateStart, dateEnd;
+
+      switch (dateRange) {
+        case 'today':
+          // Get today's date in IST, convert to UTC
+          const todayIST = getISTDateString();
+          dateStart = getISTDateStartUTC(todayIST);
+          dateEnd = getISTDateEndUTC(todayIST);
+          break;
+        case 'yesterday':
+          // Get yesterday's date in IST
+          const now = new Date();
+          const istTime = new Date(now.getTime() + istOffset);
+          istTime.setUTCDate(istTime.getUTCDate() - 1);
+          const yesterdayISTStr = getISTDateStringFromDate(new Date(istTime.getTime() - istOffset));
+          dateStart = getISTDateStartUTC(yesterdayISTStr);
+          dateEnd = getISTDateEndUTC(yesterdayISTStr);
+          break;
+        case 'week':
+          // Get date 7 days ago in IST
+          const nowWeek = new Date();
+          const istTimeWeek = new Date(nowWeek.getTime() + istOffset);
+          istTimeWeek.setUTCDate(istTimeWeek.getUTCDate() - 7);
+          const weekAgoISTStr = getISTDateStringFromDate(new Date(istTimeWeek.getTime() - istOffset));
+          const todayISTStr = getISTDateString();
+          dateStart = getISTDateStartUTC(weekAgoISTStr);
+          dateEnd = getISTDateEndUTC(todayISTStr);
+          break;
+        case 'month':
+          // Get date 30 days ago in IST
+          const nowMonth = new Date();
+          const istTimeMonth = new Date(nowMonth.getTime() + istOffset);
+          istTimeMonth.setUTCDate(istTimeMonth.getUTCDate() - 30);
+          const monthAgoISTStr = getISTDateStringFromDate(new Date(istTimeMonth.getTime() - istOffset));
+          const todayISTStr2 = getISTDateString();
+          dateStart = getISTDateStartUTC(monthAgoISTStr);
+          dateEnd = getISTDateEndUTC(todayISTStr2);
+          break;
+      }
+
+      if (dateStart && dateEnd) {
+        matchFilter.createdAt = { $gte: dateStart, $lte: dateEnd };
+      }
+    }
+    
+    // Custom date range - parse as IST dates (check this separately to allow override)
+    if (startDate || endDate) {
+      let dateStart, dateEnd;
+      // Handle single day selection (startDate === endDate) or date range
+      if (startDate && endDate) {
+        // Both dates provided - date range
+        dateStart = getISTDateStartUTC(startDate);
+        dateEnd = getISTDateEndUTC(endDate);
+      } else if (startDate && !endDate) {
+        // Only start date provided - from start date to end of that day
+        dateStart = getISTDateStartUTC(startDate);
+        dateEnd = getISTDateEndUTC(startDate);
+      } else if (!startDate && endDate) {
+        // Only end date provided - from beginning of that day to end date
+        dateStart = getISTDateStartUTC(endDate);
+        dateEnd = getISTDateEndUTC(endDate);
+      }
+      
+      if (dateStart && dateEnd) {
+        // Override any dateRange filter with custom dates
+        matchFilter.createdAt = { $gte: dateStart, $lte: dateEnd };
+      }
+    }
+
+    // Interviewer filter - Handle both array and single value from query params
+    let interviewerIdsArray = [];
+    if (interviewerIds) {
+      if (Array.isArray(interviewerIds)) {
+        interviewerIdsArray = interviewerIds;
+      } else if (typeof interviewerIds === 'string') {
+        interviewerIdsArray = interviewerIds.split(',').map(id => id.trim()).filter(id => id);
+      }
+    }
+
+    if (interviewerIdsArray.length > 0) {
+      const interviewerObjectIds = interviewerIdsArray
+        .filter(id => id && id !== 'undefined' && id !== 'null')
+        .map(id => {
+          if (mongoose.Types.ObjectId.isValid(id)) {
+            return new mongoose.Types.ObjectId(id);
+          }
+          return id;
+        })
+        .filter(id => id);
+
+      if (interviewerObjectIds.length > 0) {
+        if (interviewerMode === 'exclude') {
+          matchFilter.interviewer = { $nin: interviewerObjectIds };
+        } else {
+          matchFilter.interviewer = { $in: interviewerObjectIds };
+        }
+      }
+    }
+
+    // For project managers: filter by assigned interviewers
+    if (req.user.userType === 'project_manager') {
+      const currentUser = await User.findById(req.user.id).populate('assignedTeamMembers.user', '_id userType');
+      if (currentUser && currentUser.assignedTeamMembers && currentUser.assignedTeamMembers.length > 0) {
+        // Extract interviewer IDs from assignedTeamMembers structure
+        // assignedTeamMembers is an array of objects: [{ userType: 'interviewer', user: ObjectId or User object }, ...]
+        const assignedIds = currentUser.assignedTeamMembers
+          .filter(tm => tm.userType === 'interviewer' && tm.user)
+          .map(tm => {
+            // Handle both ObjectId and populated user object
+            const userId = tm.user._id ? tm.user._id : tm.user;
+            return mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+          })
+          .filter(id => id && mongoose.Types.ObjectId.isValid(id));
+        
+        if (assignedIds.length > 0) {
+          if (!matchFilter.interviewer) {
+            matchFilter.interviewer = { $in: assignedIds };
+            console.log(`🔍 getACWiseStatsV2 - Project Manager: Filtering by ${assignedIds.length} assigned interviewer(s)`);
+          } else if (matchFilter.interviewer.$in) {
+            const originalIds = matchFilter.interviewer.$in;
+            matchFilter.interviewer.$in = originalIds.filter(id => {
+              const idStr = id.toString();
+              return assignedIds.some(assignedId => assignedId.toString() === idStr);
+            });
+            console.log(`🔍 getACWiseStatsV2 - Project Manager: Intersected ${originalIds.length} selected with ${assignedIds.length} assigned, result: ${matchFilter.interviewer.$in.length} interviewer(s)`);
+          } else if (matchFilter.interviewer.$nin) {
+            const excludedIds = matchFilter.interviewer.$nin;
+            const assignedIdsStr = assignedIds.map(id => id.toString());
+            matchFilter.interviewer.$nin = excludedIds.filter(id => assignedIdsStr.includes(id.toString()));
+            console.log(`🔍 getACWiseStatsV2 - Project Manager: Excluding ${matchFilter.interviewer.$nin.length} interviewer(s) from assigned list`);
+          }
+        } else {
+          // No assigned interviewers found, return empty results
+          console.log(`⚠️ getACWiseStatsV2 - Project Manager: No valid assigned interviewers found`);
+          matchFilter.interviewer = { $in: [] }; // Empty array will return no results
+        }
+      } else {
+        // No assigned team members, return empty results
+        console.log(`⚠️ getACWiseStatsV2 - Project Manager: No assigned team members`);
+        matchFilter.interviewer = { $in: [] }; // Empty array will return no results
+      }
+    }
+
+    // Build aggregation pipeline - pure MongoDB aggregation
+    const pipeline = [];
+
+    // Stage 1: Match filtered responses
+    pipeline.push({ $match: matchFilter });
+
+    // Stage 2: Add fields for polling station key
+    pipeline.push({
+      $addFields: {
+        // Create polling station key for PS Covered calculation
+        pollingStationKey: {
+          $concat: [
+            { $ifNull: ['$selectedPollingStation.stationName', ''] },
+            '-',
+            { $ifNull: ['$selectedPollingStation.groupName', ''] }
+          ]
+        }
+      }
+    });
+
+    // Stage 3: Filter by AC if provided
+    if (ac && ac.trim()) {
+      const acPattern = ac.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      pipeline.push({
+        $match: {
+          $or: [
+            { selectedAC: { $regex: acPattern, $options: 'i' } },
+            { 'selectedPollingStation.acName': { $regex: acPattern, $options: 'i' } }
+          ]
+        }
+      });
+    }
+
+    // Stage 4: Lookup interviewer details
+    pipeline.push({
+      $lookup: {
+        from: 'users',
+        localField: 'interviewer',
+        foreignField: '_id',
+        as: 'interviewerDetails'
+      }
+    });
+
+    // Stage 5: Unwind interviewer details
+    pipeline.push({
+      $unwind: {
+        path: '$interviewerDetails',
+        preserveNullAndEmptyArrays: true
+      }
+    });
+
+    // Stage 6: Group by interviewer for interviewer stats
+    pipeline.push({
+      $group: {
+        _id: '$interviewer',
+        total: { $sum: 1 },
+        capi: {
+          $sum: {
+            $cond: [{ $eq: [{ $toUpper: { $ifNull: ['$interviewMode', ''] } }, 'CAPI'] }, 1, 0]
+          }
+        },
+        cati: {
+          $sum: {
+            $cond: [{ $eq: [{ $toUpper: { $ifNull: ['$interviewMode', ''] } }, 'CATI'] }, 1, 0]
+          }
+        },
+        approved: {
+          $sum: { $cond: [{ $eq: ['$status', 'Approved'] }, 1, 0] }
+        },
+        rejected: {
+          $sum: { $cond: [{ $eq: ['$status', 'Rejected'] }, 1, 0] }
+        },
+        autoRejected: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ['$status', 'Rejected'] },
+                  {
+                    $or: [
+                      { $eq: ['$verificationData.autoRejected', true] },
+                      { $gt: [{ $size: { $ifNull: ['$verificationData.autoRejectionReasons', []] } }, 0] },
+                      // Also check feedback field for auto-rejection patterns
+                      {
+                        $and: [
+                          { $ne: ['$verificationData.feedback', null] },
+                          {
+                            $or: [
+                              { $regexMatch: { input: { $ifNull: ['$verificationData.feedback', ''] }, regex: 'Interview Too Short', options: 'i' } },
+                              { $regexMatch: { input: { $ifNull: ['$verificationData.feedback', ''] }, regex: 'Not Voter', options: 'i' } },
+                              { $regexMatch: { input: { $ifNull: ['$verificationData.feedback', ''] }, regex: 'Not a Registered Voter', options: 'i' } },
+                              { $regexMatch: { input: { $ifNull: ['$verificationData.feedback', ''] }, regex: 'Duplicate Response', options: 'i' } }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              1,
+              0
+            ]
+          }
+        },
+        manualRejected: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ['$status', 'Rejected'] },
+                  {
+                    $and: [
+                      { $ne: ['$verificationData.autoRejected', true] },
+                      { $eq: [{ $size: { $ifNull: ['$verificationData.autoRejectionReasons', []] } }, 0] },
+                      // Not matching auto-rejection feedback patterns
+                      {
+                        $or: [
+                          { $eq: ['$verificationData.feedback', null] },
+                          {
+                            $and: [
+                              { $not: { $regexMatch: { input: { $ifNull: ['$verificationData.feedback', ''] }, regex: 'Interview Too Short', options: 'i' } } },
+                              { $not: { $regexMatch: { input: { $ifNull: ['$verificationData.feedback', ''] }, regex: 'Not Voter', options: 'i' } } },
+                              { $not: { $regexMatch: { input: { $ifNull: ['$verificationData.feedback', ''] }, regex: 'Not a Registered Voter', options: 'i' } } },
+                              { $not: { $regexMatch: { input: { $ifNull: ['$verificationData.feedback', ''] }, regex: 'Duplicate Response', options: 'i' } } }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              1,
+              0
+            ]
+          }
+        },
+        underQC: {
+          $sum: { $cond: [{ $eq: ['$status', 'Pending_Approval'] }, 1, 0] }
+        },
+        pollingStations: { $addToSet: '$pollingStationKey' },
+        interviewerName: { $first: { $concat: ['$interviewerDetails.firstName', ' ', '$interviewerDetails.lastName'] } },
+        interviewerMemberId: { $first: '$interviewerDetails.memberId' }
+      }
+    });
+
+    // Stage 7: Project final fields
+    pipeline.push({
+      $project: {
+        _id: 0,
+        interviewerId: '$_id',
+        interviewer: '$interviewerName',
+        memberId: '$interviewerMemberId',
+        completedInterviews: '$total',
+        capi: '$capi',
+        cati: '$cati',
+        approved: '$approved',
+        rejected: '$manualRejected',
+        autoRejected: '$autoRejected',
+        underQC: '$underQC',
+        psCovered: { $size: { $filter: { input: { $ifNull: ['$pollingStations', []] }, cond: { $ne: ['$$this', null] } } } }
+      }
+    });
+
+    // Stage 8: Sort by completed interviews (descending)
+    pipeline.push({
+      $sort: { completedInterviews: -1 }
+    });
+
+    // Execute aggregation
+    const interviewerStats = await SurveyResponse.aggregate(pipeline);
+
+    // Calculate countsAfterRejection for each interviewer
+    const interviewerStatsWithCalculations = interviewerStats.map(stat => ({
+      ...stat,
+      countsAfterRejection: Math.max(0, stat.completedInterviews - stat.autoRejected),
+      gpsPending: 0, // Not calculated yet
+      gpsFail: 0 // Not calculated yet
+    }));
+
+    res.status(200).json({
+      success: true,
+      data: interviewerStatsWithCalculations
+    });
+  } catch (error) {
+    console.error('Get Interviewer-wise stats V2 error:', error);
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
+  }
+};
+
+// @desc    Get Chart Data (optimized for big data - daily stats only for performance)
+// @route   GET /api/surveys/:id/chart-data-v2
+// @access  Private (Company Admin, Project Manager)
+exports.getChartDataV2 = async (req, res) => {
+  try {
+    const surveyId = req.params.id || req.params.surveyId;
+    const {
+      dateRange,
+      startDate,
+      endDate,
+      status,
+      interviewMode,
+      ac,
+      district,
+      lokSabha,
+      interviewerIds,
+      interviewerMode = 'include'
+    } = req.query;
+
+    // Verify survey exists
+    const survey = await Survey.findById(surveyId);
+    if (!survey) {
+      return res.status(404).json({
+        success: false,
+        message: 'Survey not found'
+      });
+    }
+
+    // Build match filter for MongoDB aggregation (NO LIMITS - handles millions of records)
+    const matchFilter = { survey: mongoose.Types.ObjectId.isValid(surveyId) ? new mongoose.Types.ObjectId(surveyId) : surveyId };
+
+    // Status filter
+    if (status && status !== 'all') {
+      if (status === 'approved_rejected_pending') {
+        matchFilter.status = { $in: ['Approved', 'Rejected', 'Pending_Approval'] };
+      } else if (status === 'approved_pending') {
+        matchFilter.status = { $in: ['Approved', 'Pending_Approval'] };
+      } else if (status === 'pending') {
+        matchFilter.status = 'Pending_Approval';
+      } else {
+        matchFilter.status = status;
+      }
+    } else {
+      matchFilter.status = { $in: ['Approved', 'Rejected', 'Pending_Approval'] };
+    }
+
+    // Interview mode filter
+    if (interviewMode) {
+      matchFilter.interviewMode = interviewMode.toLowerCase();
+    }
+
+    // Date range filter (using IST timezone)
+    // If dateRange is 'custom', ignore it and use startDate/endDate instead
+    if (dateRange && dateRange !== 'all' && dateRange !== 'custom') {
+      const istOffset = 5.5 * 60 * 60 * 1000; // IST offset: 5.5 hours
+      let dateStart, dateEnd;
+
+      switch (dateRange) {
+        case 'today':
+          // Get today's date in IST, convert to UTC
+          const todayIST = getISTDateString();
+          dateStart = getISTDateStartUTC(todayIST);
+          dateEnd = getISTDateEndUTC(todayIST);
+          break;
+        case 'yesterday':
+          // Get yesterday's date in IST
+          const now = new Date();
+          const istTime = new Date(now.getTime() + istOffset);
+          istTime.setUTCDate(istTime.getUTCDate() - 1);
+          const yesterdayISTStr = getISTDateStringFromDate(new Date(istTime.getTime() - istOffset));
+          dateStart = getISTDateStartUTC(yesterdayISTStr);
+          dateEnd = getISTDateEndUTC(yesterdayISTStr);
+          break;
+        case 'week':
+          // Get date 7 days ago in IST
+          const nowWeek = new Date();
+          const istTimeWeek = new Date(nowWeek.getTime() + istOffset);
+          istTimeWeek.setUTCDate(istTimeWeek.getUTCDate() - 7);
+          const weekAgoISTStr = getISTDateStringFromDate(new Date(istTimeWeek.getTime() - istOffset));
+          const todayISTStr = getISTDateString();
+          dateStart = getISTDateStartUTC(weekAgoISTStr);
+          dateEnd = getISTDateEndUTC(todayISTStr);
+          break;
+        case 'month':
+          // Get date 30 days ago in IST
+          const nowMonth = new Date();
+          const istTimeMonth = new Date(nowMonth.getTime() + istOffset);
+          istTimeMonth.setUTCDate(istTimeMonth.getUTCDate() - 30);
+          const monthAgoISTStr = getISTDateStringFromDate(new Date(istTimeMonth.getTime() - istOffset));
+          const todayISTStr2 = getISTDateString();
+          dateStart = getISTDateStartUTC(monthAgoISTStr);
+          dateEnd = getISTDateEndUTC(todayISTStr2);
+          break;
+      }
+
+      if (dateStart && dateEnd) {
+        matchFilter.createdAt = { $gte: dateStart, $lte: dateEnd };
+      }
+    }
+    
+    // Custom date range - parse as IST dates (check this separately to allow override)
+    if (startDate || endDate) {
+      let dateStart, dateEnd;
+      // Handle single day selection (startDate === endDate) or date range
+      if (startDate && endDate) {
+        // Both dates provided - date range
+        dateStart = getISTDateStartUTC(startDate);
+        dateEnd = getISTDateEndUTC(endDate);
+      } else if (startDate && !endDate) {
+        // Only start date provided - from start date to end of that day
+        dateStart = getISTDateStartUTC(startDate);
+        dateEnd = getISTDateEndUTC(startDate);
+      } else if (!startDate && endDate) {
+        // Only end date provided - from beginning of that day to end date
+        dateStart = getISTDateStartUTC(endDate);
+        dateEnd = getISTDateEndUTC(endDate);
+      }
+      
+      if (dateStart && dateEnd) {
+        // Override any dateRange filter with custom dates
+        matchFilter.createdAt = { $gte: dateStart, $lte: dateEnd };
+      }
+    }
+
+    // Interviewer filter
+    let interviewerIdsArray = [];
+    if (interviewerIds) {
+      if (Array.isArray(interviewerIds)) {
+        interviewerIdsArray = interviewerIds;
+      } else if (typeof interviewerIds === 'string') {
+        interviewerIdsArray = interviewerIds.split(',').map(id => id.trim()).filter(id => id);
+      }
+    }
+
+    if (interviewerIdsArray.length > 0) {
+      const interviewerObjectIds = interviewerIdsArray
+        .filter(id => id && id !== 'undefined' && id !== 'null')
+        .map(id => {
+          if (mongoose.Types.ObjectId.isValid(id)) {
+            return new mongoose.Types.ObjectId(id);
+          }
+          return id;
+        })
+        .filter(id => id);
+
+      if (interviewerObjectIds.length > 0) {
+        if (interviewerMode === 'exclude') {
+          matchFilter.interviewer = { $nin: interviewerObjectIds };
+        } else {
+          matchFilter.interviewer = { $in: interviewerObjectIds };
+        }
+      }
+    }
+
+    // For project managers: filter by assigned interviewers
+    if (req.user.userType === 'project_manager') {
+      const currentUser = await User.findById(req.user.id).populate('assignedTeamMembers.user', '_id userType');
+      if (currentUser && currentUser.assignedTeamMembers && currentUser.assignedTeamMembers.length > 0) {
+        // Extract interviewer IDs from assignedTeamMembers structure
+        // assignedTeamMembers is an array of objects: [{ userType: 'interviewer', user: ObjectId or User object }, ...]
+        const assignedIds = currentUser.assignedTeamMembers
+          .filter(tm => tm.userType === 'interviewer' && tm.user)
+          .map(tm => {
+            // Handle both ObjectId and populated user object
+            const userId = tm.user._id ? tm.user._id : tm.user;
+            return mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+          })
+          .filter(id => id && mongoose.Types.ObjectId.isValid(id));
+        
+        if (assignedIds.length > 0) {
+          if (!matchFilter.interviewer) {
+            matchFilter.interviewer = { $in: assignedIds };
+            console.log(`🔍 getACWiseStatsV2 - Project Manager: Filtering by ${assignedIds.length} assigned interviewer(s)`);
+          } else if (matchFilter.interviewer.$in) {
+            const originalIds = matchFilter.interviewer.$in;
+            matchFilter.interviewer.$in = originalIds.filter(id => {
+              const idStr = id.toString();
+              return assignedIds.some(assignedId => assignedId.toString() === idStr);
+            });
+            console.log(`🔍 getACWiseStatsV2 - Project Manager: Intersected ${originalIds.length} selected with ${assignedIds.length} assigned, result: ${matchFilter.interviewer.$in.length} interviewer(s)`);
+          } else if (matchFilter.interviewer.$nin) {
+            const excludedIds = matchFilter.interviewer.$nin;
+            const assignedIdsStr = assignedIds.map(id => id.toString());
+            matchFilter.interviewer.$nin = excludedIds.filter(id => assignedIdsStr.includes(id.toString()));
+            console.log(`🔍 getACWiseStatsV2 - Project Manager: Excluding ${matchFilter.interviewer.$nin.length} interviewer(s) from assigned list`);
+          }
+        } else {
+          // No assigned interviewers found, return empty results
+          console.log(`⚠️ getACWiseStatsV2 - Project Manager: No valid assigned interviewers found`);
+          matchFilter.interviewer = { $in: [] }; // Empty array will return no results
+        }
+      } else {
+        // No assigned team members, return empty results
+        console.log(`⚠️ getACWiseStatsV2 - Project Manager: No assigned team members`);
+        matchFilter.interviewer = { $in: [] }; // Empty array will return no results
+      }
+    }
+
+    // Daily Stats Pipeline (optimized - only daily stats, no gender/age for performance)
+    const dailyStatsPipeline = [
+      { $match: matchFilter },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: '%Y-%m-%d',
+              date: '$createdAt'
+            }
+          },
+          count: { $sum: 1 },
+          capi: {
+            $sum: {
+              $cond: [{ $eq: [{ $toUpper: { $ifNull: ['$interviewMode', ''] } }, 'CAPI'] }, 1, 0]
+            }
+          },
+          cati: {
+            $sum: {
+              $cond: [{ $eq: [{ $toUpper: { $ifNull: ['$interviewMode', ''] } }, 'CATI'] }, 1, 0]
+            }
+          }
+        }
+      },
+      { $sort: { _id: 1 } },
+      {
+        $project: {
+          _id: 0,
+          date: '$_id',
+          count: 1,
+          capi: 1,
+          cati: 1
+        }
+      }
+    ];
+
+    // Execute daily stats pipeline only (removed gender/age for performance)
+    const dailyStats = await SurveyResponse.aggregate(dailyStatsPipeline);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        dailyStats
+      }
+    });
+  } catch (error) {
+    console.error('Get Chart Data V2 error:', error);
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 };
 

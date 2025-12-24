@@ -32,7 +32,8 @@ const {
   addInterviewerByProjectManager,
   updateInterviewerPreferencesByPM,
   getInterviewerSurveys,
-  updateInterviewerByPM
+  updateInterviewerByPM,
+  searchInterviewerByMemberId
 } = require('../controllers/authController');
 const { protect, authorize } = require('../middleware/auth');
 const {
@@ -91,6 +92,9 @@ router.get('/check-member-id/:memberId', protect, authorize('project_manager', '
 router.post('/project-manager/add-interviewer', protect, authorize('project_manager'), addInterviewerByProjectManager);
 router.put('/project-manager/interviewer/:id/preferences', protect, authorize('project_manager'), updateInterviewerPreferencesByPM);
 router.get('/project-manager/interviewer/:id/surveys', protect, authorize('project_manager'), getInterviewerSurveys);
+
+// Search interviewer by memberId (for Reports V2)
+router.get('/search-interviewer', protect, authorize('company_admin', 'project_manager'), searchInterviewerByMemberId);
 router.put('/project-manager/interviewer/:id', protect, authorize('project_manager'), updateInterviewerByPM);
 
 module.exports = router;

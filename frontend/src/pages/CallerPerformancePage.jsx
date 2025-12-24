@@ -1033,8 +1033,8 @@ const CallerPerformancePage = () => {
   // Modern Filter Loading Overlay Component
   const FilterLoadingOverlay = () => {
     if (!filterLoading) return null;
-    
-    return (
+
+  return (
       <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40 flex items-center justify-center pointer-events-none transition-opacity duration-200">
         <div className="bg-white rounded-2xl shadow-2xl p-8 flex flex-col items-center space-y-4 pointer-events-auto animate-[fadeIn_0.2s_ease-in-out]">
           <div className="relative">
@@ -1067,7 +1067,7 @@ const CallerPerformancePage = () => {
   return (
     <>
       <FilterLoadingOverlay />
-      <div className="min-h-screen bg-gray-50 w-full caller-performance-page">
+    <div className="min-h-screen bg-gray-50 w-full caller-performance-page">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 w-full">
         <div className="w-full px-4 sm:px-6 lg:px-8">

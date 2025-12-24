@@ -2911,3 +2911,89 @@ exports.updateInterviewerByPM = async (req, res) => {
     });
   }
 };
+
+// @desc    Search interviewers by memberId (for Reports V2)
+// @route   GET /api/auth/search-interviewer
+// @access  Private (Company Admin, Project Manager)
+exports.searchInterviewerByMemberId = async (req, res) => {
+  try {
+    const { memberId, surveyId } = req.query;
+    const mongoose = require('mongoose');
+
+    if (!memberId || !memberId.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Member ID is required'
+      });
+    }
+
+    // Build query
+    const query = {
+      userType: 'interviewer',
+      memberId: { $regex: new RegExp(`^${memberId.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i') }
+    };
+
+    // For project managers, filter by assigned interviewers
+    if (req.user.userType === 'project_manager') {
+      const currentUser = await User.findById(req.user.id);
+      if (currentUser && currentUser.assignedTeamMembers && currentUser.assignedTeamMembers.length > 0) {
+        const assignedIds = currentUser.assignedTeamMembers.map(id => 
+          mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id
+        );
+        query._id = { $in: assignedIds };
+      }
+    }
+
+    // Find interviewers matching memberId
+    const interviewers = await User.find(query)
+      .select('_id firstName lastName email phone memberId')
+      .limit(10)
+      .lean();
+
+    // If surveyId provided, check if interviewer has responses for this survey
+    let interviewersWithStats = interviewers;
+    if (surveyId && mongoose.Types.ObjectId.isValid(surveyId)) {
+      const SurveyResponse = require('../models/SurveyResponse');
+      const interviewerIds = interviewers.map(i => i._id);
+      
+      if (interviewerIds.length > 0) {
+        const responseCounts = await SurveyResponse.aggregate([
+          {
+            $match: {
+              survey: new mongoose.Types.ObjectId(surveyId),
+              interviewer: { $in: interviewerIds }
+            }
+          },
+          {
+            $group: {
+              _id: '$interviewer',
+              totalResponses: { $sum: 1 }
+            }
+          }
+        ]);
+
+        const countsMap = new Map();
+        responseCounts.forEach(item => {
+          countsMap.set(item._id.toString(), item.totalResponses);
+        });
+
+        interviewersWithStats = interviewers.map(interviewer => ({
+          ...interviewer,
+          responseCount: countsMap.get(interviewer._id.toString()) || 0
+        }));
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      data: interviewersWithStats
+    });
+  } catch (error) {
+    console.error('Search interviewer error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};

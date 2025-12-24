@@ -3254,19 +3254,22 @@ const SurveyReportsPage = () => {
                           <div className="relative">
                             <Calendar className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none z-10" />
                             <DatePicker
-                              selected={filters.startDate ? new Date(filters.startDate) : null}
+                              selected={filters.startDate ? new Date(filters.startDate + 'T00:00:00') : null}
                               onChange={(date) => {
                                 if (date) {
-                                  const dateStr = date.toISOString().split('T')[0];
-                                  handleFilterChange('startDate', dateStr);
+                                  // Format date as YYYY-MM-DD using local timezone (IST)
+                                  const year = date.getFullYear();
+                                  const month = String(date.getMonth() + 1).padStart(2, '0');
+                                  const day = String(date.getDate()).padStart(2, '0');
+                                  handleFilterChange('startDate', `${year}-${month}-${day}`);
                                 } else {
                                   handleFilterChange('startDate', '');
                                 }
                               }}
                               selectsStart
-                              startDate={filters.startDate ? new Date(filters.startDate) : null}
-                              endDate={filters.endDate ? new Date(filters.endDate) : null}
-                              maxDate={filters.endDate ? new Date(filters.endDate) : new Date()}
+                              startDate={filters.startDate ? new Date(filters.startDate + 'T00:00:00') : null}
+                              endDate={filters.endDate ? new Date(filters.endDate + 'T00:00:00') : null}
+                              maxDate={filters.endDate ? new Date(filters.endDate + 'T00:00:00') : new Date()}
                               dateFormat="MMM dd, yyyy"
                               placeholderText="Select start date"
                               className="w-full pl-8 pr-10 py-2.5 bg-white border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium text-gray-700 shadow-sm transition-all hover:border-blue-400"
@@ -3292,19 +3295,22 @@ const SurveyReportsPage = () => {
                           <div className="relative">
                             <Calendar className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none z-10" />
                             <DatePicker
-                              selected={filters.endDate ? new Date(filters.endDate) : null}
+                              selected={filters.endDate ? new Date(filters.endDate + 'T00:00:00') : null}
                               onChange={(date) => {
                                 if (date) {
-                                  const dateStr = date.toISOString().split('T')[0];
-                                  handleFilterChange('endDate', dateStr);
+                                  // Format date as YYYY-MM-DD using local timezone (IST)
+                                  const year = date.getFullYear();
+                                  const month = String(date.getMonth() + 1).padStart(2, '0');
+                                  const day = String(date.getDate()).padStart(2, '0');
+                                  handleFilterChange('endDate', `${year}-${month}-${day}`);
                                 } else {
                                   handleFilterChange('endDate', '');
                                 }
                               }}
                               selectsEnd
-                              startDate={filters.startDate ? new Date(filters.startDate) : null}
-                              endDate={filters.endDate ? new Date(filters.endDate) : null}
-                              minDate={filters.startDate ? new Date(filters.startDate) : null}
+                              startDate={filters.startDate ? new Date(filters.startDate + 'T00:00:00') : null}
+                              endDate={filters.endDate ? new Date(filters.endDate + 'T00:00:00') : null}
+                              minDate={filters.startDate ? new Date(filters.startDate + 'T00:00:00') : null}
                               maxDate={new Date()}
                               dateFormat="MMM dd, yyyy"
                               placeholderText="Select end date"
