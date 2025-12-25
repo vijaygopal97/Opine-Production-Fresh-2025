@@ -1541,6 +1541,12 @@ const ViewResponsesV2Page = () => {
           // Get questionCode from multiSelectInfo if available, otherwise calculate it
           const questionCode = multiSelectInfo?.questionCode || getQuestionCodeFromTemplate(surveyQuestion, questionIndex + 1);
           
+          // Check if this is Q13 (three most pressing issues) for filtering Professional Degree
+          const questionText = getMainText(surveyQuestion.text || surveyQuestion.questionText || '').toLowerCase();
+          const isQ13 = surveyIdStr === '68fd1915d41841da463f0d46' && 
+                        questionText.includes('three most pressing issues') && 
+                        questionText.includes('west bengal');
+          
           if (multiSelectInfo && multiSelectInfo.isMultiSelect) {
             // Multi-select question handling
             let selectedValues = [];
@@ -1554,6 +1560,16 @@ const ViewResponsesV2Page = () => {
               } else if (responseValue !== null && responseValue !== undefined && responseValue !== '') {
                 selectedValues = [responseValue];
               }
+            }
+            
+            // For Q13 (three most pressing issues) in survey 68fd1915d41841da463f0d46, filter out "Professional Degree" or "Professional_degree"
+            if (isQ13) {
+              selectedValues = selectedValues.filter(val => {
+                const valStr = typeof val === 'object' ? String(val.text || val.value || val) : String(val);
+                const valLower = valStr.toLowerCase().replace(/[_\s-]/g, ' ').trim();
+                // Filter out "professional degree" in any form (must contain both "professional" AND "degree")
+                return !(valLower.includes('professional') && valLower.includes('degree'));
+              });
             }
             
             let isOthersSelected = false;
@@ -1589,6 +1605,16 @@ const ViewResponsesV2Page = () => {
                   
                   if (isOthers) {
                     return '44';
+                  }
+                  
+                  // For Q13, skip "Professional_degree" or "Professional Degree" values entirely
+                  if (isQ13) {
+                    const valStrForCheck = typeof val === 'object' ? String(val.text || val.value || val) : String(val);
+                    const valLowerForCheck = valStrForCheck.toLowerCase().replace(/[_\s-]/g, ' ').trim();
+                    if (valLowerForCheck.includes('professional') && valLowerForCheck.includes('degree')) {
+                      // Skip this value - don't include it in the response
+                      return null; // Return null to filter it out
+                    }
                   }
                   
                   let option = surveyQuestion.options.find(opt => optionMatches(opt, val));
@@ -1647,8 +1673,15 @@ const ViewResponsesV2Page = () => {
                       return '1';
                     }
                   }
+                  // For Q13, skip "Professional_degree" values
+                  if (isQ13) {
+                    const valLower = mainValue.toLowerCase().replace(/[_\s-]/g, ' ').trim();
+                    if (valLower.includes('professional') && valLower.includes('degree')) {
+                      return null; // Filter out
+                    }
+                  }
                   return mainValue || String(val);
-                }).join(', ');
+                }).filter(code => code !== null).join(', ');
               } else {
                 const filteredValues = selectedValues.filter(val => {
                   const valStr = typeof val === 'object' ? String(val.text || val.value || val) : String(val);
