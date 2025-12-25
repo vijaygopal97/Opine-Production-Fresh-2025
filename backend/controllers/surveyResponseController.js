@@ -4042,7 +4042,10 @@ const getSurveyResponsesV2 = async (req, res) => {
 
     // Stage 5: Get total count BEFORE pagination (but after all filters)
     const countPipeline = [...pipeline, { $count: 'total' }];
-    const countResult = await SurveyResponse.aggregate(countPipeline).allowDiskUse(true).maxTimeMS(300000); // 5 minutes, allow disk use
+    const countResult = await SurveyResponse.aggregate(countPipeline, {
+      allowDiskUse: true,
+      maxTimeMS: 300000 // 5 minutes, allow disk use
+    });
     const totalResponses = countResult.length > 0 ? countResult[0].total : 0;
 
     // Stage 6: Sort and paginate (skip pagination if limit is -1, used for CSV download)
@@ -4154,9 +4157,10 @@ const getSurveyResponsesV2 = async (req, res) => {
 
     // Execute aggregation
     // Use allowDiskUse and extended timeout for large datasets (especially CSV downloads)
-    const responses = await SurveyResponse.aggregate(pipeline)
-      .allowDiskUse(true)
-      .maxTimeMS(300000); // 5 minutes timeout
+    const responses = await SurveyResponse.aggregate(pipeline, {
+      allowDiskUse: true,
+      maxTimeMS: 300000 // 5 minutes timeout
+    });
 
     // Add signed URLs to audio recordings and map interviewerDetails to interviewer for consistency
     const { getAudioSignedUrl } = require('../utils/cloudStorage');
