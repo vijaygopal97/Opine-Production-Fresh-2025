@@ -2447,6 +2447,8 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
         setLoadingGroups(true);
         // Default to West Bengal for now (polling station data is for West Bengal)
         const state = survey?.acAssignmentState || 'West Bengal';
+        // CRITICAL FIX: Try to use AC code if available, otherwise use AC name
+        // The backend will return acNo in the response, which we'll use for subsequent calls
         const response = await pollingStationAPI.getGroupsByAC(state, selectedAC, selectedPollingStation.roundNumber);
         
         if (response.success) {
@@ -2501,9 +2503,12 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
       try {
         setLoadingStations(true);
         const state = selectedPollingStation.state || survey?.acAssignmentState || 'West Bengal';
+        // CRITICAL FIX: Use AC code (acNo) instead of AC name to prevent name conflicts
+        // (e.g., "Kashipur" vs "Kashipur-Belgachhia")
+        const acIdentifier = selectedPollingStation.acNo || selectedPollingStation.acName;
         const response = await pollingStationAPI.getPollingStationsByGroup(
           state,
-          selectedPollingStation.acName,
+          acIdentifier,
           selectedPollingStation.groupName,
           selectedPollingStation.roundNumber
         );
@@ -2538,9 +2543,11 @@ const InterviewInterface = ({ survey, onClose, onComplete }) => {
       
       try {
         const state = selectedPollingStation.state || survey?.acAssignmentState || 'West Bengal';
+        // CRITICAL FIX: Use AC code (acNo) instead of AC name to prevent name conflicts
+        const acIdentifier = selectedPollingStation.acNo || selectedPollingStation.acName;
         const response = await pollingStationAPI.getPollingStationGPS(
           state,
-          selectedPollingStation.acName,
+          acIdentifier,
           selectedPollingStation.groupName,
           selectedPollingStation.stationName
         );
