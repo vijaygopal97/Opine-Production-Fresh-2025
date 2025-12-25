@@ -1210,6 +1210,14 @@ const ViewResponsesV2Page = () => {
           });
           
           if (hasOthersOption) {
+            // Add _oth_choice column before _oth column for multi-select questions
+            questionTitleRow.push(`Q${questionNumber}: ${mainQuestionText} - Others Choice`);
+            const othersChoiceCode = questionCode.startsWith('resp_') || questionCode === 'thanks_future'
+              ? `${questionCode}_oth_choice`
+              : `${questionCode}_oth_choice`;
+            questionCodeRow.push(othersChoiceCode);
+            
+            // Add _oth column (Others text)
             questionTitleRow.push(`Q${questionNumber}: ${mainQuestionText} - Others (Specify)`);
             const othersCode = questionCode.startsWith('resp_') || questionCode === 'thanks_future'
               ? `${questionCode}_oth`
@@ -1754,6 +1762,24 @@ const ViewResponsesV2Page = () => {
             });
             
             if (hasOthersOption) {
+              // Add _oth_choice column: 1 if mainResponse contains "44" (Others code), 0 otherwise
+              const mainResponseStr = String(mainResponse || '').trim();
+              // Check if mainResponse contains "44" as a separate code (not part of "144" or "440")
+              // Handle formats: "44", "1, 44", "44, 2", "1, 44, 3", etc.
+              let containsOthersCode = false;
+              if (mainResponseStr === '44') {
+                containsOthersCode = true;
+              } else if (mainResponseStr.includes(',')) {
+                // Comma-separated values: check if "44" appears as a separate code
+                const codes = mainResponseStr.split(',').map(c => c.trim());
+                containsOthersCode = codes.includes('44');
+              } else {
+                // Single value: use regex to match exact "44" (not "144" or "440")
+                containsOthersCode = /\b44\b/.test(mainResponseStr);
+              }
+              const othChoiceValue = containsOthersCode ? '1' : '0';
+              answers.push(othChoiceValue);
+              
               // Add _oth column (Others text)
               answers.push(othersText || '');
             }
