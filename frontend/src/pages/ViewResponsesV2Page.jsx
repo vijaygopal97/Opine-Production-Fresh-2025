@@ -1942,9 +1942,6 @@ const ViewResponsesV2Page = () => {
                 <h1 className="text-2xl font-bold text-gray-900">
                   {survey?.surveyName || 'Survey Responses'}
                 </h1>
-                <p className="text-sm text-gray-600 mt-1">
-                  Optimized for big data - No limits
-                </p>
               </div>
             </div>
             <div className="flex items-center space-x-2">
