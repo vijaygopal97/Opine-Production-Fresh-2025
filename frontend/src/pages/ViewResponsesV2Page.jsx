@@ -29,6 +29,7 @@ import { useAuth } from '../contexts/AuthContext';
 import ResponseDetailsModal from '../components/dashboard/ResponseDetailsModal';
 import { getMainText } from '../utils/translations';
 import assemblyConstituenciesData from '../data/assemblyConstituencies.json';
+import acRegionDistrictMapping from '../data/ac_region_district_mapping.json';
 
 const ViewResponsesV2Page = () => {
   const { surveyId } = useParams();
@@ -1425,13 +1426,20 @@ const ViewResponsesV2Page = () => {
         let regionCode = '';
         let regionName = '';
         
+        // Use JSON mapping for region_code, region_name, and district_code based on AC code
         if (acCode && acCode !== '') {
+          // Look up in the JSON mapping
+          const acMapping = acRegionDistrictMapping[acCode];
+          if (acMapping) {
+            districtCode = cleanValue(acMapping.district_code) || '';
+            regionCode = cleanValue(acMapping.region_code) || '';
+            regionName = cleanValue(acMapping.region_name) || '';
+          }
+          
+          // Still use pollingDataMap for pcCode (if available)
           const pollingData = pollingDataMap.get(acCode);
-          if (pollingData) {
+          if (pollingData && pollingData.pcCode) {
             pcCode = cleanValue(pollingData.pcCode) || '';
-            districtCode = cleanValue(pollingData.districtCode) || '';
-            regionCode = cleanValue(pollingData.regionCode) || '';
-            regionName = cleanValue(pollingData.regionName) || '';
           }
         }
         

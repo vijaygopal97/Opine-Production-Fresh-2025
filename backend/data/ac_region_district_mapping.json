@@ -1,0 +1,1472 @@
+{
+  "1": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "4"
+  },
+  "2": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "4"
+  },
+  "3": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "4"
+  },
+  "4": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "4"
+  },
+  "5": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "4"
+  },
+  "6": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "4"
+  },
+  "7": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "4"
+  },
+  "8": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "4"
+  },
+  "9": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "4"
+  },
+  "10": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "1"
+  },
+  "11": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "1"
+  },
+  "12": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "1"
+  },
+  "13": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "1"
+  },
+  "14": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "1"
+  },
+  "15": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "9"
+  },
+  "16": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "9"
+  },
+  "17": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "9"
+  },
+  "18": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "9"
+  },
+  "19": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "9"
+  },
+  "20": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "9"
+  },
+  "21": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "9"
+  },
+  "22": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "11"
+  },
+  "23": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "6"
+  },
+  "24": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "6"
+  },
+  "25": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "6"
+  },
+  "26": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "6"
+  },
+  "27": {
+    "region_code": "2",
+    "region_name": "Jalpaiguri",
+    "district_code": "6"
+  },
+  "28": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "23"
+  },
+  "29": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "23"
+  },
+  "30": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "23"
+  },
+  "31": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "23"
+  },
+  "32": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "23"
+  },
+  "33": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "23"
+  },
+  "34": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "23"
+  },
+  "35": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "23"
+  },
+  "36": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "23"
+  },
+  "37": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "5"
+  },
+  "38": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "5"
+  },
+  "39": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "5"
+  },
+  "40": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "5"
+  },
+  "41": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "5"
+  },
+  "42": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "5"
+  },
+  "43": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "13"
+  },
+  "44": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "13"
+  },
+  "45": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "13"
+  },
+  "46": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "13"
+  },
+  "47": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "13"
+  },
+  "48": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "13"
+  },
+  "49": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "13"
+  },
+  "50": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "13"
+  },
+  "51": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "13"
+  },
+  "52": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "13"
+  },
+  "53": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "13"
+  },
+  "54": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "13"
+  },
+  "55": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "14"
+  },
+  "56": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "14"
+  },
+  "57": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "14"
+  },
+  "58": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "14"
+  },
+  "59": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "14"
+  },
+  "60": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "14"
+  },
+  "61": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "14"
+  },
+  "62": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "14"
+  },
+  "63": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "14"
+  },
+  "64": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "14"
+  },
+  "65": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "14"
+  },
+  "66": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "14"
+  },
+  "67": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "14"
+  },
+  "68": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "14"
+  },
+  "69": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "14"
+  },
+  "70": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "14"
+  },
+  "71": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "14"
+  },
+  "72": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "14"
+  },
+  "73": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "14"
+  },
+  "74": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "14"
+  },
+  "75": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "14"
+  },
+  "76": {
+    "region_code": "3",
+    "region_name": "Malda",
+    "district_code": "14"
+  },
+  "77": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "15"
+  },
+  "78": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "15"
+  },
+  "79": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "15"
+  },
+  "80": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "15"
+  },
+  "81": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "15"
+  },
+  "82": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "15"
+  },
+  "83": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "15"
+  },
+  "84": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "15"
+  },
+  "85": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "15"
+  },
+  "86": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "15"
+  },
+  "87": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "15"
+  },
+  "88": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "15"
+  },
+  "89": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "15"
+  },
+  "90": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "15"
+  },
+  "91": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "15"
+  },
+  "92": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "15"
+  },
+  "93": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "15"
+  },
+  "94": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "95": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "96": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "97": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "98": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "99": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "100": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "101": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "102": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "103": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "104": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "105": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "106": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "107": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "108": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "109": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "110": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "111": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "112": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "113": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "114": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "115": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "116": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "117": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "118": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "119": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "120": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "121": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "122": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "123": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "124": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "125": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "126": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "16"
+  },
+  "127": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "128": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "129": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "130": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "131": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "132": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "133": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "134": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "135": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "136": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "137": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "138": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "139": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "140": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "141": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "142": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "143": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "144": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "145": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "146": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "147": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "148": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "149": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "150": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "151": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "152": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "153": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "154": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "155": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "156": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "157": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "22"
+  },
+  "158": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "12"
+  },
+  "159": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "12"
+  },
+  "160": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "12"
+  },
+  "161": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "12"
+  },
+  "162": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "12"
+  },
+  "163": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "12"
+  },
+  "164": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "12"
+  },
+  "165": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "12"
+  },
+  "166": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "12"
+  },
+  "167": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "12"
+  },
+  "168": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "12"
+  },
+  "169": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "8"
+  },
+  "170": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "8"
+  },
+  "171": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "8"
+  },
+  "172": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "8"
+  },
+  "173": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "8"
+  },
+  "174": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "8"
+  },
+  "175": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "8"
+  },
+  "176": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "8"
+  },
+  "177": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "8"
+  },
+  "178": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "8"
+  },
+  "179": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "8"
+  },
+  "180": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "8"
+  },
+  "181": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "8"
+  },
+  "182": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "8"
+  },
+  "183": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "8"
+  },
+  "184": {
+    "region_code": "5",
+    "region_name": "Presidency",
+    "district_code": "8"
+  },
+  "185": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "7"
+  },
+  "186": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "7"
+  },
+  "187": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "7"
+  },
+  "188": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "7"
+  },
+  "189": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "7"
+  },
+  "190": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "7"
+  },
+  "191": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "7"
+  },
+  "192": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "7"
+  },
+  "193": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "7"
+  },
+  "194": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "7"
+  },
+  "195": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "7"
+  },
+  "196": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "7"
+  },
+  "197": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "7"
+  },
+  "198": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "7"
+  },
+  "199": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "7"
+  },
+  "200": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "7"
+  },
+  "201": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "7"
+  },
+  "202": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "7"
+  },
+  "203": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "20"
+  },
+  "204": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "20"
+  },
+  "205": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "20"
+  },
+  "206": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "20"
+  },
+  "207": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "20"
+  },
+  "208": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "20"
+  },
+  "209": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "20"
+  },
+  "210": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "20"
+  },
+  "211": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "20"
+  },
+  "212": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "20"
+  },
+  "213": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "20"
+  },
+  "214": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "20"
+  },
+  "215": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "20"
+  },
+  "216": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "20"
+  },
+  "217": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "20"
+  },
+  "218": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "20"
+  },
+  "219": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "18"
+  },
+  "220": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "10"
+  },
+  "221": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "10"
+  },
+  "222": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "10"
+  },
+  "223": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "18"
+  },
+  "224": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "18"
+  },
+  "225": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "18"
+  },
+  "226": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "18"
+  },
+  "227": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "18"
+  },
+  "228": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "18"
+  },
+  "229": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "18"
+  },
+  "230": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "18"
+  },
+  "231": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "18"
+  },
+  "232": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "18"
+  },
+  "233": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "18"
+  },
+  "234": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "18"
+  },
+  "235": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "18"
+  },
+  "236": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "18"
+  },
+  "237": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "10"
+  },
+  "238": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "21"
+  },
+  "239": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "21"
+  },
+  "240": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "21"
+  },
+  "241": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "21"
+  },
+  "242": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "21"
+  },
+  "243": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "21"
+  },
+  "244": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "21"
+  },
+  "245": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "21"
+  },
+  "246": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "21"
+  },
+  "247": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "2"
+  },
+  "248": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "2"
+  },
+  "249": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "2"
+  },
+  "250": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "2"
+  },
+  "251": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "2"
+  },
+  "252": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "2"
+  },
+  "253": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "2"
+  },
+  "254": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "2"
+  },
+  "255": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "2"
+  },
+  "256": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "2"
+  },
+  "257": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "2"
+  },
+  "258": {
+    "region_code": "4",
+    "region_name": "Medinipur",
+    "district_code": "2"
+  },
+  "259": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "19"
+  },
+  "260": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "19"
+  },
+  "261": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "19"
+  },
+  "262": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "19"
+  },
+  "263": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "19"
+  },
+  "264": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "19"
+  },
+  "265": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "19"
+  },
+  "266": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "19"
+  },
+  "267": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "19"
+  },
+  "268": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "19"
+  },
+  "269": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "19"
+  },
+  "270": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "19"
+  },
+  "271": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "19"
+  },
+  "272": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "19"
+  },
+  "273": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "19"
+  },
+  "274": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "19"
+  },
+  "275": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "17"
+  },
+  "276": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "17"
+  },
+  "277": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "17"
+  },
+  "278": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "17"
+  },
+  "279": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "17"
+  },
+  "280": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "17"
+  },
+  "281": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "17"
+  },
+  "282": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "17"
+  },
+  "283": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "17"
+  },
+  "284": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "3"
+  },
+  "285": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "3"
+  },
+  "286": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "3"
+  },
+  "287": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "3"
+  },
+  "288": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "3"
+  },
+  "289": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "3"
+  },
+  "290": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "3"
+  },
+  "291": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "3"
+  },
+  "292": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "3"
+  },
+  "293": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "3"
+  },
+  "294": {
+    "region_code": "1",
+    "region_name": "Burdwan",
+    "district_code": "3"
+  }
+}
