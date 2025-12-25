@@ -1503,7 +1503,8 @@ const ViewResponsesV2Page = () => {
           cleanValue(regionName),
           cleanValue(stationCode),
           cleanValue(stationName),
-          response.location ? `(${response.location.latitude?.toFixed(4)}, ${response.location.longitude?.toFixed(4)})` : '',
+          // For CATI responses, leave GPS coordinates empty (no GPS available)
+          response.interviewMode?.toUpperCase() === 'CATI' ? '' : (response.location ? `(${response.location.latitude?.toFixed(4)}, ${response.location.longitude?.toFixed(4)})` : ''),
           response.call_id || ''
         ];
 
