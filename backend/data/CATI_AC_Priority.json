@@ -11,11 +11,6 @@
   },
   {
     "Type": "CATI",
-    "AC_Name": "Barabani",
-    "Priority": 1
-  },
-  {
-    "Type": "CATI",
     "AC_Name": "Bidhannagar",
     "Priority": "0"
   },
@@ -32,12 +27,12 @@
   {
     "Type": "CATI",
     "AC_Name": "Barabani",
-    "Priority": 1
+    "Priority": "0"
   },
   {
     "Type": "CATI",
     "AC_Name": "Maheshtala",
-    "Priority": 1
+    "Priority": "0"
   },
   {
     "Type": "CATI",
@@ -57,12 +52,48 @@
   {
     "Type": "CATI",
     "AC_Name": "Maniktala",
-    "Priority": 1
+    "Priority": "0"
   },
   {
     "Type": "CATI",
     "AC_Name": "Uttarpara",
+    "Priority": "0"
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Satgachhia",
+    "Priority": 1
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Chowranghee",
+    "Priority": 1
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Ranaghat Uttar Paschim",
+    "Priority": 1
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Tollyganj",
+    "Priority": 1
+  }, 
+  {
+    "Type": "CATI",
+    "AC_Name": "Howrah Uttar",
+    "Priority": 1
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Behala Paschim",
+    "Priority": 1
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Udaynarayanpur",
     "Priority": 1
   }
+
 ]
 

@@ -4042,7 +4042,7 @@ const getSurveyResponsesV2 = async (req, res) => {
 
     // Stage 5: Get total count BEFORE pagination (but after all filters)
     const countPipeline = [...pipeline, { $count: 'total' }];
-    const countResult = await SurveyResponse.aggregate(countPipeline);
+    const countResult = await SurveyResponse.aggregate(countPipeline).allowDiskUse(true).maxTimeMS(300000); // 5 minutes, allow disk use
     const totalResponses = countResult.length > 0 ? countResult[0].total : 0;
 
     // Stage 6: Sort and paginate (skip pagination if limit is -1, used for CSV download)
@@ -4153,7 +4153,10 @@ const getSurveyResponsesV2 = async (req, res) => {
     }
 
     // Execute aggregation
-    const responses = await SurveyResponse.aggregate(pipeline);
+    // Use allowDiskUse and extended timeout for large datasets (especially CSV downloads)
+    const responses = await SurveyResponse.aggregate(pipeline)
+      .allowDiskUse(true)
+      .maxTimeMS(300000); // 5 minutes timeout
 
     // Add signed URLs to audio recordings and map interviewerDetails to interviewer for consistency
     const { getAudioSignedUrl } = require('../utils/cloudStorage');
@@ -4350,6 +4353,10 @@ const getSurveyResponsesV2ForCSV = async (req, res) => {
         error: 'Access denied. Only company admins can download CSV.'
       });
     }
+
+    // Set extended timeout for CSV downloads (2 hours)
+    req.setTimeout(7200000); // 2 hours
+    res.setTimeout(7200000); // 2 hours
 
     // Temporarily modify query to get all responses (limit=-1 means no pagination)
     const originalLimit = req.query.limit;

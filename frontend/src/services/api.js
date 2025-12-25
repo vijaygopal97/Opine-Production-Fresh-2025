@@ -1122,16 +1122,34 @@ export const surveyResponseAPI = {
     },
     getSurveyResponsesV2: async (surveyId, params = {}) => {
       try {
-        const response = await api.get(`/api/survey-responses/survey/${surveyId}/responses-v2`, { params });
+        // Use extended timeout for large chunks (especially during CSV download)
+        const isLargeChunk = params.limit && parseInt(params.limit) >= 500;
+        const timeout = isLargeChunk ? 600000 : 60000; // 10 min for large chunks (500+), 1 min for normal
+        const response = await api.get(`/api/survey-responses/survey/${surveyId}/responses-v2`, { 
+          params,
+          timeout,
+          // Add cache control header (Connection header is controlled by browser)
+          headers: {
+            'Cache-Control': 'no-cache'
+          }
+        });
         return response.data;
       } catch (error) {
         console.error('Error fetching survey responses V2:', error);
+        // Re-throw with more context for network errors
+        if (error.code === 'ERR_NETWORK' || error.code === 'ERR_NETWORK_CHANGED') {
+          error.message = `Network error: ${error.message}`;
+        }
         throw error;
       }
     },
     getSurveyResponsesV2ForCSV: async (surveyId, params = {}) => {
       try {
-        const response = await api.get(`/api/survey-responses/survey/${surveyId}/responses-v2-csv`, { params });
+        // Use extended timeout for CSV downloads (2 hours = 7200000ms)
+        const response = await api.get(`/api/survey-responses/survey/${surveyId}/responses-v2-csv`, { 
+          params,
+          timeout: 7200000 // 2 hours timeout for large CSV downloads
+        });
         return response.data;
       } catch (error) {
         console.error('Error fetching survey responses V2 for CSV:', error);

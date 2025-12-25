@@ -791,41 +791,185 @@ const ViewResponsesV2Page = () => {
         return;
       }
 
-      // Fetch all filtered responses for CSV (no pagination)
-      setCsvProgress({ current: 0, total: 0, stage: 'Fetching responses...' });
-      showSuccess('Fetching all responses for CSV download...');
-      const csvParams = {
-        ...filters,
-        limit: '-1', // Get all responses
-        page: '1'
-      };
-
-      const csvResponse = await surveyResponseAPI.getSurveyResponsesV2ForCSV(surveyId, csvParams);
+      // Fetch total count first to know how many responses we need to process
+      setCsvProgress({ current: 0, total: 0, stage: 'Counting responses...' });
       
-      if (!csvResponse.success || !csvResponse.data?.responses) {
-        showError('Failed to fetch responses for CSV download');
+      // Build params object with filters - ensure all filter fields are included
+      // Format interviewerIds as comma-separated string (backend expects string)
+      const countParams = {
+        limit: '1',
+        page: '1',
+        status: filters.status || 'approved_rejected_pending',
+        dateRange: filters.dateRange || 'all',
+        startDate: filters.startDate || '',
+        endDate: filters.endDate || '',
+        interviewMode: filters.interviewMode || '',
+        ac: filters.ac || '',
+        interviewerIds: filters.interviewerIds && filters.interviewerIds.length > 0 ? filters.interviewerIds.join(',') : '',
+        interviewerMode: filters.interviewerMode || 'include',
+        search: filters.search || ''
+      };
+      
+      console.log('CSV Download - Count params:', countParams);
+      
+      let countResponse;
+      try {
+        countResponse = await surveyResponseAPI.getSurveyResponsesV2(surveyId, countParams);
+        console.log('CSV Download - Count response:', {
+          success: countResponse.success,
+          hasData: !!countResponse.data,
+          hasPagination: !!countResponse.data?.pagination,
+          paginationTotal: countResponse.data?.pagination?.totalResponses
+        });
+      } catch (error) {
+        console.error('CSV Download - Error fetching count:', error);
+        console.error('CSV Download - Error details:', {
+          message: error.message,
+          response: error.response?.data,
+          status: error.response?.status
+        });
+        showError(`Failed to count responses: ${error.response?.data?.message || error.message || 'Unknown error'}`);
+        setDownloadingCSV(false);
+        setCsvProgress({ current: 0, total: 0, stage: '' });
+        return;
+      }
+      
+      if (!countResponse || !countResponse.success) {
+        console.error('CSV Download - Count response failed:', countResponse);
+        showError(`Failed to count responses: ${countResponse?.message || 'Unknown error'}`);
+        setDownloadingCSV(false);
+        setCsvProgress({ current: 0, total: 0, stage: '' });
+        return;
+      }
+      
+      // Response structure: { success: true, data: { responses: [], pagination: { totalResponses: ... } } }
+      const totalResponses = countResponse.data?.pagination?.totalResponses || countResponse.data?.totalResponses || 0;
+      console.log('CSV Download - Total responses:', totalResponses);
+      
+      if (totalResponses === 0) {
+        console.warn('CSV Download - No responses found with filters:', countParams);
+        showError('No responses found matching the filters. Please adjust your filters and try again.');
         setDownloadingCSV(false);
         setCsvProgress({ current: 0, total: 0, stage: '' });
         return;
       }
 
-      const filteredResponses = csvResponse.data.responses;
-      const totalResponses = filteredResponses.length;
+      // Fetch responses in chunks to avoid timeout and memory issues
+      const FETCH_CHUNK_SIZE = 500; // Reduced from 1000 to 500 for better reliability
+      const MAX_RETRIES = 3; // Maximum retry attempts per chunk
+      const RETRY_DELAY_BASE = 1000; // Base delay in ms (1 second)
+      const CHUNK_DELAY = 300; // Delay between chunks in ms (increased from 100)
       
-      setCsvProgress({ current: 0, total: totalResponses, stage: `Processing ${totalResponses} responses...` });
+      const allResponses = [];
+      let fetchedCount = 0;
+      
+      setCsvProgress({ current: 0, total: totalResponses, stage: `Fetching responses (0/${totalResponses})...` });
+      
+      // Helper function to fetch a chunk with retry logic
+      const fetchChunkWithRetry = async (chunkParams, retryCount = 0) => {
+        try {
+          const chunkResponse = await surveyResponseAPI.getSurveyResponsesV2(surveyId, chunkParams);
+          
+          if (!chunkResponse || !chunkResponse.success) {
+            throw new Error(`API error: ${chunkResponse?.message || 'Unknown error'}`);
+          }
+          
+          return chunkResponse.data?.responses || [];
+        } catch (error) {
+          // Check if it's a network error that we should retry
+          const isNetworkError = error.code === 'ERR_NETWORK' || 
+                                  error.code === 'ERR_NETWORK_CHANGED' ||
+                                  error.message?.includes('Network Error') ||
+                                  error.message?.includes('timeout');
+          
+          if (isNetworkError && retryCount < MAX_RETRIES) {
+            const delay = RETRY_DELAY_BASE * Math.pow(2, retryCount); // Exponential backoff
+            console.warn(`CSV Download - Network error on chunk ${chunkParams.page}, retrying in ${delay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return fetchChunkWithRetry(chunkParams, retryCount + 1);
+          }
+          
+          // If not retryable or max retries reached, throw
+          throw error;
+        }
+      };
+      
+      while (fetchedCount < totalResponses) {
+        const currentPage = Math.floor(fetchedCount / FETCH_CHUNK_SIZE) + 1;
+        
+        // Build chunk params with all filters
+        // Format interviewerIds as comma-separated string (backend expects string)
+        const chunkParams = {
+          limit: String(FETCH_CHUNK_SIZE),
+          page: String(currentPage),
+          status: filters.status || 'approved_rejected_pending',
+          dateRange: filters.dateRange || 'all',
+          startDate: filters.startDate || '',
+          endDate: filters.endDate || '',
+          interviewMode: filters.interviewMode || '',
+          ac: filters.ac || '',
+          interviewerIds: filters.interviewerIds && filters.interviewerIds.length > 0 ? filters.interviewerIds.join(',') : '',
+          interviewerMode: filters.interviewerMode || 'include',
+          search: filters.search || ''
+        };
+        
+        try {
+          const chunkResponses = await fetchChunkWithRetry(chunkParams);
+          
+          if (chunkResponses.length === 0 && fetchedCount === 0) {
+            // If first chunk is empty, there might be an issue
+            console.warn('CSV Download - First chunk is empty, but totalResponses was', totalResponses);
+          }
+          
+          allResponses.push(...chunkResponses);
+          fetchedCount += chunkResponses.length;
+          
+          setCsvProgress({ 
+            current: fetchedCount, 
+            total: totalResponses, 
+            stage: `Fetching responses (${fetchedCount}/${totalResponses})...` 
+          });
+          
+          // If we got fewer responses than requested, we've reached the end
+          if (chunkResponses.length < FETCH_CHUNK_SIZE) {
+            console.log(`CSV Download - Reached end of data at ${fetchedCount} responses`);
+            break;
+          }
+          
+          // Delay between chunks to prevent overwhelming the server
+          await new Promise(resolve => setTimeout(resolve, CHUNK_DELAY));
+        } catch (error) {
+          console.error(`CSV Download - Error fetching chunk ${currentPage} after retries:`, error);
+          showError(`Failed to fetch responses at chunk ${currentPage}: ${error.message || 'Network error'}. Please try again or reduce the date range.`);
+          setDownloadingCSV(false);
+          setCsvProgress({ current: 0, total: 0, stage: '' });
+          return;
+        }
+      }
+
+      const filteredResponses = allResponses;
+      console.log('CSV Download - Fetched responses:', filteredResponses.length, 'out of', totalResponses);
+      
+      // Reverse the order so oldest responses are first (backend returns newest first)
+      const sortedResponses = [...filteredResponses].reverse();
+      // totalResponses is already declared above (from count query), reuse it
+      
+      if (sortedResponses.length === 0) {
+        console.error('CSV Download - No responses fetched after chunked download');
+        showError('No responses found matching the filters. Please check your filters and try again.');
+        setDownloadingCSV(false);
+        setCsvProgress({ current: 0, total: 0, stage: '' });
+        return;
+      }
+      
+      setCsvProgress({ current: 0, total: totalResponses, stage: `Processing ${sortedResponses.length} responses...` });
       
       // Process in chunks to avoid memory issues
       const CHUNK_SIZE = 500; // Process 500 responses at a time
-      
-      if (filteredResponses.length === 0) {
-        showError('No responses found matching the filters');
-        setDownloadingCSV(false);
-        return;
-      }
 
       // Determine if we have CAPI, CATI, or mixed responses
-      const hasCAPI = filteredResponses.some(r => r.interviewMode?.toUpperCase() === 'CAPI');
-      const hasCATI = filteredResponses.some(r => r.interviewMode?.toUpperCase() === 'CATI');
+      const hasCAPI = sortedResponses.some(r => r.interviewMode?.toUpperCase() === 'CAPI');
+      const hasCATI = sortedResponses.some(r => r.interviewMode?.toUpperCase() === 'CATI');
       const isMixed = hasCAPI && hasCATI;
       const isCAPIOnly = hasCAPI && !hasCATI;
       const isCATIOnly = hasCATI && !hasCAPI;
@@ -1070,13 +1214,6 @@ const ViewResponsesV2Page = () => {
           }
         } else {
           if (hasOthersOption) {
-            // Add _oth_choice column before _oth column (0 or 1)
-            questionTitleRow.push(`Q${questionNumber}: ${mainQuestionText} - Others Choice`);
-            const othersChoiceCode = questionCode.startsWith('resp_') || questionCode === 'thanks_future'
-              ? `${questionCode}_oth_choice`
-              : `${questionCode}_oth_choice`;
-            questionCodeRow.push(othersChoiceCode);
-            
             // Add _oth column for Others text
             questionTitleRow.push(`Q${questionNumber}: ${mainQuestionText} - Others (Specify)`);
             const othersCode = questionCode.startsWith('resp_') || questionCode === 'thanks_future'
@@ -1181,7 +1318,7 @@ const ViewResponsesV2Page = () => {
 
       // Pre-fetch all polling station data for unique AC codes
       const uniqueACCodes = new Set();
-      filteredResponses.forEach(response => {
+      sortedResponses.forEach(response => {
         const acFromResponse = getACAndPollingStationFromResponses(response.responses).ac;
         const displayAC = acFromResponse || response.selectedPollingStation?.acName || response.selectedAC || 'N/A';
         if (displayAC !== 'N/A') {
@@ -1204,7 +1341,7 @@ const ViewResponsesV2Page = () => {
 
       // Pre-fetch supervisor names by memberId (extract unique supervisor IDs from responses)
       const uniqueSupervisorIDs = new Set();
-      filteredResponses.forEach(response => {
+      sortedResponses.forEach(response => {
         if (response.responses && Array.isArray(response.responses)) {
           const supervisorIdResponse = response.responses.find(r => r.questionId === 'supervisor-id');
           if (supervisorIdResponse && supervisorIdResponse.response !== null && supervisorIdResponse.response !== undefined && supervisorIdResponse.response !== '') {
@@ -1252,7 +1389,7 @@ const ViewResponsesV2Page = () => {
       }
 
       // Create CSV data rows
-      const csvData = filteredResponses.map((response, rowIndex) => {
+      const csvData = sortedResponses.map((response, rowIndex) => {
         const { ac: acFromResponse, pollingStation: pollingStationFromResponse } = getACAndPollingStationFromResponses(response.responses);
         
         const cleanValue = (value) => {
@@ -1527,12 +1664,7 @@ const ViewResponsesV2Page = () => {
             });
             
             if (hasOthersOption) {
-              // Add _oth_choice column (0 or 1) before _oth column
-              // Check if the main response contains "44" (Others code) or "Others"
-              const isOthersSelectedInMain = (downloadMode === 'codes' && mainResponse.includes('44')) || 
-                                             (downloadMode !== 'codes' && (mainResponse.includes('Others') || isOthersSelected));
-              const othersChoiceValue = isOthersSelectedInMain ? '1' : '0';
-              answers.push(othersChoiceValue);
+              // Add _oth column (Others text)
               answers.push(othersText || '');
             }
           } else {
@@ -1704,16 +1836,6 @@ const ViewResponsesV2Page = () => {
             answers.push(mainQuestionResponse);
             
             if (hasOthersOption) {
-              // Add _oth_choice column (0 or 1) - goes into q5_oth_choice, q6_oth_choice, etc.
-              // Check if the main response code is "44" (Others code in codes mode) or "Others" (in text mode)
-              // Use mainQuestionResponse (the string version) for comparison
-              const isOthersSelected = (downloadMode === 'codes' && mainQuestionResponse === '44') || 
-                                       (downloadMode !== 'codes' && mainQuestionResponse === 'Others');
-              // CRITICAL: othersChoiceValue must ALWAYS be "0" or "1", never the response code
-              // This should NEVER contain the actual response code - only "0" or "1"
-              const othersChoiceValue = isOthersSelected ? '1' : '0';
-              answers.push(othersChoiceValue);
-              
               // Add _oth column (Others text) - goes into q5_oth, q6_oth, etc.
               // CRITICAL: othersText should ONLY contain the text after "Others: ", never the response code
               // If othersText somehow contains a response code (just digits), it's a bug - clear it
@@ -1818,7 +1940,20 @@ const ViewResponsesV2Page = () => {
       // Generate CSV content in chunks to avoid memory issues
       const csvChunks = [];
       
-      // Add header row
+      // Add header rows (title row and code row)
+      // Note: For survey 68fd1915d41841da463f0d46, only code row is used (no title row)
+      // surveyIdStr is already declared above (line 858), reuse it here
+      if (surveyIdStr !== '68fd1915d41841da463f0d46') {
+        // Add title row for other surveys
+        csvChunks.push(
+          allTitleRow.map(field => {
+            const fieldStr = String(field || '');
+            return `"${fieldStr.replace(/"/g, '""')}"`;
+          }).join(',')
+        );
+      }
+      
+      // Add code row (always present)
       csvChunks.push(
         allCodeRow.map(field => {
           const fieldStr = String(field || '');
@@ -1873,7 +2008,16 @@ const ViewResponsesV2Page = () => {
       
     } catch (error) {
       console.error('Error downloading CSV:', error);
-      showError('Failed to download CSV: ' + (error.message || 'Unknown error'));
+      console.error('Error stack:', error.stack);
+      console.error('Error details:', {
+        message: error.message,
+        name: error.name,
+        surveyId: surveyId,
+        totalResponses: sortedResponses?.length || 0,
+        csvDataLength: csvData?.length || 0,
+        allCodeRowLength: allCodeRow?.length || 0
+      });
+      showError('Failed to download CSV: ' + (error.message || 'Unknown error') + '. Check browser console for details.');
       setDownloadingCSV(false);
       setCsvProgress({ current: 0, total: 0, stage: '' });
     }
