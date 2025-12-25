@@ -24,6 +24,8 @@ const {
   debugSurveyResponses,
   getSurveyResponseById,
   getSurveyResponses,
+  getSurveyResponsesV2,
+  getSurveyResponsesV2ForCSV,
   approveSurveyResponse,
   rejectSurveyResponse,
   setPendingApproval,
@@ -137,6 +139,12 @@ router.get('/debug-responses', debugSurveyResponses);
 
 // Get survey responses for View Responses modal
 router.get('/survey/:surveyId/responses', getSurveyResponses);
+
+// Get survey responses V2 (Optimized for big data - No limits)
+router.get('/survey/:surveyId/responses-v2', getSurveyResponsesV2);
+
+// Get all survey responses V2 for CSV download (no pagination, company admin only)
+router.get('/survey/:surveyId/responses-v2-csv', getSurveyResponsesV2ForCSV);
 
 // Get AC Performance Stats
 router.get('/survey/:surveyId/ac-performance', getACPerformanceStats);

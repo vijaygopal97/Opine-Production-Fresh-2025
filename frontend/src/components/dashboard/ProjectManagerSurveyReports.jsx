@@ -101,6 +101,10 @@ const ProjectManagerSurveyReports = () => {
     navigate(`/project-manager/surveys/${survey._id || survey.id}/responses`);
   };
 
+  const handleViewResponsesV2 = (survey) => {
+    navigate(`/project-manager/surveys/${survey._id || survey.id}/responses-v2`);
+  };
+
   const handleViewCallerPerformance = (survey) => {
     navigate(`/project-manager/surveys/${survey._id || survey.id}/caller-performance`);
   };
@@ -253,12 +257,21 @@ const ProjectManagerSurveyReports = () => {
                             <Phone className="w-4 h-4 mr-1.5" />
                             Caller Performance
                           </button>
-                          <button
+                          {/* Responses button hidden to encourage use of Responses V2 */}
+                          {/* <button
                             onClick={() => handleViewResponses(survey)}
                             className="inline-flex items-center px-3 py-1.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
                           >
                             <Eye className="w-4 h-4 mr-1.5" />
                             Responses
+                          </button> */}
+                          <button
+                            onClick={() => handleViewResponsesV2(survey)}
+                            className="inline-flex items-center px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                            title="View Optimized Responses V2"
+                          >
+                            <TrendingUp className="w-4 h-4 mr-1.5" />
+                            Responses-V2
                           </button>
                           <button
                             onClick={() => handleViewQCPerformance(survey)}

@@ -7,6 +7,48 @@ const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const { addResponseToBatch } = require('../utils/qcBatchHelper');
 
+// Helper functions for IST (Indian Standard Time) timezone handling
+// IST is UTC+5:30
+
+// Get current IST date string (YYYY-MM-DD)
+const getISTDateString = () => {
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const utcTime = now.getTime();
+  const istTime = new Date(utcTime + istOffset);
+  
+  const year = istTime.getUTCFullYear();
+  const month = String(istTime.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(istTime.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// Get IST date string from a Date object
+const getISTDateStringFromDate = (date) => {
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const utcTime = date.getTime();
+  const istTime = new Date(utcTime + istOffset);
+  
+  const year = istTime.getUTCFullYear();
+  const month = String(istTime.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(istTime.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// Convert IST date (YYYY-MM-DD) start of day (00:00:00 IST) to UTC Date
+const getISTDateStartUTC = (istDateStr) => {
+  const [year, month, day] = istDateStr.split('-').map(Number);
+  const startDateUTC = new Date(Date.UTC(year, month - 1, day, 18, 30, 0, 0));
+  startDateUTC.setUTCDate(startDateUTC.getUTCDate() - 1);
+  return startDateUTC;
+};
+
+// Convert IST date (YYYY-MM-DD) end of day (23:59:59.999 IST) to UTC Date
+const getISTDateEndUTC = (istDateStr) => {
+  const [year, month, day] = istDateStr.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day, 18, 29, 59, 999));
+};
+
 // Start a new interview session
 const startInterview = async (req, res) => {
   try {
@@ -3263,11 +3305,12 @@ const getSurveyResponseById = async (req, res) => {
     const { responseId } = req.params;
     const interviewerId = req.user.id;
 
-    // Find the survey response
+    // Find the survey response with all necessary fields
     const surveyResponse = await SurveyResponse.findById(responseId)
-      .populate('survey', 'surveyName description status sections questions targetAudience settings')
+      .populate('survey', 'surveyName description status sections questions targetAudience settings company')
       .populate('interviewer', 'firstName lastName email phone')
-      .select('survey interviewer status responses location metadata interviewMode selectedAC audioRecording createdAt updatedAt startedAt completedAt totalTimeSpent completionPercentage responseId');
+      .populate('selectedPollingStation')
+      .select('survey interviewer status responses location metadata interviewMode selectedAC selectedPollingStation audioRecording createdAt updatedAt startedAt completedAt totalTimeSpent completionPercentage responseId verificationData call_id');
 
     if (!surveyResponse) {
       return res.status(404).json({
@@ -3276,12 +3319,58 @@ const getSurveyResponseById = async (req, res) => {
       });
     }
 
-    // Check if the interviewer has access to this response
-    if (surveyResponse.interviewer && surveyResponse.interviewer._id.toString() !== interviewerId) {
-      return res.status(403).json({
-        success: false,
-        message: 'You are not authorized to view this survey response'
-      });
+    // Check authorization: Allow interviewer, company admin, or project manager
+    const userType = req.user.userType;
+    const isCompanyAdmin = userType === 'company_admin';
+    const isProjectManager = userType === 'project_manager';
+    const isInterviewer = userType === 'interviewer';
+    
+    // For interviewers: only allow viewing their own responses
+    if (isInterviewer) {
+      if (surveyResponse.interviewer && surveyResponse.interviewer._id.toString() !== interviewerId) {
+        return res.status(403).json({
+          success: false,
+          message: 'You are not authorized to view this survey response'
+        });
+      }
+    }
+    
+    // For company admins: check if response belongs to their company's survey
+    if (isCompanyAdmin) {
+      const Survey = require('../models/Survey');
+      const survey = await Survey.findById(surveyResponse.survey);
+      if (survey && survey.company && survey.company.toString() !== req.user.company?.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: 'You are not authorized to view this survey response'
+        });
+      }
+    }
+    
+    // For project managers: check if interviewer is assigned to them
+    if (isProjectManager) {
+      const currentUser = await User.findById(req.user.id).populate('assignedTeamMembers.user', '_id');
+      if (currentUser && currentUser.assignedTeamMembers && currentUser.assignedTeamMembers.length > 0) {
+        const assignedInterviewerIds = currentUser.assignedTeamMembers
+          .filter(tm => tm.userType === 'interviewer' && tm.user)
+          .map(tm => {
+            const userId = tm.user._id ? tm.user._id.toString() : tm.user.toString();
+            return userId;
+          });
+        
+        if (surveyResponse.interviewer && !assignedInterviewerIds.includes(surveyResponse.interviewer._id.toString())) {
+          return res.status(403).json({
+            success: false,
+            message: 'You are not authorized to view this survey response'
+          });
+        }
+      } else {
+        // No assigned interviewers - deny access
+        return res.status(403).json({
+          success: false,
+          message: 'You are not authorized to view this survey response'
+        });
+      }
     }
 
     // Add signed URL to audio recording if present
@@ -3548,6 +3637,680 @@ const getSurveyResponses = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch survey responses',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Get Survey Responses V2 (Optimized for big data - No limits, uses aggregation pipelines)
+// @route   GET /api/survey-responses/survey/:surveyId/responses-v2
+// @access  Private (Company Admin, Project Manager)
+const getSurveyResponsesV2 = async (req, res) => {
+  try {
+    const { surveyId } = req.params;
+    const {
+      page = 1,
+      limit = 20,
+      status,
+      gender,
+      ageMin,
+      ageMax,
+      ac,
+      city,
+      district,
+      lokSabha,
+      dateRange,
+      startDate,
+      endDate,
+      interviewMode,
+      interviewerIds,
+      interviewerMode = 'include',
+      search
+    } = req.query;
+
+    // Verify survey exists
+    const survey = await Survey.findById(surveyId);
+    if (!survey) {
+      return res.status(404).json({
+        success: false,
+        message: 'Survey not found'
+      });
+    }
+
+    // Build match filter for MongoDB aggregation (NO LIMITS - handles millions of records)
+    const matchFilter = { survey: mongoose.Types.ObjectId.isValid(surveyId) ? new mongoose.Types.ObjectId(surveyId) : surveyId };
+
+    // Status filter
+    if (status && status !== 'all' && status !== '') {
+      if (status === 'approved_rejected_pending') {
+        matchFilter.status = { $in: ['Approved', 'Rejected', 'Pending_Approval'] };
+      } else if (status === 'approved_pending') {
+        matchFilter.status = { $in: ['Approved', 'Pending_Approval'] };
+      } else if (status === 'pending') {
+        matchFilter.status = 'Pending_Approval';
+      } else {
+        matchFilter.status = status;
+      }
+    } else {
+      matchFilter.status = { $in: ['Approved', 'Rejected', 'Pending_Approval'] };
+    }
+
+    // Interview mode filter
+    if (interviewMode) {
+      matchFilter.interviewMode = interviewMode.toLowerCase();
+    }
+
+    // Date range filter (using IST timezone)
+    if (dateRange && dateRange !== 'all' && dateRange !== 'custom') {
+      const istOffset = 5.5 * 60 * 60 * 1000;
+      let dateStart, dateEnd;
+
+      switch (dateRange) {
+        case 'today':
+          const todayIST = getISTDateString();
+          dateStart = getISTDateStartUTC(todayIST);
+          dateEnd = getISTDateEndUTC(todayIST);
+          break;
+        case 'yesterday':
+          const now = new Date();
+          const istTime = new Date(now.getTime() + istOffset);
+          istTime.setUTCDate(istTime.getUTCDate() - 1);
+          const yesterdayISTStr = getISTDateStringFromDate(new Date(istTime.getTime() - istOffset));
+          dateStart = getISTDateStartUTC(yesterdayISTStr);
+          dateEnd = getISTDateEndUTC(yesterdayISTStr);
+          break;
+        case 'week':
+          const nowWeek = new Date();
+          const istTimeWeek = new Date(nowWeek.getTime() + istOffset);
+          istTimeWeek.setUTCDate(istTimeWeek.getUTCDate() - 7);
+          const weekAgoISTStr = getISTDateStringFromDate(new Date(istTimeWeek.getTime() - istOffset));
+          const todayISTStr = getISTDateString();
+          dateStart = getISTDateStartUTC(weekAgoISTStr);
+          dateEnd = getISTDateEndUTC(todayISTStr);
+          break;
+        case 'month':
+          const nowMonth = new Date();
+          const istTimeMonth = new Date(nowMonth.getTime() + istOffset);
+          istTimeMonth.setUTCDate(istTimeMonth.getUTCDate() - 30);
+          const monthAgoISTStr = getISTDateStringFromDate(new Date(istTimeMonth.getTime() - istOffset));
+          const todayISTStr2 = getISTDateString();
+          dateStart = getISTDateStartUTC(monthAgoISTStr);
+          dateEnd = getISTDateEndUTC(todayISTStr2);
+          break;
+      }
+
+      if (dateStart && dateEnd) {
+        matchFilter.createdAt = { $gte: dateStart, $lte: dateEnd };
+      }
+    }
+    
+    // Custom date range - parse as IST dates
+    if (startDate || endDate) {
+      let dateStart, dateEnd;
+      if (startDate && endDate) {
+        dateStart = getISTDateStartUTC(startDate);
+        dateEnd = getISTDateEndUTC(endDate);
+      } else if (startDate && !endDate) {
+        dateStart = getISTDateStartUTC(startDate);
+        dateEnd = getISTDateEndUTC(startDate);
+      } else if (!startDate && endDate) {
+        dateStart = getISTDateStartUTC(endDate);
+        dateEnd = getISTDateEndUTC(endDate);
+      }
+      
+      if (dateStart && dateEnd) {
+        matchFilter.createdAt = { $gte: dateStart, $lte: dateEnd };
+      }
+    }
+
+    // Interviewer filter
+    let interviewerIdsArray = [];
+    if (interviewerIds) {
+      if (Array.isArray(interviewerIds)) {
+        interviewerIdsArray = interviewerIds;
+      } else if (typeof interviewerIds === 'string') {
+        interviewerIdsArray = interviewerIds.split(',').map(id => id.trim()).filter(id => id);
+      }
+    }
+
+    if (interviewerIdsArray.length > 0) {
+      const interviewerObjectIds = interviewerIdsArray
+        .filter(id => id && id !== 'undefined' && id !== 'null')
+        .map(id => {
+          if (mongoose.Types.ObjectId.isValid(id)) {
+            return new mongoose.Types.ObjectId(id);
+          }
+          return id;
+        })
+        .filter(id => id);
+
+      if (interviewerObjectIds.length > 0) {
+        if (interviewerMode === 'exclude') {
+          matchFilter.interviewer = { $nin: interviewerObjectIds };
+        } else {
+          matchFilter.interviewer = { $in: interviewerObjectIds };
+        }
+      }
+    }
+
+    // For project managers: filter by assigned interviewers
+    if (req.user.userType === 'project_manager') {
+      const currentUser = await User.findById(req.user.id).populate('assignedTeamMembers.user', '_id userType');
+      if (currentUser && currentUser.assignedTeamMembers && currentUser.assignedTeamMembers.length > 0) {
+        const assignedIds = currentUser.assignedTeamMembers
+          .filter(tm => tm.userType === 'interviewer' && tm.user)
+          .map(tm => {
+            const userId = tm.user._id ? tm.user._id : tm.user;
+            return mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+          })
+          .filter(id => id && mongoose.Types.ObjectId.isValid(id));
+        
+        if (assignedIds.length > 0) {
+          if (!matchFilter.interviewer) {
+            matchFilter.interviewer = { $in: assignedIds };
+          } else if (matchFilter.interviewer.$in) {
+            const originalIds = matchFilter.interviewer.$in;
+            matchFilter.interviewer.$in = originalIds.filter(id => {
+              const idStr = id.toString();
+              return assignedIds.some(assignedId => assignedId.toString() === idStr);
+            });
+          } else if (matchFilter.interviewer.$nin) {
+            const excludedIds = matchFilter.interviewer.$nin;
+            const assignedIdsStr = assignedIds.map(id => id.toString());
+            matchFilter.interviewer.$nin = excludedIds.filter(id => assignedIdsStr.includes(id.toString()));
+          }
+        } else {
+          matchFilter.interviewer = { $in: [] };
+        }
+      } else {
+        matchFilter.interviewer = { $in: [] };
+      }
+    }
+
+    // Build aggregation pipeline
+    const pipeline = [];
+
+    // Stage 1: Match filter
+    pipeline.push({ $match: matchFilter });
+
+    // Stage 2: Extract demographic data from responses array
+    pipeline.push({
+      $addFields: {
+        genderValue: {
+          $let: {
+            vars: {
+              genderResponse: {
+                $arrayElemAt: [
+                  {
+                    $filter: {
+                      input: { $ifNull: ['$responses', []] },
+                      as: 'resp',
+                      cond: { $eq: ['$$resp.questionType', 'gender'] }
+                    }
+                  },
+                  0
+                ]
+              }
+            },
+            in: { $ifNull: ['$$genderResponse.response', null] }
+          }
+        },
+        ageValue: {
+          $let: {
+            vars: {
+              ageResponse: {
+                $arrayElemAt: [
+                  {
+                    $filter: {
+                      input: { $ifNull: ['$responses', []] },
+                      as: 'resp',
+                      cond: { $eq: ['$$resp.questionType', 'age'] }
+                    }
+                  },
+                  0
+                ]
+              }
+            },
+            in: {
+              $cond: {
+                if: { $isArray: '$$ageResponse.response' },
+                then: { $toInt: { $ifNull: [{ $arrayElemAt: ['$$ageResponse.response', 0] }, 0] } },
+                else: { $toInt: { $ifNull: ['$$ageResponse.response', 0] } }
+              }
+            }
+          }
+        },
+        acValue: {
+          $ifNull: [
+            '$selectedAC',
+            '$selectedPollingStation.acName'
+          ]
+        },
+        cityValue: {
+          $let: {
+            vars: {
+              cityResponse: {
+                $arrayElemAt: [
+                  {
+                    $filter: {
+                      input: { $ifNull: ['$responses', []] },
+                      as: 'resp',
+                      cond: { $eq: ['$$resp.questionType', 'city'] }
+                    }
+                  },
+                  0
+                ]
+              }
+            },
+            in: { $ifNull: ['$$cityResponse.response', null] }
+          }
+        },
+        districtValue: {
+          $ifNull: ['$selectedPollingStation.district', null]
+        },
+        lokSabhaValue: {
+          $ifNull: ['$selectedPollingStation.pcName', null]
+        }
+      }
+    });
+
+    // Stage 3: Apply demographic filters
+    const demographicMatch = {};
+    if (gender) {
+      demographicMatch.genderValue = gender;
+    }
+    if (ageMin || ageMax) {
+      demographicMatch.ageValue = {};
+      if (ageMin) demographicMatch.ageValue.$gte = parseInt(ageMin);
+      if (ageMax) demographicMatch.ageValue.$lte = parseInt(ageMax);
+    }
+    if (ac) {
+      demographicMatch.acValue = { $regex: ac.trim(), $options: 'i' };
+    }
+    if (city) {
+      demographicMatch.cityValue = { $regex: city.trim(), $options: 'i' };
+    }
+    if (district) {
+      demographicMatch.districtValue = { $regex: district.trim(), $options: 'i' };
+    }
+    if (lokSabha) {
+      demographicMatch.lokSabhaValue = { $regex: lokSabha.trim(), $options: 'i' };
+    }
+    if (Object.keys(demographicMatch).length > 0) {
+      pipeline.push({ $match: demographicMatch });
+    }
+
+    // Stage 4: Apply search filter (before count and pagination)
+    if (search && search.trim()) {
+      const searchRegex = { $regex: search.trim(), $options: 'i' };
+      const searchTerm = search.trim();
+      pipeline.push({
+        $match: {
+          $or: [
+            { responseId: searchRegex },
+            { acValue: searchRegex },
+            { cityValue: searchRegex },
+            { districtValue: searchRegex },
+            { lokSabhaValue: searchRegex },
+            // Also check if search term matches responseId exactly (case-insensitive)
+            { $expr: { $eq: [{ $toLower: { $ifNull: ['$responseId', ''] } }, searchTerm.toLowerCase()] } }
+          ]
+        }
+      });
+    }
+
+    // Stage 5: Get total count BEFORE pagination (but after all filters)
+    const countPipeline = [...pipeline, { $count: 'total' }];
+    const countResult = await SurveyResponse.aggregate(countPipeline);
+    const totalResponses = countResult.length > 0 ? countResult[0].total : 0;
+
+    // Stage 6: Sort and paginate (skip pagination if limit is -1, used for CSV download)
+    pipeline.push({ $sort: { createdAt: -1 } });
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 20;
+    const skip = limitNum !== -1 ? (pageNum - 1) * limitNum : 0;
+    
+    // Only apply pagination if limit is not -1 (CSV download uses -1 to get all)
+    if (limitNum !== -1) {
+      pipeline.push({ $skip: skip });
+      pipeline.push({ $limit: limitNum });
+    }
+
+    // Stage 7: Lookup interviewer details
+    pipeline.push({
+      $lookup: {
+        from: 'users',
+        localField: 'interviewer',
+        foreignField: '_id',
+        as: 'interviewerDetails'
+      }
+    });
+    pipeline.push({
+      $unwind: {
+        path: '$interviewerDetails',
+        preserveNullAndEmptyArrays: true
+      }
+    });
+
+    // Stage 8: Lookup reviewer details
+    pipeline.push({
+      $lookup: {
+        from: 'users',
+        localField: 'verificationData.reviewer',
+        foreignField: '_id',
+        as: 'reviewerDetails'
+      }
+    });
+    pipeline.push({
+      $unwind: {
+        path: '$reviewerDetails',
+        preserveNullAndEmptyArrays: true
+      }
+    });
+
+    // Stage 9: Project final fields
+    pipeline.push({
+      $project: {
+        _id: 1,
+        survey: 1,
+        interviewer: 1,
+        status: 1,
+        interviewMode: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        totalTimeSpent: 1,
+        completionPercentage: 1,
+        responses: 1,
+        selectedAC: 1,
+        selectedPollingStation: 1,
+        location: 1, // Include location for GPS coordinates
+        verificationData: 1,
+        audioRecording: 1,
+        qcBatch: 1,
+        responseId: 1,
+        acValue: 1,
+        cityValue: 1,
+        districtValue: 1,
+        lokSabhaValue: 1,
+        call_id: 1, // Include call_id for CATI
+        interviewerDetails: {
+          firstName: { $ifNull: ['$interviewerDetails.firstName', ''] },
+          lastName: { $ifNull: ['$interviewerDetails.lastName', ''] },
+          email: { $ifNull: ['$interviewerDetails.email', ''] },
+          phone: { $ifNull: ['$interviewerDetails.phone', ''] },
+          memberId: { $ifNull: ['$interviewerDetails.memberId', ''] },
+          companyCode: { $ifNull: ['$interviewerDetails.companyCode', ''] }
+        },
+        reviewerDetails: {
+          firstName: { $ifNull: ['$reviewerDetails.firstName', ''] },
+          lastName: { $ifNull: ['$reviewerDetails.lastName', ''] },
+          email: { $ifNull: ['$reviewerDetails.email', ''] }
+        }
+      }
+    });
+
+    // Stage 10: Apply interviewer search filter (after lookup, for display only)
+    if (search && search.trim()) {
+      const searchRegex = { $regex: search.trim(), $options: 'i' };
+      const searchTerm = search.trim();
+      pipeline.push({
+        $match: {
+          $or: [
+            { 'interviewerDetails.firstName': searchRegex },
+            { 'interviewerDetails.lastName': searchRegex },
+            { 'interviewerDetails.memberId': searchRegex },
+            { responseId: searchRegex },
+            { acValue: searchRegex },
+            { cityValue: searchRegex },
+            { districtValue: searchRegex },
+            { lokSabhaValue: searchRegex },
+            // Also check if search term matches responseId exactly (case-insensitive)
+            { $expr: { $eq: [{ $toLower: { $ifNull: ['$responseId', ''] } }, searchTerm.toLowerCase()] } }
+          ]
+        }
+      });
+    }
+
+    // Execute aggregation
+    const responses = await SurveyResponse.aggregate(pipeline);
+
+    // Add signed URLs to audio recordings and map interviewerDetails to interviewer for consistency
+    const { getAudioSignedUrl } = require('../utils/cloudStorage');
+    const responsesWithSignedUrls = await Promise.all(responses.map(async (response) => {
+      // Map interviewerDetails to interviewer for consistency with frontend expectations
+      if (response.interviewerDetails && !response.interviewer) {
+        response.interviewer = {
+          firstName: response.interviewerDetails.firstName || '',
+          lastName: response.interviewerDetails.lastName || '',
+          email: response.interviewerDetails.email || '',
+          memberId: response.interviewerDetails.memberId || '',
+          memberID: response.interviewerDetails.memberId || '',
+          phone: response.interviewerDetails.phone || ''
+        };
+      }
+      
+      if (response.audioRecording && response.audioRecording.audioUrl) {
+        const audioUrl = response.audioRecording.audioUrl;
+        if (audioUrl.startsWith('mock://') || audioUrl.includes('mock://')) {
+          response.audioRecording = {
+            ...response.audioRecording,
+            signedUrl: null,
+            isMock: true
+          };
+        } else {
+          try {
+            const signedUrl = await getAudioSignedUrl(audioUrl, 3600);
+            response.audioRecording = {
+              ...response.audioRecording,
+              signedUrl,
+              originalUrl: audioUrl
+            };
+          } catch (error) {
+            console.error('Error generating signed URL for response:', response._id, error);
+          }
+        }
+      }
+      return response;
+    }));
+
+    // Get filter options using aggregation (for dropdowns)
+    const filterOptionsPipeline = [
+      { $match: { survey: mongoose.Types.ObjectId.isValid(surveyId) ? new mongoose.Types.ObjectId(surveyId) : surveyId } }
+    ];
+
+    // Apply project manager filter for filter options
+    if (req.user.userType === 'project_manager' && matchFilter.interviewer && matchFilter.interviewer.$in) {
+      filterOptionsPipeline.push({ $match: { interviewer: { $in: matchFilter.interviewer.$in } } });
+    }
+
+    filterOptionsPipeline.push(
+      {
+        $addFields: {
+          genderValue: {
+            $let: {
+              vars: {
+                genderResponse: {
+                  $arrayElemAt: [
+                    {
+                      $filter: {
+                        input: { $ifNull: ['$responses', []] },
+                        as: 'resp',
+                        cond: { $eq: ['$$resp.questionType', 'gender'] }
+                      }
+                    },
+                    0
+                  ]
+                }
+              },
+              in: { $ifNull: ['$$genderResponse.response', null] }
+            }
+          },
+          ageValue: {
+            $let: {
+              vars: {
+                ageResponse: {
+                  $arrayElemAt: [
+                    {
+                      $filter: {
+                        input: { $ifNull: ['$responses', []] },
+                        as: 'resp',
+                        cond: { $eq: ['$$resp.questionType', 'age'] }
+                      }
+                    },
+                    0
+                  ]
+                }
+              },
+              in: {
+                $cond: {
+                  if: { $isArray: '$$ageResponse.response' },
+                  then: { $toInt: { $ifNull: [{ $arrayElemAt: ['$$ageResponse.response', 0] }, 0] } },
+                  else: { $toInt: { $ifNull: ['$$ageResponse.response', 0] } }
+                }
+              }
+            }
+          },
+          acValue: {
+            $ifNull: [
+              '$selectedAC',
+              '$selectedPollingStation.acName'
+            ]
+          },
+          cityValue: {
+            $let: {
+              vars: {
+                cityResponse: {
+                  $arrayElemAt: [
+                    {
+                      $filter: {
+                        input: { $ifNull: ['$responses', []] },
+                        as: 'resp',
+                        cond: { $eq: ['$$resp.questionType', 'city'] }
+                      }
+                    },
+                    0
+                  ]
+                }
+              },
+              in: { $ifNull: ['$$cityResponse.response', null] }
+            }
+          },
+          districtValue: {
+            $ifNull: ['$selectedPollingStation.district', null]
+          },
+          lokSabhaValue: {
+            $ifNull: ['$selectedPollingStation.pcName', null]
+          }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          genders: { $addToSet: '$genderValue' },
+          ages: { $addToSet: '$ageValue' },
+          acs: { $addToSet: '$acValue' },
+          cities: { $addToSet: '$cityValue' },
+          districts: { $addToSet: '$districtValue' },
+          lokSabhas: { $addToSet: '$lokSabhaValue' }
+        }
+      }
+    );
+
+    const filterOptionsResult = await SurveyResponse.aggregate(filterOptionsPipeline);
+    const filterOptions = filterOptionsResult.length > 0 ? {
+      gender: filterOptionsResult[0].genders.filter(Boolean),
+      age: filterOptionsResult[0].ages.filter(Boolean).sort((a, b) => a - b),
+      ac: filterOptionsResult[0].acs.filter(Boolean),
+      city: filterOptionsResult[0].cities.filter(Boolean),
+      district: filterOptionsResult[0].districts.filter(Boolean),
+      lokSabha: filterOptionsResult[0].lokSabhas.filter(Boolean)
+    } : {
+      gender: [],
+      age: [],
+      ac: [],
+      city: [],
+      district: [],
+      lokSabha: []
+    };
+
+    res.status(200).json({
+      success: true,
+      data: {
+        responses: responsesWithSignedUrls,
+        pagination: {
+          currentPage: pageNum,
+          totalPages: Math.ceil(totalResponses / limitNum),
+          totalResponses,
+          hasNext: skip + responses.length < totalResponses,
+          hasPrev: pageNum > 1
+        },
+        filterOptions
+      }
+    });
+  } catch (error) {
+    console.error('Get Survey Responses V2 error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Get All Survey Responses V2 for CSV Download (No pagination, Company Admin only)
+// @route   GET /api/survey-responses/survey/:surveyId/responses-v2-csv
+// @access  Private (Company Admin only)
+const getSurveyResponsesV2ForCSV = async (req, res) => {
+  try {
+    // Only allow company admin
+    if (req.user.userType !== 'company_admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. Only company admins can download CSV.'
+      });
+    }
+
+    // Temporarily modify query to get all responses (limit=-1 means no pagination)
+    const originalLimit = req.query.limit;
+    const originalPage = req.query.page;
+    req.query.limit = '-1';
+    req.query.page = '1';
+    
+    // Call getSurveyResponsesV2 which will handle limit=-1 correctly
+    // We need to modify the response to remove pagination info
+    const originalJson = res.json.bind(res);
+    let responseSent = false;
+    
+    res.json = function(data) {
+      if (responseSent) return this;
+      responseSent = true;
+      
+      // Restore original query params
+      req.query.limit = originalLimit;
+      req.query.page = originalPage;
+      
+      // Modify response to return all responses without pagination
+      if (data && data.success && data.data && data.data.responses) {
+        return originalJson({
+          success: true,
+          data: {
+            responses: data.data.responses,
+            totalResponses: data.data.responses.length
+          }
+        });
+      }
+      
+      // Return original response if structure is different
+      return originalJson(data);
+    };
+    
+    // Call the existing function
+    await getSurveyResponsesV2(req, res);
+    
+  } catch (error) {
+    console.error('Get Survey Responses V2 for CSV error:', error);
+    res.status(500).json({
+      success: false,
       error: error.message
     });
   }
@@ -4603,6 +5366,8 @@ module.exports = {
   debugSurveyResponses,
   getSurveyResponseById,
   getSurveyResponses,
+  getSurveyResponsesV2,
+  getSurveyResponsesV2ForCSV,
   approveSurveyResponse,
   rejectSurveyResponse,
   setPendingApproval,

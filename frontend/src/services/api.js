@@ -145,11 +145,12 @@ export const authAPI = {
   },
 
   // Search interviewer by memberId (for Reports V2)
-  searchInterviewerByMemberId: async (memberId, surveyId) => {
+  searchInterviewerByMemberId: async (memberId, surveyId, includeSupervisors = false) => {
     try {
       const params = new URLSearchParams();
       params.append('memberId', memberId);
       if (surveyId) params.append('surveyId', surveyId);
+      if (includeSupervisors) params.append('includeSupervisors', 'true');
       const response = await api.get(`/api/auth/search-interviewer?${params.toString()}`);
       return response.data;
     } catch (error) {
@@ -1119,6 +1120,24 @@ export const surveyResponseAPI = {
         throw error;
       }
     },
+    getSurveyResponsesV2: async (surveyId, params = {}) => {
+      try {
+        const response = await api.get(`/api/survey-responses/survey/${surveyId}/responses-v2`, { params });
+        return response.data;
+      } catch (error) {
+        console.error('Error fetching survey responses V2:', error);
+        throw error;
+      }
+    },
+    getSurveyResponsesV2ForCSV: async (surveyId, params = {}) => {
+      try {
+        const response = await api.get(`/api/survey-responses/survey/${surveyId}/responses-v2-csv`, { params });
+        return response.data;
+      } catch (error) {
+        console.error('Error fetching survey responses V2 for CSV:', error);
+        throw error;
+      }
+    },
     getSurveyResponses: async (surveyId, params = {}) => {
       try {
         const response = await api.get(`/api/survey-responses/survey/${surveyId}/responses`, { params });
@@ -1185,6 +1204,16 @@ export const surveyResponseAPI = {
     rejectResponse: async (responseId, data) => {
       try {
         const response = await api.patch(`/api/survey-responses/${responseId}/reject`, data);
+        return response.data;
+      } catch (error) {
+        throw error;
+      }
+    },
+
+    // Get survey response by ID (full details)
+    getSurveyResponseById: async (responseId) => {
+      try {
+        const response = await api.get(`/api/survey-responses/${responseId}`);
         return response.data;
       } catch (error) {
         throw error;

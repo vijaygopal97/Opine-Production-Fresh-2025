@@ -194,6 +194,9 @@ const CompanySurveysManagement = () => {
     } else if (action === 'reports-v2') {
       // Navigate to survey reports V2 page (optimized)
       navigate(`/company/surveys/${surveyId}/reports-2`);
+    } else if (action === 'responses-v2') {
+      // Navigate to survey responses V2 page (optimized)
+      navigate(`/company/surveys/${surveyId}/responses-v2`);
     } else if (action === 'caller-performance') {
       // Navigate to caller performance page
       navigate(`/company/surveys/${surveyId}/caller-performance`);
@@ -583,13 +586,22 @@ const CompanySurveysManagement = () => {
               <div className="flex flex-col space-y-2 ml-4">
                 {/* View Responses and QC Performance Buttons - Always show */}
                 <>
-                  <button
+                  {/* View Responses button hidden to encourage use of Responses V2 */}
+                  {/* <button
                     onClick={() => handleViewResponses(survey)}
                     className="flex items-center space-x-1 px-3 py-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors text-sm font-medium"
                     title="View Responses"
                   >
                     <BarChart3 className="w-4 h-4" />
                     <span>View Responses</span>
+                  </button> */}
+                  <button
+                    onClick={() => handleSurveyAction(survey._id || survey.id, 'responses-v2')}
+                    className="flex items-center space-x-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm"
+                    title="View Responses V2 (Optimized for Big Data)"
+                  >
+                    <TrendingUp className="w-4 h-4" />
+                    <span>Responses-V2</span>
                   </button>
                   <button
                     onClick={() => handleQCPerformance(survey)}

@@ -2927,11 +2927,21 @@ exports.searchInterviewerByMemberId = async (req, res) => {
       });
     }
 
-    // Build query
+    // Build query - search for interviewers, but also allow searching for supervisors (project managers)
+    // For CSV download, we need to find supervisors too, so we'll search for any user with matching memberId
+    // But for normal search, we'll restrict to interviewers
+    const searchForSupervisors = req.query.includeSupervisors === 'true';
     const query = {
-      userType: 'interviewer',
       memberId: { $regex: new RegExp(`^${memberId.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i') }
     };
+    
+    // If not searching for supervisors, restrict to interviewers only
+    if (!searchForSupervisors) {
+      query.userType = 'interviewer';
+    } else {
+      // For supervisors, search for project_manager or interviewer
+      query.userType = { $in: ['interviewer', 'project_manager'] };
+    }
 
     // For project managers, filter by assigned interviewers
     if (req.user.userType === 'project_manager') {
