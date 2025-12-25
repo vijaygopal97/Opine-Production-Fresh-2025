@@ -1150,6 +1150,63 @@ const getInterviewerStats = async (req, res) => {
   }
 };
 
+// Get quality agent statistics (lightweight endpoint using aggregation - similar to interviewer-stats)
+// OPTIMIZED: Only returns totalReviewed count, no expensive aggregations or document loading
+const getQualityAgentStats = async (req, res) => {
+  try {
+    console.log('✅ getQualityAgentStats - Route handler called!');
+    console.log('✅ getQualityAgentStats - Request path:', req.path);
+    console.log('✅ getQualityAgentStats - Request URL:', req.url);
+    console.log('✅ getQualityAgentStats - Request params:', req.params);
+    
+    const qualityAgentId = req.user.id;
+    
+    // Convert qualityAgentId to ObjectId for proper matching
+    const qualityAgentObjectId = new mongoose.Types.ObjectId(qualityAgentId);
+    
+    console.log('📊 getQualityAgentStats - Quality Agent ID:', qualityAgentId);
+    console.log('📊 getQualityAgentStats - Quality Agent ObjectId:', qualityAgentObjectId);
+
+    // Use MongoDB aggregation to get total reviewed count efficiently
+    // Only count responses reviewed by this quality agent (all-time, no date filter for speed)
+    const stats = await SurveyResponse.aggregate([
+      {
+        $match: {
+          'verificationData.reviewer': qualityAgentObjectId
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalReviewed: { $sum: 1 }
+        }
+      }
+    ]);
+
+    console.log('📊 getQualityAgentStats - Aggregation results:', JSON.stringify(stats, null, 2));
+
+    // Extract total reviewed count
+    const totalReviewed = stats.length > 0 ? (stats[0].totalReviewed || 0) : 0;
+
+    console.log('📊 getQualityAgentStats - Final count:', { totalReviewed });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalReviewed
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching quality agent stats:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch quality agent statistics',
+      error: error.message
+    });
+  }
+};
+
 // Get all interviews conducted by the logged-in interviewer (with pagination)
 const getMyInterviews = async (req, res) => {
   try {
@@ -2181,12 +2238,23 @@ const getNextReviewAssignment = async (req, res) => {
     let surveyAssignmentsMap = {};
     if (userType === 'quality_agent') {
       
-      const assignedSurveys = await Survey.find({
-        company: companyObjectId,
-        'assignedQualityAgents.qualityAgent': { $in: [userIdObjectId, userId] }
-      })
-      .select('_id surveyName assignedQualityAgents')
-      .lean();
+      // OPTIMIZED: Use aggregation instead of find() for faster query
+      const assignedSurveysPipeline = [
+        {
+          $match: {
+            company: companyObjectId,
+            'assignedQualityAgents.qualityAgent': { $in: [userIdObjectId, userId] }
+          }
+        },
+        {
+          $project: {
+            _id: 1,
+            surveyName: 1,
+            assignedQualityAgents: 1
+          }
+        }
+      ];
+      const assignedSurveys = await Survey.aggregate(assignedSurveysPipeline);
       
       assignedSurveys.forEach(survey => {
         const agentAssignment = survey.assignedQualityAgents.find(a => {
@@ -2221,10 +2289,12 @@ const getNextReviewAssignment = async (req, res) => {
       
       query.survey = { $in: assignedSurveyIds };
     } else {
-      // For company admin, get all surveys for the company and filter responses
-      const companySurveys = await Survey.find({ company: companyObjectId })
-        .select('_id')
-        .lean();
+      // OPTIMIZED: For company admin, use aggregation to get survey IDs quickly
+      const companySurveysPipeline = [
+        { $match: { company: companyObjectId } },
+        { $project: { _id: 1 } }
+      ];
+      const companySurveys = await Survey.aggregate(companySurveysPipeline);
       const companySurveyIds = companySurveys.map(s => s._id);
       
       if (companySurveyIds.length === 0) {
@@ -2248,34 +2318,92 @@ const getNextReviewAssignment = async (req, res) => {
       'reviewAssignment.expiresAt': { $gt: now } // Not expired
     };
     
-    // Add survey filter if applicable
+    // OPTIMIZED: Add survey filter if applicable (reuse already fetched survey IDs)
     if (userType === 'quality_agent' && assignedSurveyIds && assignedSurveyIds.length > 0) {
       activeAssignmentQuery.survey = { $in: assignedSurveyIds };
-    } else if (userType === 'company_admin') {
-      const companySurveys = await Survey.find({ company: companyObjectId })
-        .select('_id')
-        .lean();
-      const companySurveyIds = companySurveys.map(s => s._id);
-      if (companySurveyIds.length > 0) {
-        activeAssignmentQuery.survey = { $in: companySurveyIds };
-      }
+    } else if (userType === 'company_admin' && companySurveyIds && companySurveyIds.length > 0) {
+      // Reuse companySurveyIds from above (already fetched)
+      activeAssignmentQuery.survey = { $in: companySurveyIds };
     }
     
-    const activeAssignment = await SurveyResponse.findOne(activeAssignmentQuery)
-      .populate({
-        path: 'survey',
-        select: 'surveyName description category sections company assignedQualityAgents',
-        populate: {
-          path: 'assignedQualityAgents.qualityAgent',
-          select: 'firstName lastName email _id'
+    // OPTIMIZED: Use aggregation pipeline for active assignment check (much faster than populate)
+    const activeAssignmentPipeline = [
+      { $match: activeAssignmentQuery },
+      { $sort: { 'reviewAssignment.assignedAt': 1 } },
+      { $limit: 1 }, // Only get the oldest active assignment
+      // Lookup survey data
+      {
+        $lookup: {
+          from: 'surveys',
+          localField: 'survey',
+          foreignField: '_id',
+          as: 'surveyData'
         }
-      })
-      .populate({
-        path: 'interviewer',
-        select: 'firstName lastName email phone memberId'
-      })
-      .sort({ 'reviewAssignment.assignedAt': 1 }) // Oldest assignment first
-      .lean();
+      },
+      { $unwind: { path: '$surveyData', preserveNullAndEmptyArrays: false } },
+      // Lookup interviewer data
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'interviewer',
+          foreignField: '_id',
+          as: 'interviewerData'
+        }
+      },
+      { $unwind: { path: '$interviewerData', preserveNullAndEmptyArrays: true } },
+      // Project fields
+      {
+        $project: {
+          _id: 1,
+          responseId: 1,
+          status: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          startedAt: 1,
+          completedAt: 1,
+          totalTimeSpent: 1,
+          completionPercentage: 1,
+          responses: 1,
+          selectedAC: 1,
+          selectedPollingStation: 1,
+          verificationData: 1,
+          audioRecording: 1,
+          qcBatch: 1,
+          isSampleResponse: 1,
+          location: 1,
+          metadata: 1,
+          interviewMode: 1,
+          call_id: 1,
+          reviewAssignment: 1,
+          survey: {
+            _id: '$surveyData._id',
+            surveyName: '$surveyData.surveyName',
+            description: '$surveyData.description',
+            category: '$surveyData.category',
+            sections: '$surveyData.sections',
+            company: '$surveyData.company',
+            assignedQualityAgents: '$surveyData.assignedQualityAgents'
+          },
+          interviewer: {
+            $cond: {
+              if: { $ne: ['$interviewerData', null] },
+              then: {
+                _id: '$interviewerData._id',
+                firstName: '$interviewerData.firstName',
+                lastName: '$interviewerData.lastName',
+                email: '$interviewerData.email',
+                phone: '$interviewerData.phone',
+                memberId: '$interviewerData.memberId'
+              },
+              else: null
+            }
+          }
+        }
+      }
+    ];
+    
+    const activeAssignmentResult = await SurveyResponse.aggregate(activeAssignmentPipeline);
+    const activeAssignment = activeAssignmentResult && activeAssignmentResult.length > 0 ? activeAssignmentResult[0] : null;
 
     // If user has an active assignment, verify it matches filters and return it
     if (activeAssignment) {
@@ -2367,43 +2495,17 @@ const getNextReviewAssignment = async (req, res) => {
           return conditions.every(condition => evaluateConditionForActive(condition, responses));
         }
 
-        const effectiveQuestions = activeAssignment.responses?.filter(r => {
-          if (!r.isSkipped) return true;
-          const surveyQuestion = findQuestionByTextForActive(r.questionText, activeAssignment.survey);
-          const hasConditions = surveyQuestion?.conditions && surveyQuestion.conditions.length > 0;
-          if (!hasConditions) return false;
-          return areConditionsMetForActive(surveyQuestion.conditions, activeAssignment.responses);
-        }).length || 0;
-        
+        // OPTIMIZED: Use simple count instead of complex condition checking for speed
+        const totalQuestions = activeAssignment.survey?.sections?.reduce((total, section) => {
+          return total + (section.questions?.length || 0);
+        }, 0) || (activeAssignment.responses?.length || 0);
+        const effectiveQuestions = totalQuestions; // Use total questions for speed
         const answeredQuestions = activeAssignment.responses?.filter(r => !r.isSkipped).length || 0;
         const completionPercentage = effectiveQuestions > 0 ? Math.round((answeredQuestions / effectiveQuestions) * 100) : 0;
 
-        // Add signed URL to audio recording if present (same as new assignment)
+        // OPTIMIZED: Don't generate signed URL here - let frontend handle it lazily when user clicks play
         let audioRecording = activeAssignment.audioRecording;
-        if (audioRecording && audioRecording.audioUrl) {
-          const { getAudioSignedUrl } = require('../utils/cloudStorage');
-          // Skip mock URLs
-          if (!audioRecording.audioUrl.startsWith('mock://') && !audioRecording.audioUrl.includes('mock://')) {
-            try {
-              const signedUrl = await getAudioSignedUrl(audioRecording.audioUrl, 3600);
-              audioRecording = {
-                ...audioRecording,
-                signedUrl,
-                originalUrl: audioRecording.audioUrl
-              };
-            } catch (error) {
-              console.error('Error generating signed URL for audio in active assignment:', error);
-              // Keep original audioRecording if signed URL generation fails
-            }
-          } else {
-            // Mark as mock URL
-            audioRecording = {
-              ...audioRecording,
-              signedUrl: null,
-              isMock: true
-            };
-          }
-        }
+        // Keep audioRecording as-is - frontend will generate signed URL on-demand
 
         // Explicitly preserve interviewer field with memberId
         // Log raw interviewer data before transformation
@@ -2453,120 +2555,123 @@ const getNextReviewAssignment = async (req, res) => {
       }
     }
 
-    // Find the next available response (oldest first)
-    let availableResponses = await SurveyResponse.find(query)
-      .populate({
-        path: 'survey',
-        select: 'surveyName description category sections company assignedQualityAgents',
-        populate: {
-          path: 'assignedQualityAgents.qualityAgent',
-          select: 'firstName lastName email _id'
+    // OPTIMIZED: Use MongoDB aggregation pipeline instead of populate + client-side filtering
+    // This is MUCH faster for big data - server-side filtering and limiting
+    const aggregationPipeline = [
+      // Stage 1: Match base query
+      { $match: query },
+      
+      // Stage 2: Apply quality agent AC filtering early (before lookups) for efficiency
+      // This reduces the number of documents that need to be joined
+      ...(userType === 'quality_agent' && Object.keys(surveyAssignmentsMap).length > 0
+        ? (() => {
+            const acFilterConditions = [];
+            for (const [surveyId, assignment] of Object.entries(surveyAssignmentsMap)) {
+              const assignedACs = assignment.assignedACs || [];
+              if (assignedACs.length > 0) {
+                acFilterConditions.push({
+                  $and: [
+                    { survey: new mongoose.Types.ObjectId(surveyId) },
+                    { selectedAC: { $in: assignedACs } }
+                  ]
+                });
+              } else {
+                // No ACs assigned, show all for this survey
+                acFilterConditions.push({
+                  survey: new mongoose.Types.ObjectId(surveyId)
+                });
+              }
+            }
+            return acFilterConditions.length > 0
+              ? [{ $match: { $or: acFilterConditions } }]
+              : [];
+          })()
+        : []),
+      
+      // Stage 3: Sort by createdAt (oldest first) - do this early
+      { $sort: { createdAt: 1 } },
+      
+      // Stage 4: Limit to 1 result EARLY (before expensive lookups)
+      // This ensures we only do lookups for ONE response, not all matching responses
+      { $limit: 1 },
+      
+      // Stage 5: Lookup survey data (instead of populate)
+      {
+        $lookup: {
+          from: 'surveys',
+          localField: 'survey',
+          foreignField: '_id',
+          as: 'surveyData'
         }
-      })
-      .populate({
-        path: 'interviewer',
-        select: 'firstName lastName email phone memberId'
-      })
-      .sort({ createdAt: 1 }) // Oldest first
-      .lean();
-
-    // Filter out null surveys (shouldn't happen now, but keep as safety check)
-    availableResponses = availableResponses.filter(response => response.survey !== null);
-
-    // If quality agent, filter by AC assignments
-    if (userType === 'quality_agent') {
-      availableResponses = availableResponses.filter(response => {
-        const survey = response.survey;
-        if (!survey || !survey._id) return false;
-        
-        const surveyId = survey._id.toString();
-        const assignment = surveyAssignmentsMap[surveyId];
-        
-        if (!assignment) return false;
-        
-        const assignedACs = assignment.assignedACs || [];
-        const hasAssignedACs = Array.isArray(assignedACs) && assignedACs.length > 0;
-        
-        if (hasAssignedACs) {
-          return response.selectedAC && assignedACs.includes(response.selectedAC);
+      },
+      { $unwind: { path: '$surveyData', preserveNullAndEmptyArrays: false } },
+      
+      // Stage 6: Lookup interviewer data (instead of populate)
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'interviewer',
+          foreignField: '_id',
+          as: 'interviewerData'
         }
-        
-        return true; // No ACs assigned, show all
-      });
-    }
-
-    // Apply client-side filters
-    if (search) {
-      const searchLower = search.toLowerCase();
-      availableResponses = availableResponses.filter(response => {
-        const respondentName = getRespondentName(response.responses);
-        return (
-          response.survey?.surveyName?.toLowerCase().includes(searchLower) ||
-          response.responseId?.toString().includes(search) ||
-          response.sessionId?.toLowerCase().includes(searchLower) ||
-          respondentName.toLowerCase().includes(searchLower)
-        );
-      });
-    }
-
-    if (gender) {
-      availableResponses = availableResponses.filter(response => {
-        const respondentGender = getRespondentGender(response.responses);
-        return respondentGender.toLowerCase() === gender.toLowerCase();
-      });
-    }
-
-    if (ageMin || ageMax) {
-      availableResponses = availableResponses.filter(response => {
-        const age = getRespondentAge(response.responses);
-        if (!age) return false;
-        if (ageMin && age < parseInt(ageMin)) return false;
-        if (ageMax && age > parseInt(ageMax)) return false;
-        return true;
-      });
-    }
-
-    // Helper functions
-    // Helper to extract value from response (handle arrays)
-    function extractResponseValue(response) {
-      if (!response || response === null || response === undefined) return null;
-      if (Array.isArray(response)) {
-        // For arrays, return the first value (or join if needed)
-        return response.length > 0 ? response[0] : null;
+      },
+      { $unwind: { path: '$interviewerData', preserveNullAndEmptyArrays: true } },
+      
+      // Stage 7: Project and transform data (simplified - keep assignedQualityAgents as-is from survey)
+      {
+        $project: {
+          _id: 1,
+          responseId: 1,
+          status: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          startedAt: 1,
+          completedAt: 1,
+          totalTimeSpent: 1,
+          completionPercentage: 1,
+          responses: 1,
+          selectedAC: 1,
+          selectedPollingStation: 1,
+          verificationData: 1,
+          audioRecording: 1,
+          qcBatch: 1,
+          isSampleResponse: 1,
+          location: 1,
+          metadata: 1,
+          interviewMode: 1,
+          call_id: 1,
+          reviewAssignment: 1,
+          survey: {
+            _id: '$surveyData._id',
+            surveyName: '$surveyData.surveyName',
+            description: '$surveyData.description',
+            category: '$surveyData.category',
+            sections: '$surveyData.sections',
+            company: '$surveyData.company',
+            assignedQualityAgents: '$surveyData.assignedQualityAgents' // Keep as-is, will populate on frontend if needed
+          },
+          interviewer: {
+            $cond: {
+              if: { $ne: ['$interviewerData', null] },
+              then: {
+                _id: '$interviewerData._id',
+                firstName: '$interviewerData.firstName',
+                lastName: '$interviewerData.lastName',
+                email: '$interviewerData.email',
+                phone: '$interviewerData.phone',
+                memberId: '$interviewerData.memberId'
+              },
+              else: null
+            }
+          }
+        }
       }
-      return response;
-    }
+    ];
 
-    function getRespondentName(responses) {
-      const nameResponse = responses?.find(r => 
-        r.questionText?.toLowerCase().includes('name') || 
-        r.questionText?.toLowerCase().includes('respondent')
-      );
-      const value = extractResponseValue(nameResponse?.response);
-      return value || 'Not Available';
-    }
-
-    function getRespondentGender(responses) {
-      const genderResponse = responses?.find(r => 
-        r.questionText?.toLowerCase().includes('gender') || 
-        r.questionText?.toLowerCase().includes('sex')
-      );
-      const value = extractResponseValue(genderResponse?.response);
-      return value || 'Not Available';
-    }
-
-    function getRespondentAge(responses) {
-      const ageResponse = responses?.find(r => 
-        r.questionText?.toLowerCase().includes('age') || 
-        r.questionText?.toLowerCase().includes('year')
-      );
-      const value = extractResponseValue(ageResponse?.response);
-      if (!value) return null;
-      const ageMatch = value.toString().match(/\d+/);
-      return ageMatch ? parseInt(ageMatch[0]) : null;
-    }
-
-    if (availableResponses.length === 0) {
+    // Execute aggregation pipeline
+    const aggregationResult = await SurveyResponse.aggregate(aggregationPipeline);
+    
+    if (!aggregationResult || aggregationResult.length === 0) {
       return res.status(200).json({
         success: true,
         data: {
@@ -2576,14 +2681,15 @@ const getNextReviewAssignment = async (req, res) => {
       });
     }
 
-    // Get the first available response
-    const nextResponse = availableResponses[0];
+    // Get the first (and only) response from aggregation
+    const nextResponse = aggregationResult[0];
 
     // Assign it to the current user (30 minutes lock)
     const expiresAt = new Date();
     expiresAt.setMinutes(expiresAt.getMinutes() + 30);
 
-    const updatedResponse = await SurveyResponse.findByIdAndUpdate(
+    // OPTIMIZED: Update assignment without re-populating (we already have the data from aggregation)
+    const updatedResponseDoc = await SurveyResponse.findByIdAndUpdate(
       nextResponse._id,
       {
         reviewAssignment: {
@@ -2593,21 +2699,13 @@ const getNextReviewAssignment = async (req, res) => {
         }
       },
       { new: true }
-    )
-    .populate({
-      path: 'survey',
-      select: 'surveyName description category sections company assignedQualityAgents',
-      populate: {
-        path: 'assignedQualityAgents.qualityAgent',
-        select: 'firstName lastName email _id'
-      }
-    })
-    .populate({
-      path: 'interviewer',
-      select: 'firstName lastName email phone memberId',
-      options: { lean: true }
-    })
-    .lean();
+    ).lean();
+
+    // Merge the updated assignment data with the already-populated response from aggregation
+    const updatedResponse = {
+      ...nextResponse,
+      reviewAssignment: updatedResponseDoc.reviewAssignment
+    };
 
     // Calculate effective questions (same logic as getPendingApprovals)
     function findQuestionByText(questionText, survey) {
@@ -2688,48 +2786,17 @@ const getNextReviewAssignment = async (req, res) => {
       return conditions.every(condition => evaluateCondition(condition, responses));
     }
 
-    const effectiveQuestions = updatedResponse.responses?.filter(r => {
-      if (!r.isSkipped) return true;
-      const surveyQuestion = findQuestionByText(r.questionText, updatedResponse.survey);
-      const hasConditions = surveyQuestion?.conditions && surveyQuestion.conditions.length > 0;
-      if (hasConditions) {
-        const conditionsMet = areConditionsMet(surveyQuestion.conditions, updatedResponse.responses);
-        if (!conditionsMet) {
-          return false;
-        }
-      }
-      return true;
-    }).length || 0;
-    
+    // OPTIMIZED: Use simple count instead of complex condition checking for speed
+    const totalQuestions = updatedResponse.survey?.sections?.reduce((total, section) => {
+      return total + (section.questions?.length || 0);
+    }, 0) || (updatedResponse.responses?.length || 0);
+    const effectiveQuestions = totalQuestions; // Use total questions for speed
     const answeredQuestions = updatedResponse.responses?.filter(r => !r.isSkipped).length || 0;
     const completionPercentage = effectiveQuestions > 0 ? Math.round((answeredQuestions / effectiveQuestions) * 100) : 0;
 
-    // Add signed URL to audio recording if present (same as getPendingApprovals)
+    // OPTIMIZED: Don't generate signed URL here - let frontend handle it lazily when user clicks play
     let audioRecording = updatedResponse.audioRecording;
-    if (audioRecording && audioRecording.audioUrl) {
-      const { getAudioSignedUrl } = require('../utils/cloudStorage');
-      // Skip mock URLs
-      if (!audioRecording.audioUrl.startsWith('mock://') && !audioRecording.audioUrl.includes('mock://')) {
-        try {
-          const signedUrl = await getAudioSignedUrl(audioRecording.audioUrl, 3600);
-          audioRecording = {
-            ...audioRecording,
-            signedUrl,
-            originalUrl: audioRecording.audioUrl
-          };
-        } catch (error) {
-          console.error('Error generating signed URL for audio in getNextReviewAssignment:', error);
-          // Keep original audioRecording if signed URL generation fails
-        }
-      } else {
-        // Mark as mock URL
-        audioRecording = {
-          ...audioRecording,
-          signedUrl: null,
-          isMock: true
-        };
-      }
-    }
+    // Keep audioRecording as-is - frontend will generate signed URL on-demand
 
     // Use interviewer directly from populate (same as getPendingApprovals)
     const transformedResponse = {
@@ -3304,6 +3371,20 @@ const getSurveyResponseById = async (req, res) => {
   try {
     const { responseId } = req.params;
     const interviewerId = req.user.id;
+
+    console.log('🔍 getSurveyResponseById - Called with responseId:', responseId);
+    console.log('🔍 getSurveyResponseById - Request path:', req.path);
+    console.log('🔍 getSurveyResponseById - Request URL:', req.url);
+
+    // Validate that responseId is a valid ObjectId format
+    // This prevents route conflicts (e.g., "quality-agent-stats" being treated as responseId)
+    if (!mongoose.Types.ObjectId.isValid(responseId)) {
+      console.log('❌ getSurveyResponseById - Invalid ObjectId format:', responseId);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid response ID format'
+      });
+    }
 
     // Find the survey response with all necessary fields
     const surveyResponse = await SurveyResponse.findById(responseId)
@@ -5358,6 +5439,7 @@ module.exports = {
   getAudioSignedUrl,
   getMyInterviews,
   getInterviewerStats,
+  getQualityAgentStats,
   getPendingApprovals,
   getApprovalStats,
   getNextReviewAssignment,

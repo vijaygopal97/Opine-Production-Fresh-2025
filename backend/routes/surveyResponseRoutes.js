@@ -16,6 +16,7 @@ const {
   uploadAudioFile,
   getMyInterviews,
   getInterviewerStats,
+  getQualityAgentStats,
   getPendingApprovals,
   getApprovalStats,
   getNextReviewAssignment,
@@ -34,7 +35,7 @@ const {
   getLastCatiSetNumber,
   getAudioSignedUrl
 } = require('../controllers/surveyResponseController');
-const { protect } = require('../middleware/auth');
+const { protect, authorize } = require('../middleware/auth');
 
 // Configure multer for audio file uploads
 const storage = multer.diskStorage({
@@ -117,6 +118,10 @@ router.get('/my-interviews', getMyInterviews);
 
 // Get interviewer statistics (lightweight endpoint using aggregation)
 router.get('/interviewer-stats', getInterviewerStats);
+
+// Get quality agent statistics (lightweight endpoint using aggregation - optimized for dashboard loading)
+// IMPORTANT: This route MUST come before /:responseId to avoid route conflicts
+router.get('/quality-agent-stats', protect, authorize('quality_agent'), getQualityAgentStats);
 
 // Get approval statistics (optimized endpoint using aggregation)
 router.get('/approval-stats', getApprovalStats);

@@ -510,6 +510,9 @@ exports.getQualityAgentPerformance = async (req, res) => {
       baseFilter.survey = new mongoose.Types.ObjectId(surveyId);
     }
 
+    // OPTIMIZATION: If lightweight=true, only get overview stats (skip expensive aggregations)
+    const lightweight = req.query.lightweight === 'true';
+    
     // Get overview statistics
     const overview = await SurveyResponse.aggregate([
       { $match: baseFilter },
@@ -538,7 +541,23 @@ exports.getQualityAgentPerformance = async (req, res) => {
       }
     ]);
 
-    // Get daily performance
+    // If lightweight mode, return early with only overview stats
+    if (lightweight) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          overview: overview[0] || {
+            totalReviewed: 0,
+            totalApproved: 0,
+            totalRejected: 0,
+            totalPending: 0,
+            averageReviewTime: 0
+          }
+        }
+      });
+    }
+
+    // Get daily performance (skip in lightweight mode)
     const dailyPerformance = await SurveyResponse.aggregate([
       { $match: baseFilter },
       {
