@@ -1198,7 +1198,10 @@ const ViewResponsesV2Page = () => {
           regularOptions.forEach((option) => {
             const optText = typeof option === 'object' ? option.text : option;
             const optMainText = getMainText(optText);
-            const optCode = getOptionCodeFromTemplate(questionCode, regularOptionIndex, option, questionNumber);
+            // Generate option code: Q{questionNumber}_{optionIndex+1}
+            // Format: Q1_2, Q1_3, etc. (matching responses page format)
+            const optionNum = regularOptionIndex + 1; // 1-based index
+            const optCode = `Q${questionNumber}_${optionNum}`;
             regularOptionIndex++;
             
             questionTitleRow.push(`Q${questionNumber}. ${mainQuestionText} - ${optMainText}`);
@@ -1526,6 +1529,8 @@ const ViewResponsesV2Page = () => {
           
           const multiSelectInfo = questionMultiSelectMap.get(questionIndex);
           const hasOthersOption = questionOthersMap.get(questionIndex);
+          // Get questionCode from multiSelectInfo if available, otherwise calculate it
+          const questionCode = multiSelectInfo?.questionCode || getQuestionCodeFromTemplate(surveyQuestion, questionIndex + 1);
           
           if (multiSelectInfo && multiSelectInfo.isMultiSelect) {
             // Multi-select question handling
@@ -1601,6 +1606,13 @@ const ViewResponsesV2Page = () => {
                         if (matchingOpt && matchingOpt.code) {
                           return String(matchingOpt.code);
                         } else {
+                          // Special handling for thanks_future: "yes,_you_can" or "yes, you can" should be "1"
+                          if (questionCode === 'thanks_future') {
+                            const valLower = mainValue.toLowerCase().replace(/[,_]/g, ' ').trim();
+                            if (valLower.includes('yes') && (valLower.includes('you') || valLower.includes('can'))) {
+                              return '1';
+                            }
+                          }
                           return mainValue;
                         }
                       } else {
@@ -1608,10 +1620,24 @@ const ViewResponsesV2Page = () => {
                       }
                     } else {
                       const mainValue = getMainText(String(val));
+                      // Special handling for thanks_future: "yes,_you_can" or "yes, you can" should be "1"
+                      if (questionCode === 'thanks_future') {
+                        const valLower = mainValue.toLowerCase().replace(/[,_]/g, ' ').trim();
+                        if (valLower.includes('yes') && (valLower.includes('you') || valLower.includes('can'))) {
+                          return '1';
+                        }
+                      }
                       return mainValue || String(val);
                     }
                   }
                   const mainValue = getMainText(String(val));
+                  // Special handling for thanks_future: "yes,_you_can" or "yes, you can" should be "1"
+                  if (questionCode === 'thanks_future') {
+                    const valLower = mainValue.toLowerCase().replace(/[,_]/g, ' ').trim();
+                    if (valLower.includes('yes') && (valLower.includes('you') || valLower.includes('can'))) {
+                      return '1';
+                    }
+                  }
                   return mainValue || String(val);
                 }).join(', ');
               } else {
@@ -1641,6 +1667,9 @@ const ViewResponsesV2Page = () => {
             answers.push(mainResponse);
             
             // Add Yes/No columns for each REGULAR option (excluding "Others")
+            // IMPORTANT: These columns must match the order of headers created above (lines 1197-1206)
+            // Get questionCode from multiSelectInfo for use in option matching
+            const questionCodeForMatching = multiSelectInfo.questionCode || questionCode;
             multiSelectInfo.options.forEach((option, optIndex) => {
               const optText = typeof option === 'object' ? option.text : option;
               // Skip if this is "Others" option
@@ -1653,7 +1682,26 @@ const ViewResponsesV2Page = () => {
                 if (valStr.startsWith('Others: ') || isOthersOption(valStr)) {
                   return false; // Don't match "Others" values
                 }
-                return optionMatches(option, val);
+                // Improved matching: try multiple methods
+                if (optionMatches(option, val)) {
+                  return true;
+                }
+                // Also try matching by main text (handles translation variations)
+                const valMainText = getMainText(String(valStr));
+                const optMainText = getMainText(String(optValue));
+                if (valMainText && optMainText && valMainText === optMainText) {
+                  return true;
+                }
+                // Special handling for thanks_future: match "yes,_you_can" variations
+                if (questionCodeForMatching === 'thanks_future') {
+                  const valLower = valMainText.toLowerCase().replace(/[,_]/g, ' ').trim();
+                  const optLower = optMainText.toLowerCase().replace(/[,_]/g, ' ').trim();
+                  if (valLower.includes('yes') && optLower.includes('yes') && 
+                      (valLower.includes('you') || valLower.includes('can'))) {
+                    return true;
+                  }
+                }
+                return false;
               });
               
               if (downloadMode === 'codes') {
@@ -1735,14 +1783,34 @@ const ViewResponsesV2Page = () => {
                             if (matchingOpt && matchingOpt.code) {
                               questionResponse = String(matchingOpt.code);
                             } else {
-                              questionResponse = mainValue;
+                              // Special handling for thanks_future: "yes,_you_can" or "yes, you can" should be "1"
+                              if (questionCode === 'thanks_future') {
+                                const valLower = mainValue.toLowerCase().replace(/[,_]/g, ' ').trim();
+                                if (valLower.includes('yes') && (valLower.includes('you') || valLower.includes('can'))) {
+                                  questionResponse = '1';
+                                } else {
+                                  questionResponse = mainValue;
+                                }
+                              } else {
+                                questionResponse = mainValue;
+                              }
                             }
                           } else {
                             questionResponse = mainValue;
                           }
                         } else {
                           const mainValue = getMainText(String(responseValue));
-                          questionResponse = mainValue || String(responseValue);
+                          // Special handling for thanks_future: "yes,_you_can" or "yes, you can" should be "1"
+                          if (questionCode === 'thanks_future') {
+                            const valLower = mainValue.toLowerCase().replace(/[,_]/g, ' ').trim();
+                            if (valLower.includes('yes') && (valLower.includes('you') || valLower.includes('can'))) {
+                              questionResponse = '1';
+                            } else {
+                              questionResponse = mainValue || String(responseValue);
+                            }
+                          } else {
+                            questionResponse = mainValue || String(responseValue);
+                          }
                         }
                       } else {
                         // If no option found, use the response value directly
@@ -2009,13 +2077,17 @@ const ViewResponsesV2Page = () => {
     } catch (error) {
       console.error('Error downloading CSV:', error);
       console.error('Error stack:', error.stack);
+      // Use optional chaining and check if variables exist before accessing
+      const sortedResponsesLength = typeof sortedResponses !== 'undefined' ? (sortedResponses?.length || 0) : 0;
+      const csvDataLength = typeof csvData !== 'undefined' ? (csvData?.length || 0) : 0;
+      const allCodeRowLength = typeof allCodeRow !== 'undefined' ? (allCodeRow?.length || 0) : 0;
       console.error('Error details:', {
         message: error.message,
         name: error.name,
         surveyId: surveyId,
-        totalResponses: sortedResponses?.length || 0,
-        csvDataLength: csvData?.length || 0,
-        allCodeRowLength: allCodeRow?.length || 0
+        totalResponses: sortedResponsesLength,
+        csvDataLength: csvDataLength,
+        allCodeRowLength: allCodeRowLength
       });
       showError('Failed to download CSV: ' + (error.message || 'Unknown error') + '. Check browser console for details.');
       setDownloadingCSV(false);
