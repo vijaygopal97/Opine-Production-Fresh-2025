@@ -78,10 +78,27 @@ const checkAutoRejection = async (surveyResponse, responses, surveyId) => {
     return null; // Don't auto-reject abandoned CATI interviews
   }
   
+  // EXCEPTION FOR CAPI RESPONSES:
+  // Skip auto-rejection for CAPI responses that are:
+  // 1. Already marked as "Terminated" status (abandoned interviews)
+  // 2. Have metadata.abandoned = true
+  // 3. Have abandonedReason field set (indicates intentional abandonment)
+  const isCapiAbandoned = surveyResponse.interviewMode === 'capi' && (
+    surveyResponse.status === 'Terminated' ||
+    surveyResponse.status === 'abandoned' ||
+    surveyResponse.metadata?.abandoned === true ||
+    surveyResponse.abandonedReason !== null && surveyResponse.abandonedReason !== undefined
+  );
+  
+  if (isCapiAbandoned) {
+    console.log(`⏭️  Skipping auto-rejection for CAPI abandoned response: ${surveyResponse._id} (status: ${surveyResponse.status})`);
+    return null; // Don't auto-reject abandoned CAPI interviews
+  }
+  
   // Condition 1: Duration check
   // CATI interviews: must be more than 90 seconds (1.5 minutes)
   // CAPI interviews: must be more than 3 minutes (180 seconds)
-  // Note: Abandoned CATI interviews are already filtered out above (isCatiAbandoned check)
+  // Note: Abandoned CATI and CAPI interviews are already filtered out above (isCatiAbandoned and isCapiAbandoned checks)
   const isCati = surveyResponse.interviewMode === 'cati';
   const minDurationSeconds = isCati ? 90 : 180; // 90 seconds for CATI, 180 seconds (3 minutes) for CAPI
   

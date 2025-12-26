@@ -163,6 +163,10 @@ if (!MONGODB_URI) {
     
     console.log('⏰ QC Batch Processing Job scheduled to run daily at 12:00 AM IST');
     
+    // Schedule CSV generation to run daily at 12:00 AM IST
+    const { scheduleCSVGeneration } = require('./jobs/csvGenerator');
+    scheduleCSVGeneration();
+    
     // Start server only after MongoDB connection is established
     server.listen(PORT, '0.0.0.0', () => {
       console.log(`🚀 HTTP Server is running on port ${PORT}`);
