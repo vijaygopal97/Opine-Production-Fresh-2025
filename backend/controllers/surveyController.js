@@ -6330,14 +6330,38 @@ exports.getChartDataV2 = async (req, res) => {
     }
 
     // Daily Stats Pipeline (optimized - only daily stats, no gender/age for performance)
+    // MongoDB 7.0 fix: Ensure createdAt is properly converted to Date before using $dateToString
     const dailyStatsPipeline = [
       { $match: matchFilter },
+      {
+        $addFields: {
+          createdAtDate: {
+            $cond: {
+              if: { $eq: [{ $type: '$createdAt' }, 'date'] },
+              then: '$createdAt',
+              else: {
+                $cond: {
+                  if: { $eq: [{ $type: '$createdAt' }, 'string'] },
+                  then: {
+                    $dateFromString: {
+                      dateString: '$createdAt',
+                      onError: new Date(0) // Fallback to epoch if conversion fails
+                    }
+                  },
+                  else: new Date(0) // Fallback for other types
+                }
+              }
+            }
+          }
+        }
+      },
       {
         $group: {
           _id: {
             $dateToString: {
               format: '%Y-%m-%d',
-              date: '$createdAt'
+              date: '$createdAtDate',
+              timezone: 'Asia/Kolkata' // Use IST timezone
             }
           },
           count: { $sum: 1 },

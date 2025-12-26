@@ -141,24 +141,11 @@ async function main() {
     log('✅ Backup directories created', 'green');
     log('', 'reset');
 
-    // Step 2: Backup development database
+    // Step 2: Backup development database (SKIPPED - space constraints)
     log('💾 Step 2: Backing up development database...', 'blue');
-    const devBackupPath = path.join(BACKUP_DIR, `dev_backup_${TIMESTAMP}`);
-    
-    // Build mongodump command for development backup
-    let mongodumpCmd = '';
-    if (devConfig.username) {
-      mongodumpCmd = `mongodump --host=${devConfig.host}:${devConfig.port} --db=${devConfig.database} --username="${devConfig.username}" --password="${devConfig.password}" --out="${devBackupPath}"`;
-      if (devConfig.authSource) {
-        mongodumpCmd += ` --authenticationDatabase=${devConfig.authSource}`;
-      }
-    } else {
-      mongodumpCmd = `mongodump --host=${devConfig.host}:${devConfig.port} --db=${devConfig.database} --out="${devBackupPath}"`;
-    }
-
-    log(`   Command: mongodump (backing up development database)`, 'cyan');
-    execSync(mongodumpCmd, { stdio: 'inherit' });
-    log(`✅ Development database backed up to: ${devBackupPath}`, 'green');
+    log('   ⚠️  SKIPPING backup due to space constraints', 'yellow');
+    log('   ⚠️  Development database will be replaced WITHOUT backup', 'yellow');
+    log('✅ Backup step skipped', 'green');
     log('', 'reset');
 
     // Step 3: Dump production database (READ-ONLY operation)
@@ -247,7 +234,11 @@ async function main() {
     log('='.repeat(70), 'green');
     log('', 'reset');
     log('📊 Summary:', 'cyan');
-    log(`   - Development backup saved to: ${devBackupPath}`, 'cyan');
+    if (typeof devBackupPath !== 'undefined') {
+      log(`   - Development backup saved to: ${devBackupPath}`, 'cyan');
+    } else {
+      log(`   - Development backup: SKIPPED (space constraints)`, 'yellow');
+    }
     log(`   - Production data synced to development`, 'green');
     log(`   - Production database was NOT modified (READ-ONLY)`, 'green');
     log('', 'reset');

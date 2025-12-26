@@ -4,18 +4,25 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  base: '/', // Ensure base is set to root
   server: {
     host: '0.0.0.0',
     port: 3000,
-    allowedHosts: ['opine.exypnossolutions.com', '74.225.250.243'],
+    allowedHosts: ['convo.convergentview.com', 'opine.exypnossolutions.com', '74.225.250.243', '13.202.181.167', '65.2.183.213', 'localhost', '127.0.0.1'],
     headers: {
       'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
       'Pragma': 'no-cache',
       'Expires': '0'
     },
     hmr: {
-      // Suppress HMR errors for source files
-      overlay: false
+      // For HTTPS development server via Nginx proxy
+      overlay: false,
+      // Client connects through Nginx on HTTPS (port 443)
+      // Vite dev server runs on port 3000, Nginx proxies WebSocket to it
+      protocol: 'wss',
+      host: 'opine.exypnossolutions.com',
+      clientPort: 443
+      // Don't set 'port' here - Vite server runs on port 3000 (from server.port)
     }
   },
   // Suppress source file fetch errors in console

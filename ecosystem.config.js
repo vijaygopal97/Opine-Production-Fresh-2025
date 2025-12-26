@@ -26,10 +26,9 @@ module.exports = {
       name: 'opine-backend',
       script: 'server.js',
       cwd: '/var/www/opine/backend',
-      instances: 1,
+      instances: 5,
       autorestart: true,
       watch: false,
-      max_memory_restart: '1G',
       env: {
         NODE_ENV: envVars.NODE_ENV || 'development',
         PORT: envVars.PORT || 5000,
@@ -51,7 +50,6 @@ module.exports = {
       instances: 1,
       autorestart: true,
       watch: false,
-      max_memory_restart: '1G',
       env: {
         NODE_ENV: 'development',
         PORT: 3000

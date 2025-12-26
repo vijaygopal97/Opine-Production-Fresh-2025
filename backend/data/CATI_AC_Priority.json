@@ -62,38 +62,64 @@
   {
     "Type": "CATI",
     "AC_Name": "Satgachhia",
-    "Priority": 1
+    "Priority": "0"
   },
   {
     "Type": "CATI",
     "AC_Name": "Chowranghee",
-    "Priority": 1
+    "Priority": "0"
   },
   {
     "Type": "CATI",
     "AC_Name": "Ranaghat Uttar Paschim",
-    "Priority": 1
+    "Priority": "0"
   },
   {
     "Type": "CATI",
     "AC_Name": "Tollyganj",
-    "Priority": 1
+    "Priority": "0"
   }, 
   {
     "Type": "CATI",
     "AC_Name": "Howrah Uttar",
-    "Priority": 1
+    "Priority": "0"
   },
   {
     "Type": "CATI",
     "AC_Name": "Behala Paschim",
-    "Priority": 1
+    "Priority": "0"
   },
   {
     "Type": "CATI",
     "AC_Name": "Udaynarayanpur",
+    "Priority": "0"
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Kashipur Belgachhia",
+    "Priority": "0"
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Chunchura",
+    "Priority": "0"
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Sreerampur",
+    "Priority": 1
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Singur",
+    "Priority": 1
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Rashbehari",
     "Priority": 1
   }
+
 
 ]
 

@@ -5,6 +5,9 @@ const CatiRespondentQueue = require('../models/CatiRespondentQueue');
 // Survey ID to check
 const SURVEY_ID = '68fd1915d41841da463f0d46';
 
+// Set to true to actually delete duplicates (false = dry run)
+const DELETE_DUPLICATES = true;
+
 /**
  * Connect to MongoDB
  */
@@ -28,7 +31,8 @@ async function connectDB() {
 async function checkDuplicatePhones() {
   try {
     console.log('\n🔍 Checking for duplicate phone numbers...');
-    console.log(`📋 Survey ID: ${SURVEY_ID}\n`);
+    console.log(`📋 Survey ID: ${SURVEY_ID}`);
+    console.log(`🗑️  Delete Mode: ${DELETE_DUPLICATES ? 'ENABLED (will delete)' : 'DISABLED (dry run)'}\n`);
 
     // Get all queue entries for this survey
     const allEntries = await CatiRespondentQueue.find({
@@ -54,7 +58,7 @@ async function checkDuplicatePhones() {
       }
 
       phoneMap.get(normalizedPhone).push({
-        _id: entry._id.toString(),
+        _id: entry._id,
         phone: phone,
         name: entry.respondentContact?.name || 'N/A',
         status: entry.status,
@@ -67,6 +71,8 @@ async function checkDuplicatePhones() {
     const duplicates = [];
     phoneMap.forEach((entries, phone) => {
       if (entries.length > 1) {
+        // Sort by createdAt (oldest first)
+        entries.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
         duplicates.push({
           phone: phone,
           count: entries.length,
@@ -82,6 +88,13 @@ async function checkDuplicatePhones() {
       console.log(`   - Total entries: ${allEntries.length}`);
       console.log(`   - Unique phone numbers: ${phoneMap.size}`);
       console.log(`   - Duplicates: 0\n`);
+      return {
+        totalEntries: allEntries.length,
+        uniquePhones: phoneMap.size,
+        duplicateCount: 0,
+        duplicates: [],
+        deletedCount: 0
+      };
     } else {
       console.log(`⚠️  Found ${duplicates.length} duplicate phone number(s):\n`);
       console.log('='.repeat(80));
@@ -92,7 +105,8 @@ async function checkDuplicatePhones() {
         console.log(`   Details:`);
         
         dup.entries.forEach((entry, entryIndex) => {
-          console.log(`   ${entryIndex + 1}. Object ID: ${entry._id}`);
+          const keepDelete = entryIndex === 0 ? '✅ KEEP (oldest)' : '❌ DELETE';
+          console.log(`   ${entryIndex + 1}. Object ID: ${entry._id} ${keepDelete}`);
           console.log(`      Name: ${entry.name}`);
           console.log(`      Status: ${entry.status}`);
           console.log(`      Assigned To: ${entry.assignedTo || 'Not assigned'}`);
@@ -106,25 +120,50 @@ async function checkDuplicatePhones() {
       console.log(`   - Total entries: ${allEntries.length}`);
       console.log(`   - Unique phone numbers: ${phoneMap.size}`);
       console.log(`   - Duplicate phone numbers: ${duplicates.length}`);
-      console.log(`   - Total duplicate entries: ${duplicates.reduce((sum, d) => sum + d.count, 0)}\n`);
+      console.log(`   - Total duplicate entries: ${duplicates.reduce((sum, d) => sum + d.count, 0)}`);
+      console.log(`   - Entries to keep: ${duplicates.length}`);
+      console.log(`   - Entries to delete: ${duplicates.reduce((sum, d) => sum + d.count - 1, 0)}\n`);
 
-      // Generate a detailed report
-      console.log('\n📄 Detailed Report (for manual verification):');
-      console.log('='.repeat(80));
+      // Delete duplicates
+      let deletedCount = 0;
+      const idsToDelete = [];
+
       duplicates.forEach((dup) => {
-        console.log(`\nPhone: ${dup.phone} (${dup.count} occurrences)`);
-        dup.entries.forEach((entry) => {
-          console.log(`  - ID: ${entry._id} | Status: ${entry.status} | Name: ${entry.name}`);
-        });
+        // Keep the first entry (oldest), delete the rest
+        for (let i = 1; i < dup.entries.length; i++) {
+          idsToDelete.push(new mongoose.Types.ObjectId(dup.entries[i]._id));
+        }
       });
+
+      if (idsToDelete.length > 0) {
+        console.log(`\n🗑️  Preparing to delete ${idsToDelete.length} duplicate entries...\n`);
+        
+        if (DELETE_DUPLICATES) {
+          console.log('⚠️  DELETION MODE ENABLED - Deleting duplicates...\n');
+          const deleteResult = await CatiRespondentQueue.deleteMany({
+            _id: { $in: idsToDelete }
+          });
+          deletedCount = deleteResult.deletedCount;
+          console.log(`✅ Successfully deleted ${deletedCount} duplicate entries!\n`);
+        } else {
+          console.log('ℹ️  DRY RUN MODE - No deletions performed');
+          console.log(`   Would delete ${idsToDelete.length} entries with IDs:\n`);
+          idsToDelete.slice(0, 10).forEach(id => console.log(`   - ${id}`));
+          if (idsToDelete.length > 10) {
+            console.log(`   ... and ${idsToDelete.length - 10} more\n`);
+          }
+        }
     }
 
     return {
       totalEntries: allEntries.length,
       uniquePhones: phoneMap.size,
       duplicateCount: duplicates.length,
-      duplicates: duplicates
+        duplicates: duplicates,
+        deletedCount: DELETE_DUPLICATES ? deletedCount : 0,
+        wouldDeleteCount: !DELETE_DUPLICATES ? idsToDelete.length : 0
     };
+    }
 
   } catch (error) {
     console.error('❌ Error checking for duplicates:', error);
@@ -164,5 +203,4 @@ if (require.main === module) {
 }
 
 module.exports = { checkDuplicatePhones };
-
 

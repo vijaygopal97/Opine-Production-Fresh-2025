@@ -7,9 +7,9 @@ export const SEO_CONFIG = {
     keywords: "market research, field interviews, data collection, survey platform, gig workers, India market research",
     author: "Convergent",
     robots: "noindex, nofollow", // Default to no indexing during development
-    canonical: "https://opine.exypnossolutions.com",
+    canonical: "https://convo.convergentview.com",
     ogType: "website",
-    ogImage: "https://opine.exypnossolutions.com/og-image.jpg",
+    ogImage: "https://convo.convergentview.com/og-image.jpg",
     twitterCard: "summary_large_image",
     twitterSite: "@Convergent"
   },
@@ -20,7 +20,7 @@ export const SEO_CONFIG = {
       title: "Convergent - Professional Market Research & Field Interview Platform",
       description: "Transform your market research with Convergent's multi-tenant platform. Connect with verified gig workers for high-quality field interviews across India. Secure, scalable, and professional data collection solutions.",
       keywords: "market research India, field interviews, data collection platform, survey research, gig economy, market research companies, professional interviewers",
-      canonical: "https://opine.exypnossolutions.com",
+      canonical: "https://convo.convergentview.com",
       ogTitle: "Convergent - Professional Market Research Platform",
       ogDescription: "Connect with verified gig workers for high-quality field interviews. Secure, scalable market research solutions across India.",
     },
@@ -29,14 +29,14 @@ export const SEO_CONFIG = {
       title: "About Convergent - Leading Market Research Platform",
       description: "Learn about Convergent's mission to revolutionize market research through our innovative multi-tenant platform connecting companies with verified field interviewers across India.",
       keywords: "about Convergent, market research platform, company information, field interview services",
-      canonical: "https://opine.exypnossolutions.com/about"
+      canonical: "https://convo.convergentview.com/about"
     },
     
     "/contact": {
       title: "Contact Us - Convergent | Get in Touch",
       description: "Contact Convergent for inquiries, support, or partnership opportunities. Reach out to our team for market research solutions and field interview services. We respond within 24 hours.",
       keywords: "contact Convergent, market research support, partnership, customer service, get in touch, contact form",
-      canonical: "https://opine.exypnossolutions.com/contact",
+      canonical: "https://convo.convergentview.com/contact",
       ogTitle: "Contact Convergent - Market Research Solutions",
       ogDescription: "Get in touch with Convergent for market research solutions, partnerships, and support. We're here to help transform your research needs."
     },
@@ -45,13 +45,13 @@ export const SEO_CONFIG = {
       title: "Register with Convergent - Join Our Market Research Platform",
       description: "Join Convergent's network of professional market researchers and field interviewers. Register today to access high-quality research opportunities across India.",
       keywords: "register Convergent, join market research, field interviewer registration, gig worker platform",
-      canonical: "https://opine.exypnossolutions.com/register"
+      canonical: "https://convo.convergentview.com/register"
     },
     "/login": {
       title: "Login - Convergent | Access Your Account",
       description: "Login to your Convergent account to manage your market research projects or interviewer tasks. Secure access to your dashboard.",
       keywords: "login, sign in, Convergent account, market research login, interviewer login",
-      canonical: "https://opine.exypnossolutions.com/login"
+      canonical: "https://convo.convergentview.com/login"
     }
   }
 };
@@ -80,7 +80,7 @@ export const generateStructuredData = (config) => {
     "name": "Convergent",
     "description": config.description,
     "url": config.canonical,
-    "logo": "https://opine.exypnossolutions.com/logo.png",
+    "logo": "https://convo.convergentview.com/logo.png",
     "contactPoint": {
       "@type": "ContactPoint",
       "telephone": "+91-XXXX-XXXXXX",
