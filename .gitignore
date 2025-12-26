@@ -58,3 +58,4 @@ backend/database_backups/
 backend/temp_prod_dump/
 *.bson
 *.metadata.json
+backend/.env.backup

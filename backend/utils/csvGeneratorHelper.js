@@ -69,11 +69,24 @@ const generateCSVContent = async (survey, sortedResponses, downloadMode, surveyI
   const surveyIdStr = String(surveyId || survey?._id || survey?.id || '');
   
   // Helper function to get main text (removes translation markers)
+  // Handles formats: "Main Text {Translation}", "Main Text {T1{T2{T3}}}", "[en:English][hi:Hindi]"
   const getMainText = (text) => {
     if (!text) return '';
     const textStr = String(text);
-    // Remove translation markers like [en:English][hi:Hindi]
-    return textStr.replace(/\[.*?\]/g, '').trim();
+    
+    // First, remove [en:...] format translation markers
+    let cleaned = textStr.replace(/\[.*?\]/g, '').trim();
+    
+    // Then, handle {Translation} format - extract text before first opening brace
+    // This handles formats like "yes_{হ্যাঁ}", "television_news_{টেলিভিশন_সংবাদ}"
+    const openBraceIndex = cleaned.indexOf('{');
+    if (openBraceIndex !== -1) {
+      cleaned = cleaned.substring(0, openBraceIndex).trim();
+      // Remove trailing underscores (common in format like "yes_{...}")
+      cleaned = cleaned.replace(/_+$/, '').trim();
+    }
+    
+    return cleaned;
   };
   
   // Helper function to check if option is "Others"
@@ -848,7 +861,16 @@ const generateCSVContent = async (survey, sortedResponses, downloadMode, surveyI
           if (Array.isArray(responseValue)) {
             selectedValues = responseValue;
           } else if (responseValue !== null && responseValue !== undefined && responseValue !== '') {
-            selectedValues = [responseValue];
+            const responseStr = String(responseValue);
+            // If it's a comma-separated string, split it into individual values
+            // Handle formats like "value1_{trans1}, value2_{trans2}"
+            if (responseStr.includes(',')) {
+              // Split by comma, but be careful with commas inside braces
+              // Simple approach: split by comma and trim each part
+              selectedValues = responseStr.split(',').map(v => v.trim()).filter(v => v !== '');
+            } else {
+              selectedValues = [responseValue];
+            }
           }
         }
         
@@ -960,7 +982,23 @@ const generateCSVContent = async (survey, sortedResponses, downloadMode, surveyI
                   return mainValue || String(val);
                 }
               }
+              
+              // Option not found - try to extract main text and match again
               const mainValue = getMainText(String(val));
+              
+              // Try one more time to find matching option by main text
+              const matchingOptByMainText = surveyQuestion.options.find(opt => {
+                const optValue = typeof opt === 'object' ? (opt.value || opt.text) : opt;
+                const optMainText = getMainText(String(optValue));
+                return optMainText === mainValue && mainValue !== '';
+              });
+              
+              if (matchingOptByMainText) {
+                if (matchingOptByMainText.code !== null && matchingOptByMainText.code !== undefined && matchingOptByMainText.code !== '') {
+                  return String(matchingOptByMainText.code);
+                }
+              }
+              
               // Special handling for thanks_future
               if (questionCode === 'thanks_future') {
                 const valLower = mainValue.toLowerCase().replace(/[,_]/g, ' ').trim();
@@ -1159,8 +1197,23 @@ const generateCSVContent = async (survey, sortedResponses, downloadMode, surveyI
                       }
                     }
                   } else {
+                    // Option not found - try to extract main text and match again
                     const mainValue = getMainText(String(responseValue));
-                    if (responseValue !== null && responseValue !== undefined && responseValue !== '') {
+                    
+                    // Try one more time to find matching option by main text
+                    const matchingOptByMainText = surveyQuestion.options.find(opt => {
+                      const optValue = typeof opt === 'object' ? (opt.value || opt.text) : opt;
+                      const optMainText = getMainText(String(optValue));
+                      return optMainText === mainValue && mainValue !== '';
+                    });
+                    
+                    if (matchingOptByMainText) {
+                      if (matchingOptByMainText.code !== null && matchingOptByMainText.code !== undefined && matchingOptByMainText.code !== '') {
+                        questionResponse = String(matchingOptByMainText.code);
+                      } else {
+                        questionResponse = mainValue || String(responseValue);
+                      }
+                    } else if (responseValue !== null && responseValue !== undefined && responseValue !== '') {
                       const responseStr = String(responseValue);
                       if (/^\d+$/.test(responseStr.trim())) {
                         questionResponse = responseStr.trim();
