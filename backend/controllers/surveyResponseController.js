@@ -5434,6 +5434,100 @@ const getAudioSignedUrl = async (req, res) => {
   }
 };
 
+// Get CSV file info (last updated timestamp)
+const getCSVFileInfo = async (req, res) => {
+  try {
+    const { surveyId } = req.params;
+    const { getCSVFileInfo: getCSVInfo } = require('../utils/csvGeneratorHelper');
+    
+    const info = getCSVInfo(surveyId);
+    
+    res.json({
+      success: true,
+      data: info
+    });
+  } catch (error) {
+    console.error('Get CSV file info error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+// Download pre-generated CSV file
+const downloadPreGeneratedCSV = async (req, res) => {
+  try {
+    const { surveyId } = req.params;
+    const { mode } = req.query; // 'codes' or 'responses'
+    
+    if (!mode || !['codes', 'responses'].includes(mode)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid mode. Must be "codes" or "responses"'
+      });
+    }
+    
+    const fs = require('fs');
+    const path = require('path');
+    const { CSV_STORAGE_DIR } = require('../utils/csvGeneratorHelper');
+    
+    const filename = mode === 'codes' ? 'responses_codes.csv' : 'responses_responses.csv';
+    const filepath = path.join(CSV_STORAGE_DIR, surveyId, filename);
+    
+    if (!fs.existsSync(filepath)) {
+      return res.status(404).json({
+        success: false,
+        error: 'CSV file not found. Please generate it first.'
+      });
+    }
+    
+    // Set headers for file download
+    res.setHeader('Content-Type', 'text/csv;charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    
+    // Stream file to response
+    const fileStream = fs.createReadStream(filepath);
+    fileStream.pipe(res);
+  } catch (error) {
+    console.error('Download pre-generated CSV error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+// Trigger CSV generation manually (for testing or on-demand)
+const triggerCSVGeneration = async (req, res) => {
+  try {
+    // Only allow company admin
+    if (req.user.userType !== 'company_admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. Only company admins can trigger CSV generation.'
+      });
+    }
+    
+    const { surveyId } = req.params;
+    const { generateCSVForSurvey } = require('../utils/csvGeneratorHelper');
+    
+    // Generate both versions
+    await generateCSVForSurvey(surveyId, 'codes');
+    await generateCSVForSurvey(surveyId, 'responses');
+    
+    res.json({
+      success: true,
+      message: 'CSV files generated successfully'
+    });
+  } catch (error) {
+    console.error('Trigger CSV generation error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
 module.exports = {
   getLastCatiSetNumber,
   startInterview,
@@ -5466,5 +5560,7 @@ module.exports = {
   setPendingApproval,
   getACPerformanceStats,
   getInterviewerPerformanceStats,
-  getLastCatiSetNumber
+  getCSVFileInfo,
+  downloadPreGeneratedCSV,
+  triggerCSVGeneration
 };

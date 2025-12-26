@@ -46,6 +46,7 @@ const ViewResponsesV2Page = () => {
   
   const [survey, setSurvey] = useState(null);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [showPreGeneratedDownloadModal, setShowPreGeneratedDownloadModal] = useState(false);
   const [downloadingCSV, setDownloadingCSV] = useState(false);
   const [csvProgress, setCsvProgress] = useState({ current: 0, total: 0, stage: '' });
   const [responses, setResponses] = useState([]);
@@ -90,6 +91,8 @@ const ViewResponsesV2Page = () => {
   const [fullResponseDetails, setFullResponseDetails] = useState(null);
   const [loadingResponseDetails, setLoadingResponseDetails] = useState(false);
   const [showResponseDetails, setShowResponseDetails] = useState(false);
+  const [csvFileInfo, setCsvFileInfo] = useState(null);
+  const [loadingCSVInfo, setLoadingCSVInfo] = useState(true);
   const { showError, showSuccess } = useToast();
 
   // Interviewer filter states (search-first)
@@ -188,6 +191,27 @@ const ViewResponsesV2Page = () => {
   // Reset initial load ref when surveyId changes
   useEffect(() => {
     initialLoadRef.current = false;
+  }, [surveyId]);
+
+  // Fetch CSV file info on component mount
+  useEffect(() => {
+    const fetchCSVInfo = async () => {
+      if (!surveyId) return;
+      try {
+        setLoadingCSVInfo(true);
+        const response = await surveyResponseAPI.getCSVFileInfo(surveyId);
+        if (response.success) {
+          setCsvFileInfo(response.data);
+        }
+      } catch (error) {
+        console.error('Error fetching CSV file info:', error);
+        setCsvFileInfo(null);
+      } finally {
+        setLoadingCSVInfo(false);
+      }
+    };
+    
+    fetchCSVInfo();
   }, [surveyId]);
 
   // Debounced fetch responses when filters change (skip initial load)
@@ -2142,6 +2166,30 @@ const ViewResponsesV2Page = () => {
       setDownloadingCSV(false);
       setCsvProgress({ current: 0, total: 0, stage: '' });
       
+      // Only update pre-generated files if filters are "All Time" and "All Status"
+      // This ensures pre-generated files always contain complete data
+      const isAllTime = filters.dateRange === 'all' || !filters.dateRange;
+      const isAllStatus = filters.status === 'approved_rejected_pending' || !filters.status;
+      const hasNoOtherFilters = !filters.interviewMode && 
+                                !filters.ac && 
+                                (!filters.interviewerIds || filters.interviewerIds.length === 0) &&
+                                !filters.search;
+      
+      if (isAllTime && isAllStatus && hasNoOtherFilters) {
+        // Update pre-generated files only when downloading complete dataset
+        try {
+          await surveyResponseAPI.triggerCSVGeneration(surveyId);
+          // Refresh CSV file info
+          const csvInfoResponse = await surveyResponseAPI.getCSVFileInfo(surveyId);
+          if (csvInfoResponse.success) {
+            setCsvFileInfo(csvInfoResponse.data);
+          }
+        } catch (error) {
+          console.error('Error updating pre-generated CSV:', error);
+          // Don't show error to user, this is background operation
+        }
+      }
+      
     } catch (error) {
       console.error('Error downloading CSV:', error);
       console.error('Error stack:', error.stack);
@@ -2230,28 +2278,52 @@ const ViewResponsesV2Page = () => {
             </div>
             <div className="flex items-center space-x-2">
               {isCompanyAdmin && (
-                <div className="relative">
-                  <button
-                    onClick={() => setShowDownloadModal(true)}
-                    disabled={downloadingCSV || pagination.totalResponses === 0}
-                    className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Download CSV (Company Admin Only)"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>
-                      {downloadingCSV 
-                        ? (csvProgress.total > 0 
-                            ? `Downloading... ${csvProgress.current}/${csvProgress.total} (${Math.round((csvProgress.current / csvProgress.total) * 100)}%)`
-                            : 'Downloading...')
-                        : 'Download CSV'}
-                    </span>
-                  </button>
-                  {downloadingCSV && csvProgress.stage && (
-                    <div className="absolute top-full left-0 mt-1 px-2 py-1 bg-gray-800 text-white text-xs rounded whitespace-nowrap z-50">
-                      {csvProgress.stage}
+                <>
+                  {/* Pre-generated CSV Download Button */}
+                  {!loadingCSVInfo && csvFileInfo && (csvFileInfo.codes || csvFileInfo.responses) && (
+                    <div className="flex flex-col items-end">
+                      <button
+                        onClick={() => setShowPreGeneratedDownloadModal(true)}
+                        className="flex flex-col items-center space-y-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        title="Download Pre-generated CSV"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <Download className="w-4 h-4" />
+                          <span className="text-sm font-medium">Download Data</span>
+                        </div>
+                        {(csvFileInfo.codes || csvFileInfo.responses) && (
+                          <span className="text-xs opacity-90">
+                            Last Updated: {(csvFileInfo.codes || csvFileInfo.responses).lastUpdatedIST || new Date((csvFileInfo.codes || csvFileInfo.responses).lastUpdated).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
+                          </span>
+                        )}
+                      </button>
                     </div>
                   )}
-                </div>
+                  
+                  {/* Current CSV Download Button */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowDownloadModal(true)}
+                      disabled={downloadingCSV || pagination.totalResponses === 0}
+                      className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Download CSV (Company Admin Only)"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>
+                        {downloadingCSV 
+                          ? (csvProgress.total > 0 
+                              ? `Downloading... ${csvProgress.current}/${csvProgress.total} (${Math.round((csvProgress.current / csvProgress.total) * 100)}%)`
+                              : 'Downloading...')
+                          : 'Download CSV'}
+                      </span>
+                    </button>
+                    {downloadingCSV && csvProgress.stage && (
+                      <div className="absolute top-full left-0 mt-1 px-2 py-1 bg-gray-800 text-white text-xs rounded whitespace-nowrap z-50">
+                        {csvProgress.stage}
+                      </div>
+                    )}
+                  </div>
+                </>
               )}
               <button
                 onClick={() => setShowFilters(!showFilters)}
@@ -2697,6 +2769,83 @@ const ViewResponsesV2Page = () => {
             setFullResponseDetails(updatedResponse);
           }}
         />
+      )}
+
+      {/* Pre-generated CSV Download Modal */}
+      {showPreGeneratedDownloadModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 shadow-xl max-w-md w-full mx-4">
+            <h3 className="text-xl font-semibold text-gray-900 mb-4">Choose Download Format</h3>
+            <p className="text-sm text-gray-600 mb-6">
+              Select how you want to download the pre-generated CSV:
+            </p>
+            
+            <div className="space-y-3">
+              {csvFileInfo?.responses && (
+                <button
+                  onClick={async () => {
+                    try {
+                      setShowPreGeneratedDownloadModal(false);
+                      const blob = await surveyResponseAPI.downloadPreGeneratedCSV(surveyId, 'responses');
+                      const url = window.URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.href = url;
+                      link.download = 'responses_responses.csv';
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      window.URL.revokeObjectURL(url);
+                      showSuccess('CSV downloaded successfully');
+                    } catch (error) {
+                      showError('Failed to download pre-generated CSV: ' + error.message);
+                    }
+                  }}
+                  className="w-full px-4 py-3 bg-[#001D48] text-white rounded-lg hover:bg-blue-700 transition-colors text-left"
+                >
+                  <div className="font-medium">Download Responses</div>
+                  <div className="text-sm text-blue-100 mt-1">
+                    Download with full response text (e.g., "Male", "Female", "Others")
+                  </div>
+                </button>
+              )}
+              
+              {csvFileInfo?.codes && (
+                <button
+                  onClick={async () => {
+                    try {
+                      setShowPreGeneratedDownloadModal(false);
+                      const blob = await surveyResponseAPI.downloadPreGeneratedCSV(surveyId, 'codes');
+                      const url = window.URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.href = url;
+                      link.download = 'responses_codes.csv';
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      window.URL.revokeObjectURL(url);
+                      showSuccess('CSV downloaded successfully');
+                    } catch (error) {
+                      showError('Failed to download pre-generated CSV: ' + error.message);
+                    }
+                  }}
+                  className="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-left"
+                >
+                  <div className="font-medium">Download Response Codes</div>
+                  <div className="text-sm text-green-100 mt-1">
+                    Download with option codes for MCQ questions (e.g., "1", "2", "3")
+                  </div>
+                </button>
+              )}
+            </div>
+            
+            <button
+              onClick={() => setShowPreGeneratedDownloadModal(false)}
+              className="mt-4 w-full px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Download Mode Selection Modal */}

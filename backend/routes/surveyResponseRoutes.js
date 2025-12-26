@@ -33,7 +33,10 @@ const {
   getACPerformanceStats,
   getInterviewerPerformanceStats,
   getLastCatiSetNumber,
-  getAudioSignedUrl
+  getAudioSignedUrl,
+  getCSVFileInfo,
+  downloadPreGeneratedCSV,
+  triggerCSVGeneration
 } = require('../controllers/surveyResponseController');
 const { protect, authorize } = require('../middleware/auth');
 
@@ -150,6 +153,11 @@ router.get('/survey/:surveyId/responses-v2', getSurveyResponsesV2);
 
 // Get all survey responses V2 for CSV download (no pagination, company admin only)
 router.get('/survey/:surveyId/responses-v2-csv', getSurveyResponsesV2ForCSV);
+
+// Pre-generated CSV endpoints
+router.get('/survey/:surveyId/csv-info', getCSVFileInfo);
+router.get('/survey/:surveyId/csv-download', downloadPreGeneratedCSV);
+router.post('/survey/:surveyId/generate-csv', protect, authorize('company_admin'), triggerCSVGeneration);
 
 // Get AC Performance Stats
 router.get('/survey/:surveyId/ac-performance', getACPerformanceStats);
