@@ -543,6 +543,55 @@ const completeInterview = async (req, res) => {
     
     console.log(`📊 Creating survey response - startTime: ${actualStartTime.toISOString()}, endTime: ${endTime.toISOString()}, totalTimeSpent: ${totalTimeSpent} seconds`);
     
+    // CRITICAL: Check if this is an abandoned interview being synced from offline storage
+    // Abandoned interviews should be marked as "Terminated" and skip auto-rejection
+    // Check multiple indicators:
+    // 1. metadata.abandoned === true (explicit flag)
+    // 2. metadata.abandonedReason is set (explicit reason)
+    // 3. metadata.isCompleted === false (React Native stores this for abandoned interviews)
+    // 4. Very short duration (< 60 seconds for CAPI) combined with very few responses (heuristic for instant abandonment)
+    const hasAbandonReason = metadata?.abandonedReason !== null && metadata?.abandonedReason !== undefined && metadata?.abandonedReason !== '';
+    const isMarkedAbandoned = metadata?.abandoned === true;
+    const isNotCompleted = metadata?.isCompleted === false;
+    
+    // Heuristic: Very short duration (< 60 seconds) with very few responses indicates instant abandonment
+    // Filter out AC selection and polling station questions to get actual answered questions
+    const actualResponses = responses ? responses.filter(r => {
+      const questionId = r.questionId || '';
+      const questionText = (r.questionText || '').toLowerCase();
+      const isACSelection = questionId === 'ac-selection' || 
+                           questionText.includes('assembly constituency') ||
+                           questionText.includes('select assembly constituency');
+      const isPollingStation = questionId === 'polling-station-selection' ||
+                              questionText.includes('polling station') ||
+                              questionText.includes('select polling station');
+      return !isACSelection && !isPollingStation && r.response !== null && r.response !== undefined && r.response !== '';
+    }) : [];
+    
+    const isVeryShortDuration = totalTimeSpent < 60; // Less than 60 seconds (1 minute)
+    const isExtremelyShortDuration = totalTimeSpent < 30; // Less than 30 seconds (instant abandonment)
+    const hasVeryFewResponses = actualResponses.length <= 1; // Only 1 or 0 actual responses (excluding AC/PS)
+    const hasNoActualResponses = actualResponses.length === 0; // No actual responses at all
+    
+    // Consider it abandoned if:
+    // - Explicitly marked as abandoned OR
+    // - Has abandon reason OR  
+    // - Not completed AND (very short duration OR very few responses) OR
+    // - Extremely short duration (< 30s) with no actual responses (instant abandonment heuristic)
+    const isAbandonedInterview = isMarkedAbandoned || 
+                                  hasAbandonReason || 
+                                  (isNotCompleted && (isVeryShortDuration || hasVeryFewResponses)) ||
+                                  (isExtremelyShortDuration && hasNoActualResponses); // Instant abandonment: < 30s with no responses
+    
+    if (isAbandonedInterview && !isMarkedAbandoned && !hasAbandonReason) {
+      console.log(`⏭️  Detected abandoned interview using heuristic - duration: ${totalTimeSpent}s, responses: ${actualResponses.length}, isCompleted: ${isNotCompleted}`);
+    }
+    
+    if (isAbandonedInterview) {
+      console.log(`⏭️  Detected abandoned interview sync - will mark as Terminated and skip auto-rejection`);
+      console.log(`⏭️  Abandoned reason: ${metadata?.abandonedReason || 'Not specified'}`);
+    }
+    
     const surveyResponse = await SurveyResponse.createCompleteResponse({
       survey: session.survey._id,
       interviewer: session.interviewer,
@@ -560,30 +609,47 @@ const completeInterview = async (req, res) => {
       qualityMetrics,
       setNumber: metadata?.setNumber || null, // Save set number for CATI interviews
       OldinterviewerID: oldInterviewerID, // Save old interviewer ID
+      abandonedReason: metadata?.abandonedReason || null, // Store abandonment reason if present
       metadata: {
         ...session.metadata,
-        ...metadata
+        ...metadata,
+        // Ensure abandoned flag is set in metadata
+        abandoned: isAbandonedInterview ? true : (metadata?.abandoned || false),
+        terminationReason: isAbandonedInterview ? 'Interview abandoned by interviewer' : (metadata?.terminationReason || null),
+        abandonmentNotes: metadata?.abandonmentNotes || null
       }
     });
 
+    // If this is an abandoned interview, set status to Terminated BEFORE saving
+    if (isAbandonedInterview) {
+      surveyResponse.status = 'Terminated';
+      console.log(`✅ Set status to Terminated for abandoned interview sync`);
+    }
+
     await surveyResponse.save();
     
-    // Check for auto-rejection conditions
-    const { checkAutoRejection, applyAutoRejection } = require('../utils/autoRejectionHelper');
+    // CRITICAL: Skip auto-rejection for abandoned interviews
+    // Abandoned interviews should always remain as "Terminated" status
     let wasAutoRejected = false;
-    try {
-      const rejectionInfo = await checkAutoRejection(surveyResponse, responses, session.survey._id);
-      if (rejectionInfo) {
-        await applyAutoRejection(surveyResponse, rejectionInfo);
-        wasAutoRejected = true;
-        // Refresh the response to get updated status
-        await surveyResponse.populate('survey');
-        // Reload from database to ensure status is updated
-        await surveyResponse.constructor.findById(surveyResponse._id);
+    if (isAbandonedInterview) {
+      console.log(`⏭️  Skipping auto-rejection for abandoned interview (status: ${surveyResponse.status})`);
+    } else {
+      // Check for auto-rejection conditions only for non-abandoned interviews
+      const { checkAutoRejection, applyAutoRejection } = require('../utils/autoRejectionHelper');
+      try {
+        const rejectionInfo = await checkAutoRejection(surveyResponse, responses, session.survey._id);
+        if (rejectionInfo) {
+          await applyAutoRejection(surveyResponse, rejectionInfo);
+          wasAutoRejected = true;
+          // Refresh the response to get updated status
+          await surveyResponse.populate('survey');
+          // Reload from database to ensure status is updated
+          await surveyResponse.constructor.findById(surveyResponse._id);
+        }
+      } catch (autoRejectError) {
+        console.error('Error checking auto-rejection:', autoRejectError);
+        // Continue even if auto-rejection check fails
       }
-    } catch (autoRejectError) {
-      console.error('Error checking auto-rejection:', autoRejectError);
-      // Continue even if auto-rejection check fails
     }
     
     // CRITICAL: Double-check status before adding to batch
