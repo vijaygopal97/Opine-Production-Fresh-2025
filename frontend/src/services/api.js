@@ -1246,8 +1246,41 @@ export const surveyResponseAPI = {
       } catch (error) {
         throw error;
       }
+    },
+    
+    // Get CSV file info (last updated timestamp)
+    getCSVFileInfo: async (surveyId) => {
+      try {
+        const response = await api.get(`/api/survey-responses/survey/${surveyId}/csv-info`);
+        return response.data;
+      } catch (error) {
+        throw error;
+      }
+    },
+    
+    // Download pre-generated CSV file
+    downloadPreGeneratedCSV: async (surveyId, mode = 'codes') => {
+      try {
+        const response = await api.get(`/api/survey-responses/survey/${surveyId}/csv-download?mode=${mode}`, {
+          responseType: 'blob',
+          timeout: 300000 // 5 minutes timeout
+        });
+        return response.data;
+      } catch (error) {
+        throw error;
+      }
+    },
+    
+    // Trigger CSV generation manually
+    triggerCSVGeneration: async (surveyId) => {
+      try {
+        const response = await api.post(`/api/survey-responses/survey/${surveyId}/generate-csv`);
+        return response.data;
+      } catch (error) {
+        throw error;
+      }
     }
-};
+  };
 
 // Performance API
 export const performanceAPI = {
