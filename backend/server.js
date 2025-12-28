@@ -107,6 +107,39 @@ app.use(express.urlencoded({
 }));
 app.use(cookieParser());
 
+// ============================================
+// REQUEST LOGGING MIDDLEWARE - DEBUG SYNC ISSUES
+// ============================================
+// Log ALL incoming API requests to track if requests reach server
+// This runs BEFORE authentication middleware
+app.use((req, res, next) => {
+  // Only log API requests to reduce noise
+  if (req.path.startsWith('/api/')) {
+    const authHeader = req.headers.authorization || '';
+    const authPreview = authHeader 
+      ? (authHeader.length > 50 ? authHeader.substring(0, 50) + '...' : authHeader)
+      : 'NO AUTH HEADER';
+    
+    console.log('📨 INCOMING API REQUEST:', {
+      method: req.method,
+      path: req.path,
+      fullUrl: req.originalUrl || req.url,
+      hasAuthHeader: !!req.headers.authorization,
+      authHeaderPreview: authPreview,
+      contentType: req.headers['content-type'] || 'not set',
+      contentLength: req.headers['content-length'] || 'not set',
+      userAgent: req.get('user-agent')?.substring(0, 80) || 'not set',
+      ip: req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || 'unknown',
+      timestamp: new Date().toISOString(),
+      query: Object.keys(req.query).length > 0 ? req.query : 'none',
+      // For POST requests, log if body exists (without logging full body to avoid spam)
+      hasBody: !!req.body && Object.keys(req.body).length > 0,
+      bodyKeys: req.body && typeof req.body === 'object' ? Object.keys(req.body).slice(0, 10) : 'none'
+    });
+  }
+  next();
+});
+
 // Serve static files (audio recordings)
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
@@ -206,6 +239,7 @@ app.use('/api/qc-batches', qcBatchRoutes);
 app.use('/api/qc-batch-config', qcBatchConfigRoutes);
 app.use('/api/polling-stations', pollingStationRoutes);
 app.use('/api/master-data', masterDataRoutes);
+app.use('/api/app-logs', require('./routes/appLogRoutes'));
 
 // Note: Opines API routes removed - using Contact API instead
 

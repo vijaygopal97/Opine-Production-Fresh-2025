@@ -174,6 +174,17 @@ router.patch('/:responseId/reject', rejectSurveyResponse);
 // Set response to Pending Approval
 router.patch('/:responseId/set-pending', setPendingApproval);
 
+// Offline interview reporting routes
+const {
+  reportOfflineInterviews,
+  getOfflineInterviewReports,
+  getOfflineInterviewSummary
+} = require('../controllers/offlineInterviewReportController');
+
+router.post('/offline-interviews/report', reportOfflineInterviews);
+router.get('/offline-interviews/reports', authorize('company_admin', 'super_admin'), getOfflineInterviewReports);
+router.get('/offline-interviews/summary', authorize('company_admin', 'super_admin'), getOfflineInterviewSummary);
+
 // Get survey response details by ID (must be last to avoid conflicts with other routes)
 router.get('/:responseId', getSurveyResponseById);
 

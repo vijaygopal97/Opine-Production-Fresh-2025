@@ -107,18 +107,49 @@
   {
     "Type": "CATI",
     "AC_Name": "Sreerampur",
-    "Priority": 1
+    "Priority": "0"
   },
   {
     "Type": "CATI",
     "AC_Name": "Singur",
-    "Priority": 1
+    "Priority": "0"
   },
   {
     "Type": "CATI",
     "AC_Name": "Rashbehari",
+    "Priority": "0"
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Dabgram-Phulbari",
+    "Priority": 1
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Chandannagar",
+    "Priority": 1
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Jangipara",
+    "Priority": 1
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Taldangra",
+    "Priority": 1
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Krishnaganj",
+    "Priority": 1
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Champdani",
     "Priority": 1
   }
+
 
 
 ]

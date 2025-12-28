@@ -491,20 +491,99 @@ const completeInterview = async (req, res) => {
   try {
     const { sessionId } = req.params;
     const { responses, qualityMetrics, metadata } = req.body;
+    
+    // Log incoming request for offline sync debugging
+    console.log('📥 completeInterview: Request received', {
+      sessionId,
+      interviewerId: req.user?.id || 'NO USER IN REQ',
+      hasUser: !!req.user,
+      userType: req.user?.userType || 'unknown',
+      metadataSurvey: metadata?.survey || 'not provided',
+      metadataInterviewMode: metadata?.interviewMode || 'not provided',
+      timestamp: new Date().toISOString()
+    });
+    
+    if (!req.user || !req.user.id) {
+      console.error('❌ completeInterview: No user in request object - auth middleware may have failed', {
+        sessionId,
+        hasUser: !!req.user,
+        timestamp: new Date().toISOString()
+      });
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+    
     const interviewerId = req.user.id;
     
     // Extract audioRecording from metadata
     const audioRecording = metadata?.audioRecording || {};
 
-    const session = await InterviewSession.findOne({
+    let session = await InterviewSession.findOne({
       sessionId,
       interviewer: interviewerId
     }).populate('survey');
 
+    // BACKEND FIX: If session not found, create it on-the-fly from metadata
+    // This allows offline interviews with expired/deleted sessions to sync successfully
+    if (!session && metadata?.survey && metadata?.interviewMode) {
+      console.log(`⚠️ Session ${sessionId} not found - creating on-the-fly from metadata for offline sync`);
+      
+      // Verify survey exists
+      const survey = await Survey.findById(metadata.survey);
+      if (!survey) {
+        return res.status(404).json({
+          success: false,
+          message: 'Survey not found'
+        });
+      }
+
+      // Create session from metadata
+      const actualStartTime = metadata?.startTime ? new Date(metadata.startTime) : new Date();
+      session = new InterviewSession({
+        sessionId: sessionId,
+        survey: metadata.survey,
+        interviewer: interviewerId,
+        status: 'active',
+        currentSectionIndex: 0,
+        currentQuestionIndex: 0,
+        startTime: actualStartTime,
+        lastActivityTime: actualStartTime,
+        totalTimeSpent: 0,
+        interviewMode: metadata.interviewMode || 'capi',
+        deviceInfo: metadata.deviceInfo || {},
+        metadata: {
+          createdOnTheFly: true,
+          originalMetadata: metadata
+        },
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours from now
+      });
+
+      // Mark first question as reached
+      session.markQuestionReached(0, 0, 'first');
+      
+      try {
+        await session.save();
+        console.log(`✅ Created session ${sessionId} on-the-fly for offline sync`);
+      } catch (error) {
+        console.error(`❌ Error creating session on-the-fly:`, error);
+        // If session creation fails (e.g., duplicate), try to find existing session
+        session = await InterviewSession.findOne({ sessionId }).populate('survey');
+        if (!session) {
+          return res.status(500).json({
+            success: false,
+            message: 'Failed to create session and session not found'
+          });
+        }
+        console.log(`✅ Found existing session ${sessionId} after creation attempt`);
+      }
+    }
+
     if (!session) {
       return res.status(404).json({
         success: false,
-        message: 'Session not found'
+        message: 'Session not found and unable to create from metadata'
       });
     }
 

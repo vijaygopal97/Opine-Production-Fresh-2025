@@ -5,6 +5,12 @@ const User = require('../models/User');
 exports.protect = async (req, res, next) => {
   try {
     let token;
+    const requestInfo = {
+      path: req.path,
+      method: req.method,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('user-agent') || 'unknown'
+    };
 
     // Check for token in headers
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
@@ -18,11 +24,23 @@ exports.protect = async (req, res, next) => {
 
     // Make sure token exists
     if (!token) {
+      console.error('❌ AUTH FAILED: No token provided', {
+        ...requestInfo,
+        hasAuthHeader: !!req.headers.authorization,
+        authHeaderFormat: req.headers.authorization ? (req.headers.authorization.startsWith('Bearer') ? 'Bearer prefix found' : 'No Bearer prefix') : 'No header',
+        hasCookie: !!req.cookies.token,
+        timestamp: new Date().toISOString()
+      });
       return res.status(401).json({
         success: false,
         message: 'Not authorized to access this route'
       });
     }
+
+    // Log token preview for debugging (first 20 chars + last 5 chars for identification)
+    const tokenPreview = token.length > 25 
+      ? `${token.substring(0, 20)}...${token.substring(token.length - 5)}`
+      : `${token.substring(0, Math.min(20, token.length))}...`;
 
     try {
       // Verify token
@@ -32,6 +50,12 @@ exports.protect = async (req, res, next) => {
       const user = await User.findById(decoded.userId).select('-password');
       
       if (!user) {
+        console.error('❌ AUTH FAILED: User not found in database', {
+          ...requestInfo,
+          userIdFromToken: decoded.userId,
+          tokenPreview,
+          timestamp: new Date().toISOString()
+        });
         return res.status(401).json({
           success: false,
           message: 'No user found with this token'
@@ -40,22 +64,74 @@ exports.protect = async (req, res, next) => {
 
       // Check if user is active
       if (user.status !== 'active') {
+        console.error('❌ AUTH FAILED: User account is not active', {
+          ...requestInfo,
+          userId: user._id.toString(),
+          userEmail: user.email,
+          userStatus: user.status,
+          tokenPreview,
+          timestamp: new Date().toISOString()
+        });
         return res.status(403).json({
           success: false,
           message: `Account is ${user.status}. Please contact support.`
         });
       }
 
+      // Log successful authentication (only for critical endpoints to avoid log spam)
+      if (req.path.includes('/complete') || req.path.includes('/sync') || req.path.includes('/interview')) {
+        console.log('✅ AUTH SUCCESS', {
+          ...requestInfo,
+          userId: user._id.toString(),
+          userEmail: user.email,
+          userType: user.userType,
+          timestamp: new Date().toISOString()
+        });
+      }
+
       req.user = user;
       next();
     } catch (error) {
+      // Log JWT verification errors with detailed information
+      const errorDetails = {
+        ...requestInfo,
+        errorName: error.name,
+        errorMessage: error.message,
+        tokenPreview,
+        tokenLength: token.length,
+        timestamp: new Date().toISOString()
+      };
+
+      // Add specific details based on error type
+      if (error.name === 'TokenExpiredError') {
+        errorDetails.expiredAt = error.expiredAt;
+        errorDetails.expiredAtISO = new Date(error.expiredAt).toISOString();
+        errorDetails.secondsSinceExpiry = Math.floor((Date.now() - error.expiredAt) / 1000);
+        console.error('❌ AUTH FAILED: Token expired', errorDetails);
+      } else if (error.name === 'JsonWebTokenError') {
+        errorDetails.jwtErrorType = error.message; // e.g., "invalid signature", "jwt malformed"
+        console.error('❌ AUTH FAILED: Invalid JWT token', errorDetails);
+      } else if (error.name === 'NotBeforeError') {
+        errorDetails.notBefore = error.date;
+        console.error('❌ AUTH FAILED: Token not yet valid', errorDetails);
+      } else {
+        console.error('❌ AUTH FAILED: JWT verification error (unknown type)', errorDetails);
+      }
+
       return res.status(401).json({
         success: false,
         message: 'Not authorized to access this route'
       });
     }
   } catch (error) {
-    console.error('Auth middleware error:', error);
+    console.error('❌ AUTH MIDDLEWARE: Unexpected error', {
+      path: req.path,
+      method: req.method,
+      errorName: error.name,
+      errorMessage: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString()
+    });
     return res.status(500).json({
       success: false,
       message: 'Server error'

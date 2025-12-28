@@ -2610,6 +2610,18 @@ const ViewResponsesPage = () => {
       showError('Survey data not available');
       return;
     }
+    
+    // Get survey ID for transformations - check multiple possible locations
+    const currentSurveyId = survey?._id || survey?.id || surveyId || null;
+    const surveyIdForTransform = currentSurveyId ? String(currentSurveyId) : null;
+    
+    // Debug log to verify survey ID detection
+    console.log('🔍 CSV Generation - Survey ID Check:', {
+      surveyIdFromParams: surveyId,
+      surveyIdFromObject: survey?._id || survey?.id,
+      surveyIdForTransform: surveyIdForTransform,
+      isTargetSurvey: surveyIdForTransform === '68fd1915d41841da463f0d46'
+    });
 
     // Determine if we have CAPI, CATI, or mixed responses
     const hasCAPI = filteredResponses.some(r => r.interviewMode?.toUpperCase() === 'CAPI');
@@ -2841,7 +2853,7 @@ const ViewResponsesPage = () => {
     
     // Call ID (for CATI)
     metadataTitleRow.push('Call ID');
-    metadataCodeRow.push('');
+    metadataCodeRow.push('Call_ID');
 
     // Build question headers with multi-select handling
     const questionTitleRow = [];
@@ -2943,22 +2955,18 @@ const ViewResponsesPage = () => {
         // Always add if hasOthersOption is true (don't require othersOption to be found)
         if (hasOthersOption) {
           questionTitleRow.push(`Q${questionNumber}: ${mainQuestionText} - Others (Specify)`);
-          // Use template code for "Others"
-          // Special questions: resp_*_oth, Normal questions: q*_oth
-          const othersCode = questionCode.startsWith('resp_') || questionCode === 'thanks_future'
-            ? `${questionCode}_oth`
-            : `${questionCode}_oth`;
+          // Use template code for "Others" - format: questionnumber_44 (e.g., q4_44)
+          // Changed from _oth to _44 format
+          const othersCode = `${questionCode}_44`;
           questionCodeRow.push(othersCode);
         }
       } else {
         // Single choice question - check for "Others" and "Independent" options
         if (hasOthersOption) {
           questionTitleRow.push(`Q${questionNumber}: ${mainQuestionText} - Others (Specify)`);
-          // Use template codes for "Others"
-          // Special questions: resp_*_oth, Normal questions: q*_oth
-          const othersCode = questionCode.startsWith('resp_') || questionCode === 'thanks_future'
-            ? `${questionCode}_oth`
-            : `${questionCode}_oth`;
+          // Use template code for "Others" - format: questionnumber_44 (e.g., q4_44)
+          // Changed from _oth to _44 format
+          const othersCode = `${questionCode}_44`;
           questionCodeRow.push(othersCode);
         }
         
@@ -2972,8 +2980,87 @@ const ViewResponsesPage = () => {
     });
     
     // Combine metadata and question headers first (Status, QC, and Rejection columns will be added at the end)
-    const allTitleRow = [...metadataTitleRow, ...questionTitleRow];
-    const allCodeRow = [...metadataCodeRow, ...questionCodeRow];
+    let allTitleRow = [...metadataTitleRow, ...questionTitleRow];
+    let allCodeRow = [...metadataCodeRow, ...questionCodeRow];
+    
+    // Apply transformations for survey 68fd1915d41841da463f0d46
+    console.log('🔍 Applying transformations?', surveyIdForTransform === '68fd1915d41841da463f0d46', 'Survey ID:', surveyIdForTransform);
+    if (surveyIdForTransform === '68fd1915d41841da463f0d46') {
+      console.log('✅ Applying column transformations for survey 68fd1915d41841da463f0d46');
+      console.log('📋 Before transformations:', allCodeRow.slice(0, 30));
+      // 1. Convert all uppercase Q to lowercase q in column codes
+      allCodeRow = allCodeRow.map(code => {
+        if (typeof code === 'string') {
+          // Replace uppercase Q with lowercase q (e.g., Q10 → q10, Q10_5 → q10_5)
+          return code.replace(/Q(\d+)/g, 'q$1');
+        }
+        return code;
+      });
+      
+      // 2. Apply specific column name replacements for this survey
+      const columnReplacements = {
+        'q1': 'resp_age',
+        'q2': 'resp_registered_voter',
+        'q3': 'resp_gender',
+        'q10_5': 'q10_99',
+        'q11_10': 'q11_11',
+        'q11_11': 'q11_13',
+        'q11_12': 'q11_14',
+        'q11_13': 'q11_15',
+        'q11_14': 'q11_99',
+        'q12_4': 'q12_5',
+        'q12_5': 'q12_6',
+        'q12_6': 'q12_7',
+        'q12_7': 'q12_8',
+        'q12_8': 'q12_9',
+        'q12_9': 'q12_11',
+        'q12_10': 'q12_12',
+        'q12_11': 'q12_14',
+        'q12_12': 'q12_99'
+      };
+      
+      allCodeRow = allCodeRow.map(code => {
+        if (typeof code === 'string' && code in columnReplacements) {
+          console.log(`🔄 Replacing: ${code} → ${columnReplacements[code]}`);
+          return columnReplacements[code];
+        }
+        return code;
+      });
+      console.log('📋 After replacements:', allCodeRow.slice(0, 30));
+      
+      // 3. Change _oth_choice format to _44 (e.g., q4_oth_choice → q4_44)
+      // This should already be handled above, but ensure any remaining _oth patterns are converted
+      allCodeRow = allCodeRow.map(code => {
+        if (typeof code === 'string' && code.includes('_oth_choice')) {
+          return code.replace(/_oth_choice$/, '_44');
+        }
+        // Also handle any _oth patterns that might exist
+        if (typeof code === 'string' && code.match(/_[a-z]*_oth$/)) {
+          return code.replace(/_oth$/, '_44');
+        }
+        return code;
+      });
+    } else {
+      // For other surveys, still ensure lowercase q (but don't apply replacements)
+      allCodeRow = allCodeRow.map(code => {
+        if (typeof code === 'string') {
+          return code.replace(/Q(\d+)/g, 'q$1');
+        }
+        return code;
+      });
+      
+      // Change _oth_choice to _44 format for all surveys
+      allCodeRow = allCodeRow.map(code => {
+        if (typeof code === 'string' && code.includes('_oth_choice')) {
+          return code.replace(/_oth_choice$/, '_44');
+        }
+        // Also handle _oth pattern for Others columns
+        if (typeof code === 'string' && code.match(/^[a-z]+\d+_oth$/)) {
+          return code.replace(/_oth$/, '_44');
+        }
+        return code;
+      });
+    }
     
     // Add Status, QC, and Rejection columns at the VERY END in this order:
     // 1. Status

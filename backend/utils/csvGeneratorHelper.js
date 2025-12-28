@@ -547,7 +547,7 @@ const generateCSVContent = async (survey, sortedResponses, downloadMode, surveyI
   metadataTitleRow.push('GPS Coordinates');
   metadataCodeRow.push('rt_gps_coordinates');
   metadataTitleRow.push('Call ID');
-  metadataCodeRow.push('');
+  metadataCodeRow.push('Call_ID');
   
   // Build question headers with multi-select handling
   const questionTitleRow = [];
@@ -624,15 +624,18 @@ const generateCSVContent = async (survey, sortedResponses, downloadMode, surveyI
       
       if (hasOthersOption) {
         questionTitleRow.push(`Q${questionNumber}: ${mainQuestionText} - Others Choice`);
-        questionCodeRow.push(`${questionCode}_oth_choice`);
+        // Changed from _oth_choice to _44 format
+        questionCodeRow.push(`${questionCode}_44`);
         
         questionTitleRow.push(`Q${questionNumber}: ${mainQuestionText} - Others (Specify)`);
+        // Keep _oth format for the text column
         questionCodeRow.push(`${questionCode}_oth`);
       }
     } else {
       if (hasOthersOption) {
         questionTitleRow.push(`Q${questionNumber}: ${mainQuestionText} - Others (Specify)`);
-        questionCodeRow.push(`${questionCode}_oth`);
+        // Changed from _oth to _44 format
+        questionCodeRow.push(`${questionCode}_44`);
       }
       
       if (hasIndependentOption && ['q5', 'q6', 'q7', 'q8', 'q9'].includes(questionCode)) {
@@ -655,6 +658,80 @@ const generateCSVContent = async (survey, sortedResponses, downloadMode, surveyI
   allCodeRow.push('assigned_to_qc');
   allTitleRow.push('Reason for rejection (1= short duration, 2= gps rejection, 3= duplicate phone numbers, 4= audio status, 5= gender mismatch, 6=2021 AE, 7=2024 GE, 8= Pref, 9=Interviewer performance)');
   allCodeRow.push('rejection_reason');
+  
+  // Apply transformations for survey 68fd1915d41841da463f0d46
+  if (surveyIdStr === '68fd1915d41841da463f0d46') {
+    // 1. Convert all uppercase Q to lowercase q in column codes
+    allCodeRow = allCodeRow.map(code => {
+      if (typeof code === 'string') {
+        // Replace uppercase Q with lowercase q (e.g., Q10 → q10, Q10_5 → q10_5)
+        return code.replace(/Q(\d+)/g, 'q$1');
+      }
+      return code;
+    });
+    
+    // 2. Apply specific column name replacements for this survey
+    const columnReplacements = {
+      'q1': 'resp_age',
+      'q2': 'resp_registered_voter',
+      'q3': 'resp_gender',
+      'q10_5': 'q10_99',
+      'q11_10': 'q11_11',
+      'q11_11': 'q11_13',
+      'q11_12': 'q11_14',
+      'q11_13': 'q11_15',
+      'q11_14': 'q11_99',
+      'q12_4': 'q12_5',
+      'q12_5': 'q12_6',
+      'q12_6': 'q12_7',
+      'q12_7': 'q12_8',
+      'q12_8': 'q12_9',
+      'q12_9': 'q12_11',
+      'q12_10': 'q12_12',
+      'q12_11': 'q12_14',
+      'q12_12': 'q12_99'
+    };
+    
+    allCodeRow = allCodeRow.map(code => {
+      if (typeof code === 'string' && code in columnReplacements) {
+        return columnReplacements[code];
+      }
+      return code;
+    });
+    
+    // 3. Change _oth_choice format to _44 (e.g., q4_oth_choice → q4_44)
+    // This should already be handled above, but ensure any remaining _oth patterns are converted
+    allCodeRow = allCodeRow.map(code => {
+      if (typeof code === 'string' && code.includes('_oth_choice')) {
+        return code.replace(/_oth_choice$/, '_44');
+      }
+      // Also handle any _oth patterns that might exist
+      if (typeof code === 'string' && code.match(/_[a-z]*_oth$/)) {
+        return code.replace(/_oth$/, '_44');
+      }
+      return code;
+    });
+  } else {
+    // For other surveys, still ensure lowercase q (but don't apply replacements)
+    allCodeRow = allCodeRow.map(code => {
+      if (typeof code === 'string') {
+        return code.replace(/Q(\d+)/g, 'q$1');
+      }
+      return code;
+    });
+    
+    // Change _oth_choice to _44 format for all surveys
+    allCodeRow = allCodeRow.map(code => {
+      if (typeof code === 'string' && code.includes('_oth_choice')) {
+        return code.replace(/_oth_choice$/, '_44');
+      }
+      // Also handle _oth pattern for Others columns
+      if (typeof code === 'string' && code.match(/^[a-z]+\d+_oth$/)) {
+        return code.replace(/_oth$/, '_44');
+      }
+      return code;
+    });
+  }
   
   // Pre-fetch supervisor names by memberId
   const uniqueSupervisorIDs = new Set();
