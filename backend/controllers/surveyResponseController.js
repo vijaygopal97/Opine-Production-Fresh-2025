@@ -5,6 +5,7 @@ const Survey = require('../models/Survey');
 const User = require('../models/User');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
+const crypto = require('crypto');
 const { addResponseToBatch } = require('../utils/qcBatchHelper');
 
 // Helper functions for IST (Indian Standard Time) timezone handling
@@ -486,6 +487,11 @@ const resumeInterview = async (req, res) => {
   }
 };
 
+// Note: Server-side duplicate detection removed for performance reasons
+// Duplicate prevention is now handled entirely client-side via metadata checks (Fix 2 & 3)
+// The client ensures responseId is stored in metadata atomically and checks before syncing
+// This prevents duplicates from being sent to the server in the first place
+
 // Complete interview and save final response
 const completeInterview = async (req, res) => {
   try {
@@ -683,6 +689,11 @@ const completeInterview = async (req, res) => {
       console.log(`⏭️  Detected abandoned interview sync - will mark as Terminated and skip auto-rejection`);
       console.log(`⏭️  Abandoned reason: ${metadata?.abandonedReason || 'Not specified'}`);
     }
+    
+    // Note: Server-side duplicate detection removed for performance reasons
+    // Duplicate prevention is now handled client-side via metadata checks (Fix 2 & Fix 3)
+    // The client ensures responseId is stored in metadata and checks before syncing
+    // This avoids expensive server-side response comparison operations
     
     const surveyResponse = await SurveyResponse.createCompleteResponse({
       survey: session.survey._id,
