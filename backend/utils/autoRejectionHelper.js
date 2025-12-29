@@ -60,38 +60,53 @@ const checkAutoRejection = async (surveyResponse, responses, surveyId) => {
   // 1. Already marked as "abandoned" status
   // 2. Have call status other than "call_connected" or "success" (abandoned calls)
   // 3. Have metadata.abandoned = true
+  // 4. Have abandonedReason field set (CRITICAL: This works for all app versions - old and new)
+  const hasCatiAbandonReason = surveyResponse.abandonedReason !== null && 
+                                surveyResponse.abandonedReason !== undefined && 
+                                surveyResponse.abandonedReason !== '';
+  
   const isCatiAbandoned = surveyResponse.interviewMode === 'cati' && (
     surveyResponse.status === 'abandoned' ||
     surveyResponse.metadata?.abandoned === true ||
-    surveyResponse.metadata?.callStatus !== 'call_connected' && 
-    surveyResponse.metadata?.callStatus !== 'success' &&
-    surveyResponse.metadata?.callStatus !== null &&
-    surveyResponse.metadata?.callStatus !== undefined ||
-    surveyResponse.knownCallStatus !== 'call_connected' && 
-    surveyResponse.knownCallStatus !== 'success' &&
-    surveyResponse.knownCallStatus !== null &&
-    surveyResponse.knownCallStatus !== undefined
+    hasCatiAbandonReason ||  // CRITICAL: Check abandonedReason field directly (works for all versions)
+    (surveyResponse.metadata?.callStatus !== 'call_connected' && 
+     surveyResponse.metadata?.callStatus !== 'success' &&
+     surveyResponse.metadata?.callStatus !== null &&
+     surveyResponse.metadata?.callStatus !== undefined) ||
+    (surveyResponse.knownCallStatus !== 'call_connected' && 
+     surveyResponse.knownCallStatus !== 'success' &&
+     surveyResponse.knownCallStatus !== null &&
+     surveyResponse.knownCallStatus !== undefined)
   );
   
   if (isCatiAbandoned) {
-    console.log(`⏭️  Skipping auto-rejection for CATI abandoned response: ${surveyResponse._id}`);
+    console.log(`⏭️  Skipping auto-rejection for CATI abandoned response: ${surveyResponse._id} (status: ${surveyResponse.status}, abandonedReason: ${hasCatiAbandonReason ? surveyResponse.abandonedReason : 'none'})`);
     return null; // Don't auto-reject abandoned CATI interviews
   }
   
   // EXCEPTION FOR CAPI RESPONSES:
   // Skip auto-rejection for CAPI responses that are:
-  // 1. Already marked as "Terminated" status (abandoned interviews)
+  // 1. Already marked as "Terminated" or "abandoned" status (abandoned interviews)
   // 2. Have metadata.abandoned = true
-  // 3. Have abandonedReason field set (indicates intentional abandonment)
+  // 3. Have abandonedReason field set (CRITICAL: This works for all app versions - old and new)
+  // 4. Have abandonmentNotes in metadata (additional indicator for backward compatibility)
+  const hasAbandonReason = surveyResponse.abandonedReason !== null && 
+                           surveyResponse.abandonedReason !== undefined && 
+                           surveyResponse.abandonedReason !== '';
+  const hasAbandonNotes = surveyResponse.metadata?.abandonmentNotes !== null && 
+                          surveyResponse.metadata?.abandonmentNotes !== undefined &&
+                          surveyResponse.metadata?.abandonmentNotes !== '';
+  
   const isCapiAbandoned = surveyResponse.interviewMode === 'capi' && (
     surveyResponse.status === 'Terminated' ||
     surveyResponse.status === 'abandoned' ||
     surveyResponse.metadata?.abandoned === true ||
-    surveyResponse.abandonedReason !== null && surveyResponse.abandonedReason !== undefined
+    hasAbandonReason ||  // CRITICAL: Check abandonedReason field directly (works for all versions)
+    hasAbandonNotes      // Additional safety check for backward compatibility
   );
   
   if (isCapiAbandoned) {
-    console.log(`⏭️  Skipping auto-rejection for CAPI abandoned response: ${surveyResponse._id} (status: ${surveyResponse.status})`);
+    console.log(`⏭️  Skipping auto-rejection for CAPI abandoned response: ${surveyResponse._id} (status: ${surveyResponse.status}, abandonedReason: ${hasAbandonReason ? surveyResponse.abandonedReason : 'none'})`);
     return null; // Don't auto-reject abandoned CAPI interviews
   }
   

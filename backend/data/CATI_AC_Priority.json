@@ -122,31 +122,56 @@
   {
     "Type": "CATI",
     "AC_Name": "Dabgram-Phulbari",
-    "Priority": 1
+    "Priority": "0"
   },
   {
     "Type": "CATI",
     "AC_Name": "Chandannagar",
-    "Priority": 1
+    "Priority": "0"
   },
   {
     "Type": "CATI",
     "AC_Name": "Jangipara",
-    "Priority": 1
+    "Priority": "0"
   },
   {
     "Type": "CATI",
     "AC_Name": "Taldangra",
-    "Priority": 1
+    "Priority": "0"
   },
   {
     "Type": "CATI",
     "AC_Name": "Krishnaganj",
-    "Priority": 1
+    "Priority": "0"
   },
   {
     "Type": "CATI",
     "AC_Name": "Champdani",
+    "Priority": "0"
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Tarakeswar",
+    "Priority": "0"
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Memari",
+    "Priority": 1
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "COOCHBEHAR DAKSHIN",
+    "Priority": "0"
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Kamarhati",
+    "Priority": 1
+  },
+  {
+    "Type": "CATI",
+    "AC_Name": "Bhatpara",
     "Priority": 1
   }
 

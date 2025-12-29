@@ -652,15 +652,28 @@ const completeInterview = async (req, res) => {
     const hasVeryFewResponses = actualResponses.length <= 1; // Only 1 or 0 actual responses (excluding AC/PS)
     const hasNoActualResponses = actualResponses.length === 0; // No actual responses at all
     
+    // CRITICAL FIX: Check if registered voter question is answered "No" (for survey 68fd1915d41841da463f0d46)
+    // If "No", mark as abandoned (not auto-rejected) - this should happen BEFORE other abandonment checks
+    const { checkRegisteredVoterResponse } = require('../utils/abandonmentHelper');
+    const voterCheck = checkRegisteredVoterResponse(responses, session.survey._id);
+    const isNotRegisteredVoter = voterCheck && voterCheck.isNotRegisteredVoter;
+    
+    if (isNotRegisteredVoter) {
+      console.log(`🚫 Detected "Not a Registered Voter" response - will mark as abandoned (reason: ${voterCheck.reason})`);
+    }
+    
     // Consider it abandoned if:
-    // - Explicitly marked as abandoned OR
-    // - Has abandon reason OR  
-    // - Not completed AND (very short duration OR very few responses) OR
-    // - Extremely short duration (< 30s) with no actual responses (instant abandonment heuristic)
-    const isAbandonedInterview = isMarkedAbandoned || 
-                                  hasAbandonReason || 
-                                  (isNotCompleted && (isVeryShortDuration || hasVeryFewResponses)) ||
-                                  (isExtremelyShortDuration && hasNoActualResponses); // Instant abandonment: < 30s with no responses
+    // CRITICAL FIX: Prioritize abandonedReason first (works for all app versions)
+    // - Not a registered voter (PRIORITY 0: Special case for survey 68fd1915d41841da463f0d46) OR
+    // - Has abandon reason (PRIORITY 1: Explicit reason - works for all versions) OR
+    // - Explicitly marked as abandoned (PRIORITY 2: Explicit flag) OR
+    // - Not completed AND (very short duration OR very few responses) (PRIORITY 3: Heuristic) OR
+    // - Extremely short duration (< 30s) with no actual responses (PRIORITY 4: Instant abandonment heuristic)
+    const isAbandonedInterview = isNotRegisteredVoter ||  // PRIORITY 0: Not a registered voter (special case)
+                                  hasAbandonReason ||  // PRIORITY 1: Explicit reason (works for all versions, even if isCompleted is wrong)
+                                  isMarkedAbandoned ||  // PRIORITY 2: Explicit flag
+                                  (isNotCompleted && (isVeryShortDuration || hasVeryFewResponses)) ||  // PRIORITY 3: Heuristic
+                                  (isExtremelyShortDuration && hasNoActualResponses); // PRIORITY 4: Instant abandonment: < 30s with no responses
     
     if (isAbandonedInterview && !isMarkedAbandoned && !hasAbandonReason) {
       console.log(`⏭️  Detected abandoned interview using heuristic - duration: ${totalTimeSpent}s, responses: ${actualResponses.length}, isCompleted: ${isNotCompleted}`);
@@ -703,15 +716,50 @@ const completeInterview = async (req, res) => {
     if (isAbandonedInterview) {
       surveyResponse.status = 'Terminated';
       console.log(`✅ Set status to Terminated for abandoned interview sync`);
+      // CRITICAL: Also set abandonedReason if not already set (for backward compatibility)
+      if (!surveyResponse.abandonedReason) {
+        if (isNotRegisteredVoter && voterCheck) {
+          surveyResponse.abandonedReason = voterCheck.reason;
+          console.log(`✅ Set abandonedReason to: ${voterCheck.reason} (Not a Registered Voter)`);
+        } else if (metadata?.abandonedReason) {
+          surveyResponse.abandonedReason = metadata.abandonedReason;
+          console.log(`✅ Set abandonedReason from metadata: ${metadata.abandonedReason}`);
+        }
+      }
     }
 
     await surveyResponse.save();
     
+    // CRITICAL FIX: Double-check status after save to ensure it wasn't changed
+    // Reload from DB to get the actual saved status (prevents race conditions)
+    const savedResponse = await SurveyResponse.findById(surveyResponse._id);
+    const finalStatus = savedResponse.status;
+    const finalAbandonedReason = savedResponse.abandonedReason;
+    
+    // CRITICAL FIX: Only skip auto-rejection if EXPLICITLY abandoned (not heuristic-based)
+    // This ensures legitimate short interviews still go through auto-rejection
+    // Separate explicit abandonment from heuristic-based abandonment
+    const isExplicitlyAbandonedForAutoRejection = hasAbandonReason ||  // PRIORITY 1: Explicit reason (works for all versions)
+                                                  isMarkedAbandoned ||  // PRIORITY 2: Explicit flag
+                                                  finalStatus === 'Terminated' ||  // Status is Terminated (from DB)
+                                                  finalStatus === 'abandoned' ||    // Status is abandoned (from DB)
+                                                  (finalAbandonedReason !== null && finalAbandonedReason !== undefined && finalAbandonedReason !== ''); // Has abandon reason in DB
+    
     // CRITICAL: Skip auto-rejection for abandoned interviews
-    // Abandoned interviews should always remain as "Terminated" status
+    // Check multiple indicators to ensure we don't auto-reject abandoned interviews
+    // This works for all app versions (old and new)
+    // BUT only skip if EXPLICITLY abandoned (not heuristic-based)
     let wasAutoRejected = false;
-    if (isAbandonedInterview) {
-      console.log(`⏭️  Skipping auto-rejection for abandoned interview (status: ${surveyResponse.status})`);
+    const isDefinitelyAbandoned = isExplicitlyAbandonedForAutoRejection;  // Only explicit indicators (NOT heuristic)
+    
+    if (isDefinitelyAbandoned) {
+      console.log(`⏭️  Skipping auto-rejection for abandoned interview (status: ${finalStatus}, abandonedReason: ${finalAbandonedReason || 'none'})`);
+      // Ensure status is still Terminated (safety check - prevents any edge cases)
+      if (finalStatus !== 'Terminated' && finalStatus !== 'abandoned') {
+        savedResponse.status = 'Terminated';
+        await savedResponse.save();
+        console.log(`✅ Corrected status to Terminated for abandoned interview (was: ${finalStatus})`);
+      }
     } else {
       // Check for auto-rejection conditions only for non-abandoned interviews
       const { checkAutoRejection, applyAutoRejection } = require('../utils/autoRejectionHelper');

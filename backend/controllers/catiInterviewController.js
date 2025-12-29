@@ -1118,7 +1118,7 @@ const abandonInterview = async (req, res) => {
 const completeCatiInterview = async (req, res) => {
   try {
     const { queueId } = req.params;
-    const { sessionId, responses, selectedAC, selectedPollingStation, totalTimeSpent, startTime, endTime, totalQuestions: frontendTotalQuestions, answeredQuestions: frontendAnsweredQuestions, completionPercentage: frontendCompletionPercentage, setNumber, OldinterviewerID, callStatus, supervisorID, reason } = req.body;
+    const { sessionId, responses, selectedAC, selectedPollingStation, totalTimeSpent, startTime, endTime, totalQuestions: frontendTotalQuestions, answeredQuestions: frontendAnsweredQuestions, completionPercentage: frontendCompletionPercentage, setNumber, OldinterviewerID, callStatus, supervisorID, reason, consentResponse: bodyConsentResponse, abandoned: bodyAbandoned, abandonedReason: bodyAbandonedReason, isCompleted: bodyIsCompleted, metadata: bodyMetadata } = req.body;
     
     // CRITICAL: Convert setNumber to number immediately at the top level so it's available everywhere
     // Try to get setNumber from multiple possible locations (top level, nested, etc.)
@@ -1276,28 +1276,32 @@ const completeCatiInterview = async (req, res) => {
     
     // Extract consent form response (consent-form question)
     // Value '1' or 'yes' = Yes, Value '2' or 'no' = No
-    let consentResponse = null;
-    const consentFormResponse = allResponses.find(r => r.questionId === 'consent-form');
-    if (consentFormResponse && consentFormResponse.response !== null && consentFormResponse.response !== undefined) {
-      // Handle different response formats: string, number, object with value property
-      let consentValue = consentFormResponse.response;
-      
-      // If it's an object, try to extract the value
-      if (typeof consentValue === 'object' && consentValue !== null) {
-        consentValue = consentValue.value || consentValue.text || consentValue;
-      }
-      
-      // Convert to string and normalize
-      const consentValueStr = String(consentValue).trim();
-      const consentValueLower = consentValueStr.toLowerCase();
-      
-      // Check for "yes" values: '1', 'yes', 'true', 'y'
-      if (consentValueStr === '1' || consentValueLower === 'yes' || consentValueLower === 'true' || consentValueLower === 'y') {
-        consentResponse = 'yes';
-      } 
-      // Check for "no" values: '2', 'no', 'false', 'n'
-      else if (consentValueStr === '2' || consentValueLower === 'no' || consentValueLower === 'false' || consentValueLower === 'n') {
-        consentResponse = 'no';
+    // CRITICAL: Prioritize req.body.consentResponse (from sync service), then check responses array
+    let consentResponse = bodyConsentResponse || null;
+    let consentFormResponse = null;
+    if (!consentResponse) {
+      consentFormResponse = allResponses.find(r => r.questionId === 'consent-form');
+      if (consentFormResponse && consentFormResponse.response !== null && consentFormResponse.response !== undefined) {
+        // Handle different response formats: string, number, object with value property
+        let consentValue = consentFormResponse.response;
+        
+        // If it's an object, try to extract the value
+        if (typeof consentValue === 'object' && consentValue !== null) {
+          consentValue = consentValue.value || consentValue.text || consentValue;
+        }
+        
+        // Convert to string and normalize
+        const consentValueStr = String(consentValue).trim();
+        const consentValueLower = consentValueStr.toLowerCase();
+        
+        // Check for "yes" values: '1', 'yes', 'true', 'y'
+        if (consentValueStr === '1' || consentValueLower === 'yes' || consentValueLower === 'true' || consentValueLower === 'y') {
+          consentResponse = 'yes';
+        } 
+        // Check for "no" values: '2', 'no', 'false', 'n'
+        else if (consentValueStr === '2' || consentValueLower === 'no' || consentValueLower === 'false' || consentValueLower === 'n') {
+          consentResponse = 'no';
+        }
       }
     }
     console.log(`📋 Consent Form Response: ${consentResponse} (raw: ${JSON.stringify(consentFormResponse?.response)}, type: ${typeof consentFormResponse?.response})`);
@@ -1367,6 +1371,27 @@ const completeCatiInterview = async (req, res) => {
     const shouldAutoReject = false; // Don't auto-reject based on call status - use quality checks instead
     
     console.log(`📞 Call Status received: ${finalCallStatus}, KnownCallStatus: ${knownCallStatus}, Is Connected: ${isCallConnected}`);
+    
+    // CRITICAL FIX: Calculate explicit abandonment indicators at function level (for use in auto-rejection check)
+    // This ensures the variable is accessible in both existing and new response paths
+    // IMPORTANT: Sync service sends abandoned/isCompleted at top level AND in metadata
+    // ALSO CHECK: queueEntry.abandonmentReason (when interview was abandoned via abandon endpoint)
+    // Note: queueEntry is populated earlier in the function, so it's available here
+    const hasExplicitAbandonReasonGlobal = req.body.abandonReason !== null && req.body.abandonReason !== undefined && req.body.abandonReason !== '' ||
+                                           req.body.reason !== null && req.body.reason !== undefined && req.body.reason !== '' ||
+                                           req.body.metadata?.abandonReason !== null && req.body.metadata?.abandonReason !== undefined && req.body.metadata?.abandonReason !== '' ||
+                                           (queueEntry.abandonmentReason !== null && queueEntry.abandonmentReason !== undefined && queueEntry.abandonmentReason !== '');  // CRITICAL: Check queueEntry for abandonment (backend-only fix)
+    const isExplicitlyAbandonedGlobal = req.body.abandoned === true ||  // Top level (from sync service)
+                                        req.body.metadata?.abandoned === true ||  // In metadata
+                                        req.body.isCompleted === false ||  // Top level (from sync service)
+                                        req.body.metadata?.isCompleted === false ||  // In metadata
+                                        (queueEntry.abandonmentReason !== null && queueEntry.abandonmentReason !== undefined && queueEntry.abandonmentReason !== '');  // CRITICAL: Check queueEntry for abandonment (backend-only fix)
+    
+    // Calculate explicit abandonment for auto-rejection skip (works for all app versions)
+    const isExplicitlyAbandonedForSkipGlobal = hasExplicitAbandonReasonGlobal ||  // PRIORITY 1: Explicit reason
+                                               isExplicitlyAbandonedGlobal ||      // PRIORITY 1: Explicit flag
+                                               !isCallConnected ||                // PRIORITY 2: Call not connected
+                                               consentResponse === 'no';          // PRIORITY 3: Consent refused
 
     // Get callId from queueEntry's callRecord
     let callId = null;
@@ -1545,10 +1570,39 @@ const completeCatiInterview = async (req, res) => {
       // Abandoned calls (status = 'abandoned') should NOT go through auto-rejection
       const { checkAutoRejection, applyAutoRejection } = require('../utils/autoRejectionHelper');
       try {
-        // IMPORTANT: Skip auto-rejection if:
-        // 1. Status is 'abandoned' (call not connected OR consent refused), OR
-        // 2. Consent is "No" (even if call was connected)
-        const shouldSkipAutoRejection = surveyResponse.status === 'abandoned' || consentResponse === 'no';
+      // CRITICAL FIX: Skip auto-rejection for abandoned interviews (existing responses)
+      // Check multiple indicators to ensure we don't auto-reject abandoned interviews (works for all app versions)
+      const existingResponseLatest = await SurveyResponse.findById(surveyResponse._id);
+      const hasAbandonReasonExisting = existingResponseLatest?.abandonedReason !== null && 
+                                       existingResponseLatest?.abandonedReason !== undefined && 
+                                       existingResponseLatest?.abandonedReason !== '';
+      const isAbandonedStatusExisting = existingResponseLatest?.status === 'abandoned' || 
+                                        existingResponseLatest?.status === 'Terminated';
+      const isAbandonedMetadataExisting = existingResponseLatest?.metadata?.abandoned === true;
+      
+      // CRITICAL FIX: Check if registered voter question is answered "No" (for survey 68fd1915d41841da463f0d46)
+      // If "No", skip auto-rejection (should be marked as abandoned, not rejected)
+      const { checkRegisteredVoterResponse } = require('../utils/abandonmentHelper');
+      const voterCheckExisting = checkRegisteredVoterResponse(allResponses, queueEntry.survey._id);
+      const isNotRegisteredVoterExisting = voterCheckExisting && voterCheckExisting.isNotRegisteredVoter;
+      
+      // CRITICAL FIX: Check queueEntry for abandonment (backend-only fix - works even if sync service doesn't send abandonment fields)
+      const hasQueueAbandonReasonExisting = queueEntry.abandonmentReason !== null && 
+                                            queueEntry.abandonmentReason !== undefined && 
+                                            queueEntry.abandonmentReason !== '';
+      
+      // CRITICAL FIX: Only skip auto-rejection if EXPLICITLY abandoned (not heuristic-based)
+      // Check explicit abandonment indicators (same logic as status determination but without heuristic)
+      const isExplicitlyAbandonedForSkipExisting = hasAbandonReasonExisting ||  // Has explicit abandon reason
+                                                   hasQueueAbandonReasonExisting ||  // CRITICAL: QueueEntry has abandonment reason (backend-only fix)
+                                                   isAbandonedStatusExisting ||  // Status is abandoned
+                                                   isAbandonedMetadataExisting || // Metadata flag set
+                                                   !isCallConnected ||           // Call not connected
+                                                   consentResponse === 'no';     // Consent refused
+      
+      // This ensures legitimate short interviews still go through auto-rejection
+      const shouldSkipAutoRejection = isNotRegisteredVoterExisting ||  // PRIORITY 0: Not a registered voter (special case)
+                                     isExplicitlyAbandonedForSkipExisting;  // Only skip if EXPLICITLY abandoned
         if (!shouldSkipAutoRejection && isCallConnected) {
           // IMPORTANT: Save setNumber before auto-rejection check to ensure it's preserved
           const setNumberToPreserve = surveyResponse.setNumber;
@@ -1615,12 +1669,91 @@ const completeCatiInterview = async (req, res) => {
       
       // Use the finalSetNumber already calculated at the top level
       
-      // Determine status based on call connection AND consent form
-      // Mark as "abandoned" if:
-      // 1. Call is NOT connected, OR
-      // 2. Consent form is "No" (even if call was connected)
-      const shouldMarkAsAbandoned = !isCallConnected || consentResponse === 'no';
+      // CRITICAL FIX: Detect abandoned interviews from multiple sources (backend-only fix for all app versions)
+      // Check for explicit abandonment indicators in request body (for offline sync)
+      // IMPORTANT: Sync service sends abandoned/isCompleted at top level AND in metadata
+      // ALSO CHECK: queueEntry.abandonmentReason (when interview was abandoned via abandon endpoint)
+      const hasExplicitAbandonReason = req.body.abandonReason !== null && req.body.abandonReason !== undefined && req.body.abandonReason !== '' ||
+                                       req.body.reason !== null && req.body.reason !== undefined && req.body.reason !== '' ||
+                                       req.body.metadata?.abandonReason !== null && req.body.metadata?.abandonReason !== undefined && req.body.metadata?.abandonReason !== '' ||
+                                       (queueEntry.abandonmentReason !== null && queueEntry.abandonmentReason !== undefined && queueEntry.abandonmentReason !== '');  // CRITICAL: Check queueEntry for abandonment (backend-only fix)
+      const isExplicitlyAbandoned = req.body.abandoned === true ||  // Top level (from sync service)
+                                    req.body.metadata?.abandoned === true ||  // In metadata
+                                    req.body.isCompleted === false ||  // Top level (from sync service)
+                                    req.body.metadata?.isCompleted === false ||  // In metadata
+                                    (queueEntry.abandonmentReason !== null && queueEntry.abandonmentReason !== undefined && queueEntry.abandonmentReason !== '');  // CRITICAL: Check queueEntry for abandonment (backend-only fix)
+      
+      // Extract abandon reason from request if available, fallback to queueEntry
+      const requestAbandonReason = req.body.abandonReason || req.body.reason || req.body.metadata?.abandonReason || queueEntry.abandonmentReason || null;
+      
+      // Heuristic: Very short duration (< 60 seconds) with very few responses indicates instant abandonment
+      const actualResponses = allResponses ? allResponses.filter(r => {
+        const questionId = r.questionId || '';
+        const questionText = (r.questionText || '').toLowerCase();
+        const isACSelection = questionId === 'ac-selection' || 
+                             questionText.includes('assembly constituency') ||
+                             questionText.includes('select assembly constituency');
+        const isPollingStation = questionId === 'polling-station-selection' ||
+                                questionText.includes('polling station') ||
+                                questionText.includes('select polling station');
+        return !isACSelection && !isPollingStation && r.response !== null && r.response !== undefined && r.response !== '';
+      }) : [];
+      
+      const isVeryShortDuration = finalTotalTimeSpent < 60; // Less than 60 seconds
+      const isExtremelyShortDuration = finalTotalTimeSpent < 30; // Less than 30 seconds
+      const hasVeryFewResponses = actualResponses.length <= 1;
+      const hasNoActualResponses = actualResponses.length === 0;
+      
+      // CRITICAL FIX: Check if registered voter question is answered "No" (for survey 68fd1915d41841da463f0d46)
+      // If "No", mark as abandoned (not auto-rejected) - this should happen BEFORE other abandonment checks
+      const { checkRegisteredVoterResponse } = require('../utils/abandonmentHelper');
+      const voterCheck = checkRegisteredVoterResponse(allResponses, queueEntry.survey._id);
+      const isNotRegisteredVoter = voterCheck && voterCheck.isNotRegisteredVoter;
+      
+      if (isNotRegisteredVoter) {
+        console.log(`🚫 Detected "Not a Registered Voter" response (CATI) - will mark as abandoned (reason: ${voterCheck.reason})`);
+      }
+      
+      // CRITICAL FIX: Separate explicit abandonment from heuristic detection
+      // Explicit abandonment (for auto-rejection skip): Only skip auto-rejection if EXPLICITLY abandoned
+      // This ensures legitimate short interviews still go through auto-rejection
+      // Use global variable calculated at function level (consistent across all paths)
+      const isExplicitlyAbandonedForSkip = isExplicitlyAbandonedForSkipGlobal;  // Use global variable (already calculated)
+      
+      // Status determination (includes heuristic for catching abandoned interviews):
+      // Mark as "abandoned" if explicitly abandoned OR not a registered voter OR heuristic matches
+      // IMPORTANT: Use LOCAL variables (hasExplicitAbandonReason, isExplicitlyAbandoned) for status determination
+      // This ensures we catch abandoned interviews from request body metadata
+      const shouldMarkAsAbandoned = isNotRegisteredVoter ||  // PRIORITY 0: Not a registered voter (special case)
+                                    hasExplicitAbandonReason ||  // PRIORITY 1: Explicit abandon reason (from request body)
+                                    isExplicitlyAbandoned ||  // PRIORITY 1: Explicit abandoned flag (from request body)
+                                    !isCallConnected ||  // PRIORITY 2: Call not connected
+                                    consentResponse === 'no' ||  // PRIORITY 3: Consent refused
+                                    (isExtremelyShortDuration && hasNoActualResponses); // PRIORITY 4: Heuristic: < 30s with no responses
+      
       const responseStatus = shouldMarkAsAbandoned ? 'abandoned' : 'Pending_Approval';
+      
+      // Determine final abandon reason (prioritize explicit reason from request)
+      let finalAbandonReason = null;
+      if (isNotRegisteredVoter && voterCheck) {
+        // PRIORITY 0: Not a registered voter (special case for survey 68fd1915d41841da463f0d46)
+        finalAbandonReason = voterCheck.reason;
+        console.log(`⏭️  Detected "Not a Registered Voter" - reason: ${finalAbandonReason}`);
+      } else if (hasExplicitAbandonReason && requestAbandonReason) {
+        // Use explicit reason from request (for offline sync)
+        finalAbandonReason = requestAbandonReason;
+        console.log(`⏭️  Detected explicit abandonment from request - reason: ${finalAbandonReason}`);
+      } else if (consentResponse === 'no') {
+        finalAbandonReason = 'Consent_Form_Disagree';
+      } else if (!isCallConnected && finalCallStatus && finalCallStatus !== 'call_connected' && finalCallStatus !== 'success') {
+        finalAbandonReason = 'Call_Not_Connected';
+      } else if (isExtremelyShortDuration && hasNoActualResponses) {
+        finalAbandonReason = 'Interview_Abandoned_Early';
+      }
+      
+      if (shouldMarkAsAbandoned && !hasExplicitAbandonReason && !isExplicitlyAbandoned) {
+        console.log(`⏭️  Detected abandoned CATI interview using heuristic - duration: ${finalTotalTimeSpent}s, responses: ${actualResponses.length}, callConnected: ${isCallConnected}, consent: ${consentResponse}`);
+      }
       
       // IMPORTANT: If call was connected, knownCallStatus should be 'call_connected' 
       // even if consent is "No" - this ensures accurate stats
@@ -1677,8 +1810,8 @@ const completeCatiInterview = async (req, res) => {
         startTime: finalStartTime, // Required field
         endTime: finalEndTime, // Required field
         totalTimeSpent: finalTotalTimeSpent, // Required field - Form Duration uses this
-        status: responseStatus, // Set to "abandoned" if call not connected OR consent is "No"
-        abandonedReason: consentResponse === 'no' ? 'Consent_Form_Disagree' : (!isCallConnected && finalCallStatus && finalCallStatus !== 'call_connected' && finalCallStatus !== 'success' ? 'Call_Not_Connected' : null), // Set standardized abandonment reason
+        status: responseStatus, // Set to "abandoned" if explicitly abandoned, call not connected, consent refused, or heuristic match
+        abandonedReason: finalAbandonReason, // Use determined abandon reason (prioritizes explicit reason from request)
         totalQuestions: totalQuestions || 0, // Required field - ensure it's not undefined
         answeredQuestions: answeredQuestions || 0, // Required field - ensure it's not undefined
         skippedQuestions: (totalQuestions || 0) - (answeredQuestions || 0), // Optional but good to have
@@ -1689,8 +1822,8 @@ const completeCatiInterview = async (req, res) => {
           respondentPhone: queueEntry.respondentContact?.phone || queueEntry.respondentContact?.phone,
           callRecordId: queueEntry.callRecord?._id,
           callStatus: finalCallStatus, // Store call status in metadata (legacy)
-          abandoned: shouldMarkAsAbandoned, // Mark as abandoned if call not connected OR consent is "No"
-          abandonmentReason: consentResponse === 'no' ? 'consent_refused' : (!isCallConnected && finalCallStatus && finalCallStatus !== 'call_connected' && finalCallStatus !== 'success' ? 'Call_Not_Connected' : null)
+          abandoned: shouldMarkAsAbandoned, // Mark as abandoned (from explicit indicators, call status, consent, or heuristic)
+          abandonmentReason: finalAbandonReason || (consentResponse === 'no' ? 'consent_refused' : (!isCallConnected && finalCallStatus && finalCallStatus !== 'call_connected' && finalCallStatus !== 'success' ? 'Call_Not_Connected' : null))
         }
       });
       
@@ -1713,6 +1846,20 @@ const completeCatiInterview = async (req, res) => {
         console.log(`🔴🔴🔴 Saving SurveyResponse to database...`);
         await surveyResponse.save();
         console.log(`🔴🔴🔴 SurveyResponse saved. Now checking setNumber in saved object: ${surveyResponse.setNumber}`);
+        
+        // CRITICAL FIX: Double-check status after save for abandoned interviews
+        // Reload from DB to ensure status is correct (prevents auto-rejection from changing it)
+        if (shouldMarkAsAbandoned && responseStatus === 'abandoned') {
+          const savedResponse = await SurveyResponse.findById(surveyResponse._id);
+          if (savedResponse && savedResponse.status !== 'abandoned') {
+            savedResponse.status = 'abandoned';
+            if (finalAbandonReason && !savedResponse.abandonedReason) {
+              savedResponse.abandonedReason = finalAbandonReason;
+            }
+            await savedResponse.save();
+            console.log(`✅ Corrected CATI response status to 'abandoned' after save (was: ${savedResponse.status})`);
+          }
+        }
         
         // CRITICAL: Immediately update setNumber using native MongoDB after initial save
         // This ensures it's persisted even if Mongoose stripped it out
@@ -1804,14 +1951,57 @@ const completeCatiInterview = async (req, res) => {
 
               existingResponse.consentResponse = consentResponse;
 
+              // CRITICAL FIX: Check if registered voter question is answered "No" (for survey 68fd1915d41841da463f0d46)
+              // If "No", mark as abandoned (not auto-rejected)
+              const { checkRegisteredVoterResponse } = require('../utils/abandonmentHelper');
+              const voterCheckExistingUpdate = checkRegisteredVoterResponse(existingResponse.responses || allResponses, queueEntry.survey._id);
+              const isNotRegisteredVoterExistingUpdate = voterCheckExistingUpdate && voterCheckExistingUpdate.isNotRegisteredVoter;
+              
+              // CRITICAL FIX: Use same abandoned detection logic as new responses
+              // Check for explicit abandonment indicators (for offline sync compatibility)
+              // ALSO CHECK: queueEntry.abandonmentReason (when interview was abandoned via abandon endpoint)
+              const hasExplicitAbandonReasonExisting = req.body.abandonReason !== null && req.body.abandonReason !== undefined && req.body.abandonReason !== '' ||
+                                                       req.body.reason !== null && req.body.reason !== undefined && req.body.reason !== '' ||
+                                                       req.body.metadata?.abandonReason !== null && req.body.metadata?.abandonReason !== undefined && req.body.metadata?.abandonReason !== '' ||
+                                                       (queueEntry.abandonmentReason !== null && queueEntry.abandonmentReason !== undefined && queueEntry.abandonmentReason !== '');  // CRITICAL: Check queueEntry for abandonment (backend-only fix)
+              const isExplicitlyAbandonedExisting = req.body.abandoned === true ||  // Top level (from sync service)
+                                                     req.body.metadata?.abandoned === true ||  // In metadata
+                                                     req.body.isCompleted === false ||  // Top level (from sync service)
+                                                     req.body.metadata?.isCompleted === false ||  // In metadata
+                                                     (queueEntry.abandonmentReason !== null && queueEntry.abandonmentReason !== undefined && queueEntry.abandonmentReason !== '');  // CRITICAL: Check queueEntry for abandonment (backend-only fix)
+              const requestAbandonReasonExisting = req.body.abandonReason || req.body.reason || req.body.metadata?.abandonReason || queueEntry.abandonmentReason || reason || null;
+              
               // Update status and metadata
-              const shouldMarkAsAbandoned = !isCallConnected || consentResponse === 'no';
+              const shouldMarkAsAbandoned = isNotRegisteredVoterExistingUpdate ||  // PRIORITY 0: Not a registered voter (special case)
+                                            hasExplicitAbandonReasonExisting ||  // PRIORITY 1: Explicit reason
+                                            isExplicitlyAbandonedExisting ||      // PRIORITY 1: Explicit flag
+                                            !isCallConnected ||                  // PRIORITY 2: Call not connected
+                                            consentResponse === 'no';            // PRIORITY 3: Consent refused
+              
+              let finalAbandonReasonExisting = null;
+              if (isNotRegisteredVoterExistingUpdate && voterCheckExistingUpdate) {
+                // PRIORITY 0: Not a registered voter (special case for survey 68fd1915d41841da463f0d46)
+                finalAbandonReasonExisting = voterCheckExistingUpdate.reason;
+                console.log(`⏭️  Detected "Not a Registered Voter" (existing response) - reason: ${finalAbandonReasonExisting}`);
+              } else if (hasExplicitAbandonReasonExisting && requestAbandonReasonExisting) {
+                finalAbandonReasonExisting = requestAbandonReasonExisting;
+              } else if (consentResponse === 'no') {
+                finalAbandonReasonExisting = 'Consent_Form_Disagree';
+              } else if (!isCallConnected && finalCallStatus && finalCallStatus !== 'call_connected' && finalCallStatus !== 'success') {
+                finalAbandonReasonExisting = 'Call_Not_Connected';
+              } else if (reason) {
+                finalAbandonReasonExisting = reason;
+              }
+              
               if (shouldMarkAsAbandoned) {
                 existingResponse.status = 'abandoned';
+                if (finalAbandonReasonExisting && !existingResponse.abandonedReason) {
+                  existingResponse.abandonedReason = finalAbandonReasonExisting;
+                }
                 existingResponse.metadata = {
                   ...existingResponse.metadata,
                   abandoned: true,
-                  abandonmentReason: consentResponse === 'no' ? 'consent_refused' : reason,
+                  abandonmentReason: finalAbandonReasonExisting || (consentResponse === 'no' ? 'consent_refused' : reason),
                   callStatus: finalCallStatus,
                   respondentQueueId: queueEntry._id,
                   respondentName: queueEntry.respondentContact?.name || queueEntry.respondentContact?.name,
@@ -1857,10 +2047,30 @@ const completeCatiInterview = async (req, res) => {
     // Abandoned calls (status = 'abandoned') should NOT go through auto-rejection
     const { checkAutoRejection, applyAutoRejection } = require('../utils/autoRejectionHelper');
     try {
-      // IMPORTANT: Skip auto-rejection if:
-      // 1. Status is 'abandoned' (call not connected OR consent refused), OR
-      // 2. Consent is "No" (even if call was connected)
-      const shouldSkipAutoRejection = surveyResponse.status === 'abandoned' || consentResponse === 'no';
+      // CRITICAL FIX: Skip auto-rejection for abandoned interviews
+      // Check multiple indicators to ensure we don't auto-reject abandoned interviews (works for all app versions)
+      const latestResponse = await SurveyResponse.findById(surveyResponse._id);
+      const hasAbandonReason = latestResponse?.abandonedReason !== null && 
+                               latestResponse?.abandonedReason !== undefined && 
+                               latestResponse?.abandonedReason !== '';
+      const isAbandonedStatus = latestResponse?.status === 'abandoned' || 
+                                latestResponse?.status === 'Terminated';
+      const isAbandonedMetadata = latestResponse?.metadata?.abandoned === true;
+      
+      // CRITICAL FIX: Check queueEntry for abandonment (backend-only fix - works even if sync service doesn't send abandonment fields)
+      const hasQueueAbandonReason = queueEntry.abandonmentReason !== null && 
+                                    queueEntry.abandonmentReason !== undefined && 
+                                    queueEntry.abandonmentReason !== '';
+      
+      // CRITICAL FIX: Only skip auto-rejection if EXPLICITLY abandoned (not heuristic-based)
+      // This ensures legitimate short interviews still go through auto-rejection
+      // Use global variable calculated at function level (accessible in both paths)
+      const shouldSkipAutoRejection = isAbandonedStatus ||           // Status is abandoned (from DB)
+                                      hasAbandonReason ||            // Has abandon reason (works for all versions)
+                                      hasQueueAbandonReason ||       // CRITICAL: QueueEntry has abandonment reason (backend-only fix)
+                                      isAbandonedMetadata ||        // Metadata flag set
+                                      consentResponse === 'no' ||    // Consent refused
+                                      isExplicitlyAbandonedForSkipGlobal;  // Explicitly abandoned (NOT heuristic) - from function level
       if (!shouldSkipAutoRejection && isCallConnected) {
       // CRITICAL: Preserve setNumber before auto-rejection check
       // Ensure it's a proper Number type
@@ -1903,7 +2113,22 @@ const completeCatiInterview = async (req, res) => {
         await surveyResponse.populate('survey');
         }
       } else {
-        console.log(`⏭️  Skipping auto-rejection for abandoned CATI response: ${surveyResponse._id} (status: ${surveyResponse.status})`);
+        console.log(`⏭️  Skipping auto-rejection for abandoned CATI response: ${surveyResponse._id} (status: ${latestResponse?.status || surveyResponse.status}, abandonedReason: ${hasAbandonReason ? latestResponse?.abandonedReason : 'none'}, queueAbandonReason: ${hasQueueAbandonReason ? queueEntry.abandonmentReason : 'none'})`);
+        // Ensure status is still 'abandoned' (safety check) - check all abandonment indicators
+        const shouldBeAbandoned = isExplicitlyAbandonedForSkipGlobal || hasQueueAbandonReason || hasAbandonReason || isAbandonedStatus || isAbandonedMetadata;
+        if (latestResponse && latestResponse.status !== 'abandoned' && shouldBeAbandoned) {
+          latestResponse.status = 'abandoned';
+          // Set abandonedReason from queueEntry if not already set
+          if (!latestResponse.abandonedReason) {
+            if (hasQueueAbandonReason && queueEntry.abandonmentReason) {
+              latestResponse.abandonedReason = queueEntry.abandonmentReason;
+            } else if (finalAbandonReason) {
+              latestResponse.abandonedReason = finalAbandonReason;
+            }
+          }
+          await latestResponse.save();
+          console.log(`✅ Corrected CATI response status to 'abandoned' before auto-rejection check (was: ${latestResponse.status}, queueAbandonReason: ${queueEntry.abandonmentReason || 'none'})`);
+        }
       }
     } catch (autoRejectError) {
       console.error('Error checking auto-rejection:', autoRejectError);

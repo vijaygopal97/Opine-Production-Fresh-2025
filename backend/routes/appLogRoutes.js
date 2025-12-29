@@ -14,3 +14,7 @@ router.get('/', protect, authorize('company_admin', 'super_admin'), getAppLogs);
 
 module.exports = router;
 
+
+
+
+
