@@ -25,16 +25,75 @@ const generateCSVForSurvey = async (surveyId, downloadMode = 'codes') => {
       throw new Error(`Survey ${surveyId} not found`);
     }
     
-    // Fetch responses matching frontend default filter: 'approved_rejected_pending'
-    // This maps to: ['Approved', 'Rejected', 'Pending_Approval']
-    // This matches the default state when opening /responses-v2 page
-    const responses = await SurveyResponse.find({
-      survey: surveyId,
+    // Fetch responses using aggregation pipeline (more efficient for large datasets)
+    // This matches the default state when opening /responses-v2 page: 'approved_rejected_pending'
+    const mongoose = require('mongoose');
+    
+    // Build aggregation pipeline similar to getSurveyResponsesV2
+    const pipeline = [];
+    
+    // Stage 1: Match filter
+    const matchFilter = { 
+      survey: mongoose.Types.ObjectId.isValid(surveyId) ? new mongoose.Types.ObjectId(surveyId) : surveyId,
       status: { $in: ['Approved', 'Rejected', 'Pending_Approval', 'approved', 'rejected', 'pending_approval'] }
-    })
-      .sort({ createdAt: 1 }) // Sort by createdAt ascending (oldest first)
-      .populate('interviewer', 'firstName lastName email memberId memberID')
-      .lean();
+    };
+    pipeline.push({ $match: matchFilter });
+    
+    // Stage 2: Sort by createdAt ascending (oldest first) for CSV
+    pipeline.push({ $sort: { createdAt: 1 } });
+    
+    // Stage 3: Lookup interviewer details
+    pipeline.push({
+      $lookup: {
+        from: 'users',
+        localField: 'interviewer',
+        foreignField: '_id',
+        as: 'interviewerDetails'
+      }
+    });
+    pipeline.push({
+      $unwind: {
+        path: '$interviewerDetails',
+        preserveNullAndEmptyArrays: true
+      }
+    });
+    
+    // Stage 4: Project fields needed for CSV generation
+    pipeline.push({
+      $project: {
+        _id: 1,
+        survey: 1,
+        interviewer: 1,
+        status: 1,
+        interviewMode: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        responses: 1,
+        selectedAC: 1,
+        selectedPollingStation: 1,
+        location: 1,
+        verificationData: 1,
+        audioRecording: 1,
+        qcBatch: 1,
+        responseId: 1,
+        call_id: 1,
+        // Map interviewerDetails to interviewer for compatibility
+        interviewer: {
+          firstName: { $ifNull: ['$interviewerDetails.firstName', ''] },
+          lastName: { $ifNull: ['$interviewerDetails.lastName', ''] },
+          email: { $ifNull: ['$interviewerDetails.email', ''] },
+          memberId: { $ifNull: ['$interviewerDetails.memberId', ''] },
+          memberID: { $ifNull: ['$interviewerDetails.memberId', ''] }
+        }
+      }
+    });
+    
+    // Execute aggregation with allowDiskUse for large datasets
+    console.log(`📊 Fetching responses using aggregation pipeline...`);
+    const responses = await SurveyResponse.aggregate(pipeline, {
+      allowDiskUse: true,
+      maxTimeMS: 600000 // 10 minutes timeout for large datasets
+    });
     
     console.log(`📊 Found ${responses.length} responses`);
     
@@ -44,9 +103,7 @@ const generateCSVForSurvey = async (surveyId, downloadMode = 'codes') => {
       return;
     }
     
-    // Responses are already sorted oldest first (createdAt: 1), matching frontend behavior
-    // Frontend reverses API results (newest first) to get oldest first
-    // Here we sort directly by createdAt ascending to get oldest first
+    // Responses are already sorted oldest first (createdAt: 1)
     const sortedResponses = responses;
     
     // Generate CSV content
@@ -647,7 +704,7 @@ const generateCSVContent = async (survey, sortedResponses, downloadMode, surveyI
   
   // Combine metadata and question headers
   const allTitleRow = [...metadataTitleRow, ...questionTitleRow];
-  const allCodeRow = [...metadataCodeRow, ...questionCodeRow];
+  let allCodeRow = [...metadataCodeRow, ...questionCodeRow]; // Use let because it gets reassigned for survey-specific transformations
   
   // Add Status, QC, and Rejection columns at the end
   allTitleRow.push('Status (0= terminated, 10=valid, 20=rejected, 40=under qc)');
@@ -1388,6 +1445,9 @@ const generateCSVContent = async (survey, sortedResponses, downloadMode, surveyI
               (isSampleResponse && (batchStatus === 'qc_in_progress' || batchStatus === 'completed')) ||
               (!isSampleResponse && remainingDecision === 'queued_for_qc')) {
             assignedToQC = '1';
+          } else if (batchStatus === 'collecting' ||
+                     (batchStatus === 'processing' && !isSampleResponse)) {
+            assignedToQC = '2';
           } else {
             assignedToQC = '2';
           }

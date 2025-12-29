@@ -939,6 +939,7 @@ const ViewResponsesV2Page = () => {
         };
         
         try {
+          console.log(`CSV Download - Fetching chunk ${currentPage} (responses ${fetchedCount + 1} to ${fetchedCount + FETCH_CHUNK_SIZE})...`);
           const chunkResponses = await fetchChunkWithRetry(chunkParams);
           
           if (chunkResponses.length === 0 && fetchedCount === 0) {
@@ -949,6 +950,8 @@ const ViewResponsesV2Page = () => {
           allResponses.push(...chunkResponses);
           fetchedCount += chunkResponses.length;
           
+          console.log(`CSV Download - Chunk ${currentPage} completed: ${chunkResponses.length} responses (Total: ${fetchedCount}/${totalResponses})`);
+          
           setCsvProgress({ 
             current: fetchedCount, 
             total: totalResponses, 
@@ -957,7 +960,10 @@ const ViewResponsesV2Page = () => {
           
           // If we got fewer responses than requested, we've reached the end
           if (chunkResponses.length < FETCH_CHUNK_SIZE) {
-            console.log(`CSV Download - Reached end of data at ${fetchedCount} responses`);
+            console.log(`CSV Download - Reached end of data at ${fetchedCount} responses (expected ${totalResponses})`);
+            if (fetchedCount < totalResponses) {
+              console.warn(`CSV Download - Warning: Fetched ${fetchedCount} but expected ${totalResponses}. Missing ${totalResponses - fetchedCount} responses.`);
+            }
             break;
           }
           
@@ -965,7 +971,8 @@ const ViewResponsesV2Page = () => {
           await new Promise(resolve => setTimeout(resolve, CHUNK_DELAY));
         } catch (error) {
           console.error(`CSV Download - Error fetching chunk ${currentPage} after retries:`, error);
-          showError(`Failed to fetch responses at chunk ${currentPage}: ${error.message || 'Network error'}. Please try again or reduce the date range.`);
+          const errorMessage = error.response?.data?.message || error.message || 'Network error';
+          showError(`Failed to fetch responses at chunk ${currentPage}: ${errorMessage}. Please try again or reduce the date range.`);
           setDownloadingCSV(false);
           setCsvProgress({ current: 0, total: 0, stage: '' });
           return;
@@ -975,9 +982,66 @@ const ViewResponsesV2Page = () => {
       const filteredResponses = allResponses;
       console.log('CSV Download - Fetched responses:', filteredResponses.length, 'out of', totalResponses);
       
-      // Reverse the order so oldest responses are first (backend returns newest first)
-      const sortedResponses = [...filteredResponses].reverse();
-      // totalResponses is already declared above (from count query), reuse it
+      // Verify that all chunks were fetched successfully
+      if (fetchedCount !== totalResponses) {
+        const missingCount = totalResponses - fetchedCount;
+        console.error(`CSV Download - Data mismatch: Fetched ${fetchedCount}, Expected ${totalResponses}, Missing ${missingCount}`);
+        
+        // Ask user if they want to continue with partial data
+        const continueWithPartial = window.confirm(
+          `Warning: Only ${fetchedCount} of ${totalResponses} responses were fetched. ` +
+          `Missing ${missingCount} responses (likely recent ones). ` +
+          `Do you want to continue with partial data or cancel and try again?`
+        );
+        
+        if (!continueWithPartial) {
+          setDownloadingCSV(false);
+          setCsvProgress({ current: 0, total: 0, stage: '' });
+          return;
+        }
+        
+        showError(`Warning: Only ${fetchedCount} of ${totalResponses} responses downloaded. Some recent responses may be missing.`);
+      }
+      
+      // Sort by createdAt ascending (oldest first) to ensure correct order
+      // This is critical because chunks are fetched with pagination (limit !== -1) 
+      // which means each chunk is sorted newest first, so we need to sort after combining
+      const sortedResponses = [...filteredResponses].sort((a, b) => {
+        // Try multiple date fields in order of preference
+        const getDate = (response) => {
+          if (response.createdAt) return new Date(response.createdAt).getTime();
+          if (response.endTime) return new Date(response.endTime).getTime();
+          if (response.updatedAt) return new Date(response.updatedAt).getTime();
+          // Fallback to 0 (will sort to top if no date found)
+          return 0;
+        };
+        
+        const dateA = getDate(a);
+        const dateB = getDate(b);
+        
+        // If both dates are valid, sort ascending (oldest first)
+        if (dateA > 0 && dateB > 0) {
+          return dateA - dateB;
+        }
+        // If one has no date, put it at the end
+        if (dateA === 0) return 1;
+        if (dateB === 0) return -1;
+        return 0;
+      });
+      
+      console.log('CSV Download - Sorted responses by createdAt (oldest first)');
+      if (sortedResponses.length > 0) {
+        const getDate = (response) => {
+          if (response.createdAt) return new Date(response.createdAt);
+          if (response.endTime) return new Date(response.endTime);
+          if (response.updatedAt) return new Date(response.updatedAt);
+          return new Date(0);
+        };
+        const firstDate = getDate(sortedResponses[0]);
+        const lastDate = getDate(sortedResponses[sortedResponses.length - 1]);
+        console.log(`CSV Download - Date range: ${firstDate.toISOString()} to ${lastDate.toISOString()}`);
+        console.log(`CSV Download - First response date: ${firstDate.toLocaleDateString()}, Last response date: ${lastDate.toLocaleDateString()}`);
+      }
       
       if (sortedResponses.length === 0) {
         console.error('CSV Download - No responses fetched after chunked download');

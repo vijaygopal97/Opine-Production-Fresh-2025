@@ -4253,9 +4253,11 @@ const getSurveyResponsesV2 = async (req, res) => {
     const totalResponses = countResult.length > 0 ? countResult[0].total : 0;
 
     // Stage 6: Sort and paginate (skip pagination if limit is -1, used for CSV download)
-    pipeline.push({ $sort: { createdAt: -1 } });
+    // Sort oldest first (1) for CSV downloads (limit === -1), newest first (-1) for pagination
     const pageNum = parseInt(page, 10) || 1;
     const limitNum = parseInt(limit, 10) || 20;
+    const sortOrder = limitNum === -1 ? 1 : -1; // Oldest first for CSV, newest first for pagination
+    pipeline.push({ $sort: { createdAt: sortOrder } });
     const skip = limitNum !== -1 ? (pageNum - 1) * limitNum : 0;
     
     // Only apply pagination if limit is not -1 (CSV download uses -1 to get all)
