@@ -498,7 +498,11 @@ const completeInterview = async (req, res) => {
     const { sessionId } = req.params;
     const { responses, qualityMetrics, metadata } = req.body;
     
-    // Log incoming request for offline sync debugging
+    // ENHANCED LOGGING: Log incoming request for duplicate monitoring
+    const requestTimestamp = new Date().toISOString();
+    const clientResponseId = metadata?.responseId || metadata?.serverResponseId || null;
+    const clientInterviewId = metadata?.interviewId || metadata?.localInterviewId || null;
+    
     console.log('📥 completeInterview: Request received', {
       sessionId,
       interviewerId: req.user?.id || 'NO USER IN REQ',
@@ -506,8 +510,35 @@ const completeInterview = async (req, res) => {
       userType: req.user?.userType || 'unknown',
       metadataSurvey: metadata?.survey || 'not provided',
       metadataInterviewMode: metadata?.interviewMode || 'not provided',
-      timestamp: new Date().toISOString()
+      clientResponseId: clientResponseId || 'NOT PROVIDED',
+      clientInterviewId: clientInterviewId || 'NOT PROVIDED',
+      hasMetadata: !!metadata,
+      metadataKeys: metadata ? Object.keys(metadata) : [],
+      timestamp: requestTimestamp,
+      userAgent: req.headers['user-agent'] || 'unknown',
+      ip: req.ip || req.connection.remoteAddress || 'unknown'
     });
+    
+    // DUPLICATE MONITORING: Check if this sessionId already has a response
+    try {
+      const existingResponse = await SurveyResponse.findOne({ sessionId })
+        .select('_id responseId status createdAt')
+        .lean();
+      
+      if (existingResponse) {
+        console.log('⚠️ DUPLICATE WARNING: SessionId already has a response', {
+          sessionId,
+          existingResponseId: existingResponse.responseId,
+          existingMongoId: existingResponse._id.toString(),
+          existingStatus: existingResponse.status,
+          existingCreatedAt: existingResponse.createdAt,
+          clientResponseId: clientResponseId,
+          timestamp: requestTimestamp
+        });
+      }
+    } catch (checkError) {
+      console.error('❌ Error checking for existing response:', checkError.message);
+    }
     
     if (!req.user || !req.user.id) {
       console.error('❌ completeInterview: No user in request object - auth middleware may have failed', {
@@ -740,6 +771,24 @@ const completeInterview = async (req, res) => {
     }
 
     await surveyResponse.save();
+    
+    // DUPLICATE MONITORING: Log successful submission details
+    console.log('✅ completeInterview: Response created successfully', {
+      responseId: surveyResponse.responseId,
+      mongoId: surveyResponse._id.toString(),
+      sessionId: surveyResponse.sessionId,
+      interviewerId: surveyResponse.interviewer?.toString() || interviewId,
+      surveyId: surveyResponse.survey?.toString() || session.survey._id.toString(),
+      startTime: surveyResponse.startTime,
+      endTime: surveyResponse.endTime,
+      totalTimeSpent: surveyResponse.totalTimeSpent,
+      responseCount: surveyResponse.responses?.length || 0,
+      status: surveyResponse.status,
+      clientResponseId: clientResponseId,
+      clientInterviewId: clientInterviewId,
+      createdAt: surveyResponse.createdAt,
+      timestamp: new Date().toISOString()
+    });
     
     // CRITICAL FIX: Double-check status after save to ensure it wasn't changed
     // Reload from DB to get the actual saved status (prevents race conditions)

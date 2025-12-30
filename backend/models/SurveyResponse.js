@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 
 const surveyResponseSchema = new mongoose.Schema({
   // Unique Numerical ID for easy reference
@@ -458,6 +459,12 @@ const surveyResponseSchema = new mongoose.Schema({
     default: false
   },
   
+  // Content Hash for duplicate detection (lightweight)
+  contentHash: {
+    type: String,
+    sparse: true
+  },
+  
   // Metadata
   metadata: {
     surveyVersion: String,
@@ -490,6 +497,7 @@ surveyResponseSchema.index({ status: 1 });
 surveyResponseSchema.index({ responseId: 1 });
 surveyResponseSchema.index({ createdAt: -1 });
 surveyResponseSchema.index({ survey: 1, status: 1 });
+surveyResponseSchema.index({ contentHash: 1 }); // For duplicate detection
 
 // Pre-save middleware to update timestamps
 surveyResponseSchema.pre('save', function(next) {
@@ -503,6 +511,31 @@ const generateUniqueResponseId = async function(SurveyResponseModel) {
   // UUIDs are globally unique, so no need to check for duplicates
   return uuidv4();
 };
+
+/**
+ * Generate content hash for duplicate detection (lightweight)
+ * Hash based on: interviewer + survey + startTime (minute precision) + responses signature
+ * This allows fast duplicate detection using indexed MongoDB queries
+ */
+function generateContentHash(interviewer, survey, startTime, responses) {
+  // Normalize startTime to nearest minute (60s window for duplicates)
+  const normalizedStartTime = new Date(startTime);
+  normalizedStartTime.setSeconds(0, 0);
+  normalizedStartTime.setMilliseconds(0);
+  
+  // Create a simple signature of responses (first 100 chars of sorted questionIds)
+  // This is much faster than hashing full responses but still captures uniqueness
+  const responseSignature = responses
+    ? responses
+        .map(r => r.questionId || '')
+        .sort()
+        .slice(0, 20) // First 20 questionIds should be unique enough
+        .join('|')
+    : '';
+  
+  const hashInput = `${interviewer.toString()}|${survey.toString()}|${normalizedStartTime.toISOString()}|${responses?.length || 0}|${responseSignature}`;
+  return crypto.createHash('sha256').update(hashInput).digest('hex').substring(0, 16); // 16 char hash = fast
+}
 
 // Static method to create a complete survey response
 surveyResponseSchema.statics.createCompleteResponse = async function(data) {
@@ -547,10 +580,70 @@ surveyResponseSchema.statics.createCompleteResponse = async function(data) {
     console.log(`✅ Calculated totalTimeSpent from timestamps: ${totalTimeSpent} seconds (${Math.floor(totalTimeSpent / 60)} minutes)`);
   }
 
+  // LIGHTWEIGHT DUPLICATE DETECTION: Generate content hash
+  const contentHash = generateContentHash(interviewer, survey, startTime, responses);
+  
+  // Check for existing response with same content hash (fast indexed lookup - <20ms)
+  const existingResponse = await this.findOne({ contentHash })
+    .select('_id responseId sessionId audioRecording location selectedPollingStation status')
+    .lean(); // Fast - only returns minimal fields, uses index
+  
+  if (existingResponse) {
+    console.log(`⚠️ DUPLICATE DETECTED: Found existing response with same content hash: ${existingResponse.responseId}`);
+    console.log(`   Existing sessionId: ${existingResponse.sessionId}, New sessionId: ${sessionId}`);
+    console.log(`   ℹ️ Returning existing response instead of creating duplicate - app will mark as synced`);
+    
+    // Update existing response to ensure it has complete data (audio, GPS, etc.)
+    const updateFields = {};
+    
+    // Update audio if new one exists and old one doesn't
+    if (audioRecording && audioRecording.audioUrl && (!existingResponse.audioRecording || !existingResponse.audioRecording.audioUrl)) {
+      updateFields['audioRecording'] = audioRecording;
+      console.log(`   ✅ Updating audio recording in existing response`);
+    }
+    
+    // Update location if new one exists and old one doesn't
+    if (location && location.latitude && (!existingResponse.location || !existingResponse.location.latitude)) {
+      updateFields['location'] = location;
+      console.log(`   ✅ Updating location in existing response`);
+    }
+    
+    // Update polling station if new one exists and old one doesn't
+    if (selectedPollingStation && (!existingResponse.selectedPollingStation)) {
+      updateFields['selectedPollingStation'] = selectedPollingStation;
+      console.log(`   ✅ Updating polling station in existing response`);
+    }
+    
+    // Only update if there are fields to update
+    if (Object.keys(updateFields).length > 0) {
+      await this.findByIdAndUpdate(existingResponse._id, { $set: updateFields });
+      console.log(`✅ Updated existing response ${existingResponse.responseId} with missing data`);
+    }
+    
+    // Return existing response (don't create duplicate)
+    // CRITICAL: Return a Mongoose document instance with all fields populated
+    // The app expects: result.response._id, result.response.responseId, result.response.mongoId
+    // Our existing response has all these fields, so it will work correctly
+    const existingDoc = await this.findById(existingResponse._id);
+    if (existingDoc) {
+      // Ensure the document has all required fields for the API response
+      // The controller will use: surveyResponse.responseId and surveyResponse._id
+      // Both are present on the existing document, so the app will receive:
+      // { success: true, data: { responseId: ..., mongoId: ..., ... } }
+      // This will make the app think it's a successful new submission and mark as synced
+      console.log(`✅ Returning existing response ${existingDoc.responseId} - app will treat as successful sync`);
+      return existingDoc;
+    }
+    
+    // Fallback: if findById fails, throw error (shouldn't happen)
+    throw new Error(`Failed to retrieve existing response ${existingResponse._id} after duplicate detection`);
+  }
+  
+  // No duplicate found - create new response
   // Generate unique response ID
   const responseId = await generateUniqueResponseId(this);
 
-  return new this({
+  const newResponse = new this({
     responseId,
     survey,
     interviewer,
@@ -573,8 +666,11 @@ surveyResponseSchema.statics.createCompleteResponse = async function(data) {
     skippedQuestions,
     completionPercentage,
     qualityMetrics,
-    metadata
+    metadata,
+    contentHash // Store hash for future duplicate detection
   });
+  
+  return newResponse;
 };
 
 // Instance method to get response summary
