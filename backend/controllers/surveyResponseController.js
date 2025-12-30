@@ -4248,7 +4248,7 @@ const getSurveyResponsesV2 = async (req, res) => {
     const countPipeline = [...pipeline, { $count: 'total' }];
     const countResult = await SurveyResponse.aggregate(countPipeline, {
       allowDiskUse: true,
-      maxTimeMS: 300000 // 5 minutes, allow disk use
+      maxTimeMS: 7200000 // 2 hours timeout for large datasets
     });
     const totalResponses = countResult.length > 0 ? countResult[0].total : 0;
 
@@ -4365,7 +4365,7 @@ const getSurveyResponsesV2 = async (req, res) => {
     // Use allowDiskUse and extended timeout for large datasets (especially CSV downloads)
     const responses = await SurveyResponse.aggregate(pipeline, {
       allowDiskUse: true,
-      maxTimeMS: 300000 // 5 minutes timeout
+      maxTimeMS: 7200000 // 2 hours timeout for large datasets
     });
 
     // Add signed URLs to audio recordings and map interviewerDetails to interviewer for consistency
