@@ -1211,30 +1211,44 @@ const completeCatiInterview = async (req, res) => {
       console.log(`✅ Enhanced selectedPollingStation with AC details:`, finalSelectedPollingStation);
     }
 
-    // SAFETY: queueEntry.assignedTo can be null/undefined in some flows (e.g. after abandon/call-later)
-    // We must handle this gracefully instead of throwing TypeError on .toString()
-    if (!queueEntry.assignedTo) {
-      console.warn('⚠️  completeCatiInterview - queueEntry.assignedTo is null/undefined', {
-        queueId,
-        interviewerId: interviewerId?.toString(),
-        status: queueEntry.status,
-        abandonmentReason: queueEntry.abandonmentReason
-      });
-      return res.status(403).json({
-        success: false,
-        message: 'This respondent is not currently assigned to any interviewer. Please reassign and try again.'
-      });
-    }
-
-    if (queueEntry.assignedTo.toString() !== interviewerId.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'You are not assigned to this respondent'
-      });
-    }
-
-    // Get session
+    // Get session FIRST to check if interview was legitimately started by this interviewer
+    // This is critical for offline sync - assignment may have changed, but if session exists,
+    // the interview was legitimately started by this interviewer
     const session = await InterviewSession.findOne({ sessionId });
+    
+    // If session exists and belongs to this interviewer, allow completion even if assignment changed
+    // This handles offline sync scenarios where assignment may have been reassigned
+    if (session && session.interviewer.toString() === interviewerId.toString()) {
+      console.log('✅ Session exists and belongs to interviewer - allowing completion (offline sync scenario)');
+      // Allow completion - interview was legitimately started by this interviewer
+    } else {
+      // No valid session - check assignment as normal
+      // SAFETY: queueEntry.assignedTo can be null/undefined in some flows (e.g. after abandon/call-later)
+      // We must handle this gracefully instead of throwing TypeError on .toString()
+      if (!queueEntry.assignedTo) {
+        console.warn('⚠️  completeCatiInterview - queueEntry.assignedTo is null/undefined and no valid session', {
+          queueId,
+          interviewerId: interviewerId?.toString(),
+          status: queueEntry.status,
+          abandonmentReason: queueEntry.abandonmentReason,
+          sessionId,
+          hasSession: !!session,
+          sessionInterviewer: session?.interviewer?.toString()
+        });
+        return res.status(403).json({
+          success: false,
+          message: 'This respondent is not currently assigned to any interviewer. Please reassign and try again.'
+        });
+      }
+
+      if (queueEntry.assignedTo.toString() !== interviewerId.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: 'You are not assigned to this respondent'
+        });
+      }
+    }
+    
     if (!session) {
       return res.status(404).json({
         success: false,
