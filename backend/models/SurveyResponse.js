@@ -537,6 +537,9 @@ function generateContentHash(interviewer, survey, startTime, responses) {
   return crypto.createHash('sha256').update(hashInput).digest('hex').substring(0, 16); // 16 char hash = fast
 }
 
+// Export generateContentHash as static method for use in controllers
+surveyResponseSchema.statics.generateContentHash = generateContentHash;
+
 // Static method to create a complete survey response
 surveyResponseSchema.statics.createCompleteResponse = async function(data) {
   const {

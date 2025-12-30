@@ -1681,21 +1681,44 @@ const completeCatiInterview = async (req, res) => {
         totalTimeSpent: finalTotalTimeSpent
       });
       
-      // Use the finalSetNumber already calculated at the top level
+      // LIGHTWEIGHT DUPLICATE DETECTION: Generate content hash (same as CAPI)
+      const contentHash = SurveyResponse.generateContentHash(interviewerId, queueEntry.survey._id, finalStartTime, allResponses);
       
-      // CRITICAL FIX: Detect abandoned interviews from multiple sources (backend-only fix for all app versions)
-      // Check for explicit abandonment indicators in request body (for offline sync)
-      // IMPORTANT: Sync service sends abandoned/isCompleted at top level AND in metadata
-      // ALSO CHECK: queueEntry.abandonmentReason (when interview was abandoned via abandon endpoint)
-      const hasExplicitAbandonReason = req.body.abandonReason !== null && req.body.abandonReason !== undefined && req.body.abandonReason !== '' ||
-                                       req.body.reason !== null && req.body.reason !== undefined && req.body.reason !== '' ||
-                                       req.body.metadata?.abandonReason !== null && req.body.metadata?.abandonReason !== undefined && req.body.metadata?.abandonReason !== '' ||
-                                       (queueEntry.abandonmentReason !== null && queueEntry.abandonmentReason !== undefined && queueEntry.abandonmentReason !== '');  // CRITICAL: Check queueEntry for abandonment (backend-only fix)
-      const isExplicitlyAbandoned = req.body.abandoned === true ||  // Top level (from sync service)
-                                    req.body.metadata?.abandoned === true ||  // In metadata
-                                    req.body.isCompleted === false ||  // Top level (from sync service)
-                                    req.body.metadata?.isCompleted === false ||  // In metadata
-                                    (queueEntry.abandonmentReason !== null && queueEntry.abandonmentReason !== undefined && queueEntry.abandonmentReason !== '');  // CRITICAL: Check queueEntry for abandonment (backend-only fix)
+      // Check for existing response with same content hash (fast indexed lookup - <20ms)
+      const existingResponseByHash = await SurveyResponse.findOne({ contentHash })
+        .select('_id responseId sessionId status')
+        .lean(); // Fast - only returns minimal fields, uses index
+      
+      if (existingResponseByHash) {
+        console.log(`⚠️ DUPLICATE DETECTED (CATI): Found existing response with same content hash: ${existingResponseByHash.responseId}`);
+        console.log(`   Existing sessionId: ${existingResponseByHash.sessionId}, New sessionId: ${session.sessionId}`);
+        console.log(`   ℹ️ Returning existing response instead of creating duplicate - app will mark as synced`);
+        
+        // Return existing response (don't create duplicate)
+        surveyResponse = await SurveyResponse.findById(existingResponseByHash._id);
+        if (surveyResponse) {
+          console.log(`✅ Returning existing CATI response ${surveyResponse.responseId} - app will treat as successful sync`);
+          // Continue with existing response object for downstream logic (skip new response creation)
+        } else {
+          throw new Error(`Failed to retrieve existing response ${existingResponseByHash._id} after duplicate detection`);
+        }
+      }
+      
+      // Only create new response if no duplicate was found
+      if (!surveyResponse) {
+        // CRITICAL FIX: Detect abandoned interviews from multiple sources (backend-only fix for all app versions)
+        // Check for explicit abandonment indicators in request body (for offline sync)
+        // IMPORTANT: Sync service sends abandoned/isCompleted at top level AND in metadata
+        // ALSO CHECK: queueEntry.abandonmentReason (when interview was abandoned via abandon endpoint)
+        const hasExplicitAbandonReason = req.body.abandonReason !== null && req.body.abandonReason !== undefined && req.body.abandonReason !== '' ||
+                                         req.body.reason !== null && req.body.reason !== undefined && req.body.reason !== '' ||
+                                         req.body.metadata?.abandonReason !== null && req.body.metadata?.abandonReason !== undefined && req.body.metadata?.abandonReason !== '' ||
+                                         (queueEntry.abandonmentReason !== null && queueEntry.abandonmentReason !== undefined && queueEntry.abandonmentReason !== '');  // CRITICAL: Check queueEntry for abandonment (backend-only fix)
+        const isExplicitlyAbandoned = req.body.abandoned === true ||  // Top level (from sync service)
+                                      req.body.metadata?.abandoned === true ||  // In metadata
+                                      req.body.isCompleted === false ||  // Top level (from sync service)
+                                      req.body.metadata?.isCompleted === false ||  // In metadata
+                                      (queueEntry.abandonmentReason !== null && queueEntry.abandonmentReason !== undefined && queueEntry.abandonmentReason !== '');  // CRITICAL: Check queueEntry for abandonment (backend-only fix)
       
       // Extract abandon reason from request if available, fallback to queueEntry
       const requestAbandonReason = req.body.abandonReason || req.body.reason || req.body.metadata?.abandonReason || queueEntry.abandonmentReason || null;
@@ -1803,50 +1826,51 @@ const completeCatiInterview = async (req, res) => {
         }
       }
       
-      surveyResponse = new SurveyResponse({
-        responseId,
-        survey: queueEntry.survey._id,
-        interviewer: interviewerId,
-        sessionId: session.sessionId,
-        interviewMode: 'cati',
-        call_id: callId || null, // Store DeepCall callId
-        setNumber: (finalSetNumber !== null && finalSetNumber !== undefined && !isNaN(Number(finalSetNumber))) ? Number(finalSetNumber) : null, // Save which Set was shown in this CATI interview (ensure it's a proper Number type or null)
-        knownCallStatus: finalKnownCallStatus, // Store call status - 'call_connected' if call was connected, even if consent is "No"
-        consentResponse: consentResponse, // Store consent form response (yes/no)
-        responses: allResponses,
-        selectedAC: finalSelectedAC || null,
-        selectedPollingStation: enhancedPollingStation || null,
-        location: {
-          state: 'West Bengal' // Set state for CATI responses (no GPS location)
-        }, // No GPS location for CATI, but set state field
-        OldinterviewerID: oldInterviewerID || null, // Save old interviewer ID
-        supervisorID: finalSupervisorID || null, // Save supervisor ID
-        startTime: finalStartTime, // Required field
-        endTime: finalEndTime, // Required field
-        totalTimeSpent: finalTotalTimeSpent, // Required field - Form Duration uses this
-        status: responseStatus, // Set to "abandoned" if explicitly abandoned, call not connected, consent refused, or heuristic match
-        abandonedReason: finalAbandonReason, // Use determined abandon reason (prioritizes explicit reason from request)
-        totalQuestions: totalQuestions || 0, // Required field - ensure it's not undefined
-        answeredQuestions: answeredQuestions || 0, // Required field - ensure it's not undefined
-        skippedQuestions: (totalQuestions || 0) - (answeredQuestions || 0), // Optional but good to have
-        completionPercentage: completionPercentage || 0, // Required field - ensure it's not undefined
-        metadata: {
-          respondentQueueId: queueEntry._id,
-          respondentName: queueEntry.respondentContact?.name || queueEntry.respondentContact?.name,
-          respondentPhone: queueEntry.respondentContact?.phone || queueEntry.respondentContact?.phone,
-          callRecordId: queueEntry.callRecord?._id,
-          callStatus: finalCallStatus, // Store call status in metadata (legacy)
-          abandoned: shouldMarkAsAbandoned, // Mark as abandoned (from explicit indicators, call status, consent, or heuristic)
-          abandonmentReason: finalAbandonReason || (consentResponse === 'no' ? 'consent_refused' : (!isCallConnected && finalCallStatus && finalCallStatus !== 'call_connected' && finalCallStatus !== 'success' ? 'Call_Not_Connected' : null))
-        }
-      });
-      
-      // Verify setNumber is set before saving
-      console.log(`🔴🔴🔴 SurveyResponse object created - setNumber before save: ${surveyResponse.setNumber}, type: ${typeof surveyResponse.setNumber}`);
+        surveyResponse = new SurveyResponse({
+          responseId,
+          survey: queueEntry.survey._id,
+          interviewer: interviewerId,
+          sessionId: session.sessionId,
+          interviewMode: 'cati',
+          call_id: callId || null, // Store DeepCall callId
+          setNumber: (finalSetNumber !== null && finalSetNumber !== undefined && !isNaN(Number(finalSetNumber))) ? Number(finalSetNumber) : null, // Save which Set was shown in this CATI interview (ensure it's a proper Number type or null)
+          knownCallStatus: finalKnownCallStatus, // Store call status - 'call_connected' if call was connected, even if consent is "No"
+          consentResponse: consentResponse, // Store consent form response (yes/no)
+          responses: allResponses,
+          selectedAC: finalSelectedAC || null,
+          selectedPollingStation: enhancedPollingStation || null,
+          location: {
+            state: 'West Bengal' // Set state for CATI responses (no GPS location)
+          }, // No GPS location for CATI, but set state field
+          OldinterviewerID: oldInterviewerID || null, // Save old interviewer ID
+          supervisorID: finalSupervisorID || null, // Save supervisor ID
+          startTime: finalStartTime, // Required field
+          endTime: finalEndTime, // Required field
+          totalTimeSpent: finalTotalTimeSpent, // Required field - Form Duration uses this
+          status: responseStatus, // Set to "abandoned" if explicitly abandoned, call not connected, consent refused, or heuristic match
+          abandonedReason: finalAbandonReason, // Use determined abandon reason (prioritizes explicit reason from request)
+          totalQuestions: totalQuestions || 0, // Required field - ensure it's not undefined
+          answeredQuestions: answeredQuestions || 0, // Required field - ensure it's not undefined
+          skippedQuestions: (totalQuestions || 0) - (answeredQuestions || 0), // Optional but good to have
+          completionPercentage: completionPercentage || 0, // Required field - ensure it's not undefined
+          contentHash: contentHash, // Store content hash for duplicate detection
+          metadata: {
+            respondentQueueId: queueEntry._id,
+            respondentName: queueEntry.respondentContact?.name || queueEntry.respondentContact?.name,
+            respondentPhone: queueEntry.respondentContact?.phone || queueEntry.respondentContact?.phone,
+            callRecordId: queueEntry.callRecord?._id,
+            callStatus: finalCallStatus, // Store call status in metadata (legacy)
+            abandoned: shouldMarkAsAbandoned, // Mark as abandoned (from explicit indicators, call status, consent, or heuristic)
+            abandonmentReason: finalAbandonReason || (consentResponse === 'no' ? 'consent_refused' : (!isCallConnected && finalCallStatus && finalCallStatus !== 'call_connected' && finalCallStatus !== 'success' ? 'Call_Not_Connected' : null))
+          }
+        });
+        
+        // Verify setNumber is set before saving
+        console.log(`🔴🔴🔴 SurveyResponse object created - setNumber before save: ${surveyResponse.setNumber}, type: ${typeof surveyResponse.setNumber}`);
 
-      try {
-        // Log before saving
-        console.log(`🔴🔴🔴 About to save NEW SurveyResponse - setNumber in object: ${surveyResponse.setNumber}, type: ${typeof surveyResponse.setNumber}`);
+        try {
+          // Log before saving
+          console.log(`🔴🔴🔴 About to save NEW SurveyResponse - setNumber in object: ${surveyResponse.setNumber}, type: ${typeof surveyResponse.setNumber}`);
         console.log(`🔴🔴🔴 SurveyResponse document before save:`, JSON.stringify({ 
           _id: surveyResponse._id, 
           responseId: surveyResponse.responseId, 
@@ -1855,14 +1879,14 @@ const completeCatiInterview = async (req, res) => {
           sessionId: surveyResponse.sessionId
         }, null, 2));
         
-        // CRITICAL: For CATI interviews, save setNumber using direct MongoDB update
-        // Save the response first
-        console.log(`🔴🔴🔴 Saving SurveyResponse to database...`);
-        await surveyResponse.save();
-        console.log(`🔴🔴🔴 SurveyResponse saved. Now checking setNumber in saved object: ${surveyResponse.setNumber}`);
-        
-        // CRITICAL FIX: Double-check status after save for abandoned interviews
-        // Reload from DB to ensure status is correct (prevents auto-rejection from changing it)
+          // CRITICAL: For CATI interviews, save setNumber using direct MongoDB update
+          // Save the response first
+          console.log(`🔴🔴🔴 Saving SurveyResponse to database...`);
+          await surveyResponse.save();
+          console.log(`🔴🔴🔴 SurveyResponse saved. Now checking setNumber in saved object: ${surveyResponse.setNumber}`);
+          
+          // CRITICAL FIX: Double-check status after save for abandoned interviews
+          // Reload from DB to ensure status is correct (prevents auto-rejection from changing it)
         if (shouldMarkAsAbandoned && responseStatus === 'abandoned') {
           const savedResponse = await SurveyResponse.findById(surveyResponse._id);
           if (savedResponse && savedResponse.status !== 'abandoned') {
